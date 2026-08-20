@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 217 91% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 214 32% 94%;
+    --muted-foreground: 215 16% 40%;
+    --accent: 212 100% 94%;
+    --accent-foreground: 217 91% 36%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 152 69% 31%;
+    --success-foreground: 150 100% 97%;
+    --warning: 32 95% 44%;
+    --warning-foreground: 26 83% 14%;
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 217 91% 53%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply min-h-full bg-background;
+  }
+
+  body {
+    @apply min-h-screen bg-background font-sans text-foreground antialiased;
+  }
+
+  button,
+  a,
+  input {
+    @apply outline-none;
+  }
+
+  ::selection {
+    @apply bg-primary/20 text-foreground;
+  }
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 0 0% 4%;
+  --foreground: 0 0% 96%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 7%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 0 0% 92%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 13%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 66%;
+  --accent: 0 0% 16%;
+  --accent-foreground: 0 0% 96%;
+  --destructive: 0 63% 45%;
+  --destructive-foreground: 0 0% 98%;
+  --success: 151 55% 42%;
+  --success-foreground: 150 100% 97%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 26 83% 14%;
+  --border: 0 0% 18%;
+  --input: 0 0% 18%;
+  --ring: 0 0% 72%;
+}

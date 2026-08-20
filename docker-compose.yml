@@ -1,0 +1,39 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: drives3-gateway:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8787
+      SQLITE_PATH: /app/data/app.sqlite
+      MULTIPART_TEMP_DIR: /app/data/multipart
+      STATIC_ROOT: /app/dist/web
+      MIGRATIONS_DIR: /app/dist/server/migrations
+      S3_REQUIRE_TLS: "true"
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "bun -e 'const r=await fetch(\"http://127.0.0.1:8787/health/ready\"); if(!r.ok)process.exit(1)'"
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+# Bind to loopback and place Caddy/nginx/Traefik in front for HTTPS. Set
+# APP_ORIGIN, GOOGLE_REDIRECT_URI, and S3_PUBLIC_ENDPOINT to the public https://
+# URL. With a trusted proxy, set TRUST_PROXY=true so audit/rate-limit client IP
+# resolution uses X-Forwarded-For.

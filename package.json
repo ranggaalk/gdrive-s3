@@ -1,0 +1,36 @@
+{
+  "name": "drives3-gateway",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:server": "bun --watch apps/server/src/index.ts",
+    "dev:web": "bunx vite --config apps/web/vite.config.ts",
+    "build": "bun run build:web && bun run build:server",
+    "build:web": "bunx vite build --config apps/web/vite.config.ts",
+    "build:server": "bun build apps/server/src/index.ts --target=bun --outdir=dist/server",
+    "start": "bun dist/server/index.js",
+    "db:migrate": "bun apps/server/src/db/migrate.ts",
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "typecheck": "bunx tsc --noEmit",
+    "check": "bun run typecheck && bun run test",
+    "verify:m7": "bun scripts/verify-m7-runtime.ts",
+    "compat:aws": "bash scripts/compat-aws-cli.sh",
+    "compat:rclone": "bash scripts/compat-rclone.sh",
+    "compat:mc": "bash scripts/compat-mc.sh",
+    "load:test": "bun scripts/loadtest/index.ts",
+    "db:backup": "bun scripts/backup-sqlite.ts",
+    "db:restore": "bun scripts/restore-sqlite.ts"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "3.883.0",
+    "@aws-sdk/s3-request-presigner": "3.883.0",
+    "@types/bun": "^1.3.14"
+  }
+}

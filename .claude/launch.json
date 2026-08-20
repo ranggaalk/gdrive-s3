@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-preview",
+      "runtimeExecutable": "wsl.exe",
+      "runtimeArgs": [
+        "-d",
+        "ubuntu-22.04",
+        "bash",
+        "-lc",
+        "export PATH=\"$HOME/.bun/bin:$PATH\"; cd ~/Projects/gdrive-s3 && bunx vite --config apps/web/vite.config.ts --port 5174 --strictPort"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "server-dev",
+      "runtimeExecutable": "wsl.exe",
+      "runtimeArgs": [
+        "-d",
+        "ubuntu-22.04",
+        "bash",
+        "-lc",
+        "export PATH=\"$HOME/.bun/bin:$PATH\"; cd ~/Projects/gdrive-s3 && bun run dev:server"
+      ],
+      "port": 3000
+    }
+  ]
+}
