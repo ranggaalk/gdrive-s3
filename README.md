@@ -1,35 +1,96 @@
 # DriveS3 Gateway
 
-A multi-user, Google-Drive-backed, path-style S3-compatible gateway built with
-Bun, TypeScript, SQLite, React 18, shadcn/ui, and Tailwind CSS.
+![Runtime](https://img.shields.io/badge/runtime-Bun-000000)
+![Language](https://img.shields.io/badge/language-TypeScript-3178C6)
+![Frontend](https://img.shields.io/badge/frontend-React%2018-61DAFB)
+![Storage](https://img.shields.io/badge/storage-SQLite-003B57)
 
-Buckets can store bytes in the owner's **My Drive** or an explicitly selected
-Google Shared Drive. SQLite remains the source of truth for S3 namespace
-metadata and maps `bucket/key` to stable Drive file IDs. Shared Drive S3 access
-is granted only to selected DriveS3 users (Viewer/Editor), and each user operates
-with their own Google OAuth grant; service-account ownership is not used.
+A multi-user, Google-Drive-backed, S3-compatible storage gateway. Point any
+S3 client — the AWS SDK, AWS CLI, rclone, MinIO `mc` — at your own domain,
+and objects are stored as real files in Google Drive, with SQLite as the
+source of truth for the S3 namespace.
 
-## Implemented surface
+Buckets live in the owner's **My Drive** or in an explicitly selected Google
+**Shared Drive**. Shared Drive access is granted per user (Viewer/Editor);
+every user acts through their own Google OAuth grant — there is no
+service-account backdoor into anyone's Drive.
 
-- Google OAuth with Workspace-domain restriction and encrypted refresh tokens.
-- Session/CSRF protection and S3 credential lifecycle.
-- Bucket and object control-plane dashboard with streaming upload, preview,
-  download, delete, temporary presigned links, and revocable public links.
-- S3 credential create, atomic rotate, revoke, and revoked-only permanent delete.
-- S3 path-style CRUD, ListObjectsV2, bulk delete, byte ranges, conditional GET.
-- SigV4 header and presigned query authentication.
-- Streaming/resumable uploads, atomic overwrite, cleanup queue, reconciliation.
-- Owner-triggered one-time import of pre-existing Google Drive folder trees.
-- Multipart upload lifecycle and CopyObject.
-- M7 hardening: security headers, bounded control/XML bodies, rate limiting,
-  failure-injection tests, encrypted backup/restore, load harness, and Docker.
+## Contents
 
-This is **not** a complete Amazon S3 implementation. The dashboard's evidence-
-based compatibility matrix marks features as supported, untested, or unsupported.
-Versioning, Object Lock, ACL/policies, SigV4A, SSE-KMS, and cross-user copies
-across unrelated My Drive accounts are intentionally unsupported. Virtual-hosted-
-style bucket endpoints (`{bucket}.{domain}`) are supported as an opt-in — see
-`S3_VIRTUAL_HOSTED_DOMAIN` below; path-style stays the default.
+- [Features](#features)
+- [Compatibility](#compatibility)
+- [Quick start](#quick-start)
+- [Google OAuth setup](#google-oauth-setup)
+- [Virtual-hosted-style endpoint (optional)](#virtual-hosted-style-endpoint-optional)
+- [Dashboard](#dashboard)
+- [Quality gates](#quality-gates)
+- [Production deployment](#production-deployment)
+- [Backup and restore](#backup-and-restore)
+- [Architecture constraints](#architecture-constraints)
+- [Further reading](#further-reading)
+
+## Features
+
+**Auth & security**
+- Google OAuth login gated by Workspace domain and/or an explicit email
+  allowlist (personal Gmail included), with encrypted refresh tokens.
+- Session/CSRF protection, SigV4 header and presigned-query authentication.
+- Security headers, bounded control/XML request bodies, and rate limiting.
+
+**S3 data plane**
+- Path-style CRUD, `ListObjectsV2`, bulk delete, byte-range GET, conditional
+  GET (`If-Match` / `If-None-Match` / `If-Modified-Since`).
+- Multipart upload lifecycle and `CopyObject`.
+- Optional virtual-hosted-style addressing (`{bucket}.{domain}`) alongside
+  the always-on path-style default.
+- Streaming/resumable uploads, atomic overwrite, cleanup queue and
+  reconciliation against Drive.
+
+**Dashboard**
+- Bucket and object control plane: streaming upload, preview, download,
+  delete, temporary presigned links, and revocable public links.
+- S3 credential lifecycle: create, atomic rotate, revoke, revoked-only
+  permanent delete.
+- One-time import of an existing Google Drive folder tree into a bucket.
+
+**Operations**
+- Encrypted backup/restore, a load-test harness, and a Docker image.
+
+## Compatibility
+
+This is **not** a complete Amazon S3 implementation, and the dashboard ships
+an evidence-based compatibility matrix — every "supported" row is backed by
+a passing test, nothing is marked supported on faith. Broad strokes:
+
+| Supported | Not supported |
+|---|---|
+| Path-style (default) and virtual-hosted-style (opt-in) endpoints | Object versioning |
+| Core object CRUD, `ListObjectsV2`, byte-range/conditional GET | Object Lock / Legal Hold |
+| Multipart upload, `CopyObject` (same actor) | ACL & bucket policy |
+| SigV4 header and presigned-query auth | SigV4A, PresignedPost (form) |
+| AWS CLI, rclone, MinIO `mc` compatibility smokes | SSE-KMS / server-side encryption |
+| | Cross-user `CopyObject` across unrelated My Drive accounts |
+
+Open the dashboard's Overview page for the full, live matrix with the test
+evidence behind each row.
+
+## Quick start
+
+```bash
+export PATH="$HOME/.bun/bin:$PATH"
+bun install
+cp .env.example .env
+# Fill GOOGLE_* plus MASTER_ENCRYPTION_KEY and SESSION_SECRET — see
+# "Google OAuth setup" below.
+bun run dev
+```
+
+The web app runs through Vite on port 5173 and proxies control-plane routes
+to the Bun server on port 3000. The dashboard uses a responsive
+shadcn/Tailwind component system with persisted light and dark themes.
+Bucket owners can create short-lived SigV4 links or opaque public links;
+opaque link tokens are shown once, stored only as hashes, and can be revoked
+independently of S3 access keys.
 
 ## Google OAuth setup
 
@@ -92,22 +153,42 @@ This needs a wildcard DNS record and a wildcard (or SAN) TLS certificate for
 `*.storage.example.com` at your reverse proxy. Leave the variable unset to
 disable virtual-hosted addressing entirely.
 
-## Development
+## Dashboard
 
-```bash
-export PATH="$HOME/.bun/bin:$PATH"
-bun install
-cp .env.example .env
-# Fill GOOGLE_* plus MASTER_ENCRYPTION_KEY and SESSION_SECRET — see
-# "Google OAuth setup" above.
-bun run dev
-```
+### Object sharing
 
-The web app runs through Vite on port 5173 and proxies control-plane routes to
-the Bun server on port 3000. The dashboard uses a responsive shadcn/Tailwind
-component system with persisted light and dark themes. Bucket owners can create
-short-lived SigV4 links or opaque public links; opaque link tokens are shown once,
-stored only as hashes, and can be revoked independently of S3 access keys.
+Bucket Owners and Editors can upload and delete objects from the Objects
+page; Viewers retain preview and download access. Preview is limited to
+passive MIME types (PDF, text, raster image, audio, and video); active
+content such as HTML, SVG, XML, and JavaScript is always downloaded instead.
+
+Only a bucket Owner can create links:
+
+- Temporary presigned GET URLs use an active S3 credential and expire in at
+  most seven days. Rotating or revoking that credential invalidates the URL.
+- Persistent opaque URLs remain active until their optional expiry or
+  explicit revoke. The token is returned once and only its SHA-256 hash is
+  stored.
+
+Rotating a credential creates a new access-key pair and revokes the old pair
+in one transaction. A credential can be permanently deleted only after
+revocation.
+
+### Importing an existing Drive folder
+
+Bucket owners can choose **Import from Drive** on the Objects page to copy a
+one-time snapshot from a My Drive or Shared Drive folder. The folder
+hierarchy becomes the relative object key. The source is always read-only —
+the gateway creates new managed blobs, so deleting or overwriting through S3
+never touches the original files.
+
+The import is conservative: destination keys that already exist and
+duplicate source names are skipped and reported. Empty folders have no S3
+representation. Google Docs/Sheets/Slides, shortcuts, DriveS3-internal items,
+files that can't be downloaded, and keys over 1024 bytes are also skipped.
+The job and its cursor are persisted in SQLite, so the process can resume
+after a restart; cancelling stops future work without rolling back files
+that already succeeded.
 
 ## Quality gates
 
@@ -118,6 +199,7 @@ bun run build:web
 bun scripts/verify-m4-runtime.ts
 bun scripts/verify-m5-runtime.ts
 bun scripts/verify-m6-runtime.ts
+bun scripts/verify-m7-runtime.ts
 ```
 
 External-client compatibility:
@@ -162,9 +244,9 @@ pm2 status
 curl --fail http://127.0.0.1:8787/health/ready
 ```
 
-Docker and PM2 are alternative deployment methods. Do not run both against the
-same port or SQLite database. Read [deployment](docs/DEPLOY.md) before production
-use.
+Docker and PM2 are alternative deployment methods. Do not run both against
+the same port or SQLite database. Read [deployment](docs/DEPLOY.md) before
+production use.
 
 ## Backup and restore
 
@@ -175,40 +257,9 @@ bun run db:restore -- --input ./backups/<archive>.sqlite.gz.enc \
   --target ./data/restored.sqlite
 ```
 
-Backups are gzip-compressed and AES-256-GCM encrypted, with integrity manifests.
-See the [operations runbook](docs/OPERATIONS.md) for restart safety, restore,
-key handling, multipart temp storage, and failure triage.
-
-## Dashboard object sharing
-
-Bucket Owners and Editors can upload and delete objects from the Objects page;
-Viewers retain preview and download access. Preview is limited to passive MIME
-types (PDF, text, raster image, audio, and video); active content such as HTML,
-SVG, XML, and JavaScript is always downloaded instead.
-
-Only a bucket Owner can create links:
-
-- Temporary presigned GET URLs use an active S3 credential and expire in at most
-  seven days. Rotating or revoking that credential invalidates the URL.
-- Persistent opaque URLs remain active until their optional expiry or explicit
-  revoke. The token is returned once and only its SHA-256 hash is stored.
-
-Rotating a credential creates a new access-key pair and revokes the old pair in
-one transaction. A credential can be permanently deleted only after revocation.
-
-## Import data Drive yang sudah ada
-
-Pemilik bucket dapat memilih **Import dari Drive** pada halaman Objects untuk
-menyalin snapshot satu kali dari folder My Drive atau Shared Drive. Hierarki
-folder menjadi object key relatif. Source selalu read-only; gateway membuat blob
-terkelola baru agar delete/overwrite S3 tidak mengubah file asli.
-
-Import bersifat konservatif: key tujuan yang sudah ada dan nama sumber duplikat
-dilewati serta masuk laporan. Empty folder tidak direpresentasikan oleh S3.
-Google Docs/Sheets/Slides, shortcut, item internal DriveS3, file yang tidak dapat
-di-download, dan key di atas 1024 byte juga dilewati. Job dan cursor disimpan di
-SQLite sehingga proses dapat dilanjutkan setelah restart; cancel menghentikan
-pekerjaan berikutnya tanpa rollback file yang sudah berhasil.
+Backups are gzip-compressed and AES-256-GCM encrypted, with integrity
+manifests. See the [operations runbook](docs/OPERATIONS.md) for restart
+safety, restore, key handling, multipart temp storage, and failure triage.
 
 ## Architecture constraints
 
@@ -218,3 +269,12 @@ pekerjaan berikutnya tanpa rollback file yang sudah berhasil.
 - Terminate production TLS at a reverse proxy and preserve SigV4 headers.
 - Never log or commit OAuth tokens, S3 secret keys, session cookies, or
   `MASTER_ENCRYPTION_KEY`.
+
+## Further reading
+
+- [Deployment guide](docs/DEPLOY.md) — Docker/PM2 setup, environment
+  reference, reverse proxy notes, upgrade and rollback procedures.
+- [Operations runbook](docs/OPERATIONS.md) — restart safety, backup/restore,
+  key handling, failure triage.
+- [Performance guidance](docs/PERFORMANCE.md) — load-test harness and
+  tuning notes.
