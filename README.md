@@ -26,8 +26,71 @@ with their own Google OAuth grant; service-account ownership is not used.
 
 This is **not** a complete Amazon S3 implementation. The dashboard's evidence-
 based compatibility matrix marks features as supported, untested, or unsupported.
-Versioning, Object Lock, ACL/policies, virtual-hosted buckets, SigV4A, SSE-KMS,
-and cross-user copies are intentionally unsupported.
+Versioning, Object Lock, ACL/policies, SigV4A, SSE-KMS, and cross-user copies
+across unrelated My Drive accounts are intentionally unsupported. Virtual-hosted-
+style bucket endpoints (`{bucket}.{domain}`) are supported as an opt-in — see
+`S3_VIRTUAL_HOSTED_DOMAIN` below; path-style stays the default.
+
+## Google OAuth setup
+
+Login is allowed through either (or both) of two independent gates — at
+least one must be configured:
+
+- `GOOGLE_WORKSPACE_DOMAIN` — any account whose OAuth `hd` claim matches this
+  domain (i.e. any member of that **Google Workspace** org).
+- `ALLOWED_EMAILS` — a comma-separated allowlist of specific email addresses,
+  including plain consumer **Gmail** accounts, which have no `hd` claim and
+  so cannot satisfy the domain check.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create or
+   select a project.
+2. **APIs & Services → Library**: enable the **Google Drive API**.
+3. **APIs & Services → OAuth consent screen**:
+   - User type **Internal** if the Cloud project belongs to the same
+     Workspace org you're restricting to (simplest); otherwise **External**.
+     While unverified, External apps are capped at 100 **test users** — add
+     every email from your `ALLOWED_EMAILS` list there, and expect an
+     "unverified app" warning plus refresh tokens that expire after 7 days.
+   - Add scopes `openid`, `email`, `profile`, and
+     `https://www.googleapis.com/auth/drive` (Shared Drive support needs the
+     full `drive` scope; use `drive.file` instead only if you don't need
+     Shared Drive buckets — `drive.file` is not a restricted scope, so it
+     avoids the unverified-app limits above).
+4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**,
+   application type **Web application**. Add an authorized redirect URI:
+   - Dev: `http://localhost:3000/auth/google/callback`
+   - Prod: `https://<your-domain>/auth/google/callback`
+5. Copy the generated **Client ID** and **Client secret** into `.env` as
+   `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+6. Set `GOOGLE_WORKSPACE_DOMAIN` and/or `ALLOWED_EMAILS` per the gates above,
+   and `GOOGLE_REDIRECT_URI` / `GOOGLE_DRIVE_SCOPE` to match steps 3–4.
+7. Generate the two remaining secrets and put them in `.env` too:
+   ```bash
+   openssl rand -base64 32   # MASTER_ENCRYPTION_KEY
+   openssl rand -base64 48   # SESSION_SECRET
+   ```
+
+Opening this up beyond a closed allowlist to unrestricted public sign-up is
+not recommended: the `drive` scope is a Google *restricted scope*, so serving
+it to the general public requires passing Google's formal app verification
+and an annual third-party security assessment (CASA).
+
+## Virtual-hosted-style endpoint (optional)
+
+Path-style (`https://storage.example.com/my-bucket/key`) is the default and
+always works. To also accept virtual-hosted-style requests
+(`https://my-bucket.storage.example.com/key`), set:
+
+```bash
+S3_VIRTUAL_HOSTED_DOMAIN=storage.example.com
+```
+
+A request `Host` of `{bucket}.storage.example.com` then resolves the bucket
+from the subdomain instead of the first path segment; any other `Host`
+(including the bare `storage.example.com` itself) keeps using path-style.
+This needs a wildcard DNS record and a wildcard (or SAN) TLS certificate for
+`*.storage.example.com` at your reverse proxy. Leave the variable unset to
+disable virtual-hosted addressing entirely.
 
 ## Development
 
@@ -35,7 +98,8 @@ and cross-user copies are intentionally unsupported.
 export PATH="$HOME/.bun/bin:$PATH"
 bun install
 cp .env.example .env
-# Fill GOOGLE_* plus MASTER_ENCRYPTION_KEY and SESSION_SECRET.
+# Fill GOOGLE_* plus MASTER_ENCRYPTION_KEY and SESSION_SECRET — see
+# "Google OAuth setup" above.
 bun run dev
 ```
 

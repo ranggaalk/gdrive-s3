@@ -6,7 +6,12 @@ import {
   encodeContinuationToken,
   decodeContinuationToken,
 } from "../../apps/server/src/s3/pagination.ts";
-import { decodeS3Path, validateObjectKey } from "../../apps/server/src/s3/key.ts";
+import {
+  decodeS3Path,
+  resolveS3Path,
+  resolveVirtualHostedBucket,
+  validateObjectKey,
+} from "../../apps/server/src/s3/key.ts";
 import { decodeAwsChunkedBody } from "../../apps/server/src/s3/aws-chunked.ts";
 import { parseS3PayloadMode } from "../../apps/server/src/auth/s3-payload.ts";
 import { sha256Hex } from "../../apps/server/src/auth/sigv4-canonical.ts";
@@ -138,5 +143,49 @@ describe("S3 key parsing", () => {
     expect(() => validateObjectKey("")).toThrow();
     expect(() => validateObjectKey("a".repeat(1024))).not.toThrow();
     expect(() => validateObjectKey("é".repeat(513))).toThrow();
+  });
+});
+
+describe("virtual-hosted-style addressing", () => {
+  test("is disabled entirely when no domain is configured", () => {
+    expect(resolveVirtualHostedBucket("my-bucket.storage.example.com", "")).toBeNull();
+  });
+
+  test("extracts the bucket from a matching subdomain, ignoring port", () => {
+    expect(
+      resolveVirtualHostedBucket("my-bucket.storage.example.com:8787", "storage.example.com"),
+    ).toBe("my-bucket");
+  });
+
+  test("is case-insensitive on the host but not on the configured domain input", () => {
+    expect(
+      resolveVirtualHostedBucket("My-Bucket.Storage.Example.Com", "storage.example.com"),
+    ).toBe("my-bucket");
+  });
+
+  test("falls back to path-style for the bare domain or unrelated hosts", () => {
+    expect(resolveVirtualHostedBucket("storage.example.com", "storage.example.com")).toBeNull();
+    expect(resolveVirtualHostedBucket("other.example.com", "storage.example.com")).toBeNull();
+    expect(resolveVirtualHostedBucket(null, "storage.example.com")).toBeNull();
+  });
+
+  test("resolveS3Path prefers virtual-hosted when the Host matches", () => {
+    expect(
+      resolveS3Path("/a/b.txt", "my-bucket.storage.example.com", "storage.example.com"),
+    ).toEqual({ bucket: "my-bucket", key: "a/b.txt" });
+    expect(
+      resolveS3Path("/", "my-bucket.storage.example.com", "storage.example.com"),
+    ).toEqual({ bucket: "my-bucket", key: null });
+  });
+
+  test("resolveS3Path stays path-style when Host doesn't match", () => {
+    expect(resolveS3Path("/bucket/key", "storage.example.com", "storage.example.com")).toEqual({
+      bucket: "bucket",
+      key: "key",
+    });
+    expect(resolveS3Path("/", "storage.example.com", "storage.example.com")).toEqual({
+      bucket: null,
+      key: null,
+    });
   });
 });

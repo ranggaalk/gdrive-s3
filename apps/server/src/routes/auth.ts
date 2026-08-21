@@ -85,7 +85,10 @@ export async function handleAuthCallback(
       googleSub: claims.sub,
       email: claims.email,
       displayName: claims.name ?? null,
-      hostedDomain: claims.hd!,
+      // Personal accounts admitted via ALLOWED_EMAILS have no `hd` claim;
+      // fall back to the email's domain so Shared Drive member lookups
+      // (which join on hosted_domain) stay scoped consistently.
+      hostedDomain: claims.hd ?? claims.email.split("@")[1]!,
     });
 
     // Google may omit refresh_token on incremental consent. Preserve the

@@ -23,7 +23,6 @@ export const COMPAT_MATRIX: readonly CompatRow[] = [
     feature: "Path-style endpoint",
     status: "supported",
     verifiedBy: ["aws-sdk"],
-    notes: "Virtual-hosted style tetap tidak didukung.",
   },
   { feature: "AWS SigV4 header (data plane)", status: "supported", verifiedBy: ["aws-sdk"] },
   { feature: "ListBuckets", status: "supported", verifiedBy: ["aws-sdk"] },
@@ -72,7 +71,14 @@ export const COMPAT_MATRIX: readonly CompatRow[] = [
   { feature: "Object versioning", status: "unsupported" },
   { feature: "Object Lock / Legal Hold", status: "unsupported" },
   { feature: "ACL & Bucket Policy", status: "unsupported" },
-  { feature: "Virtual-hosted style bucket endpoint", status: "unsupported" },
+  {
+    feature: "Virtual-hosted style bucket endpoint",
+    status: "supported",
+    verifiedBy: ["unit"],
+    notes:
+      "Opt-in via S3_VIRTUAL_HOSTED_DOMAIN; disabled (path-style only) unless set. " +
+      "{bucket}.{domain} resolves the bucket from Host, path-style keeps working unchanged.",
+  },
   { feature: "SigV4A / PresignedPost (form)", status: "unsupported" },
   { feature: "CopyObject with byte range / cross-user", status: "unsupported" },
   { feature: "SSE-KMS / Server-side encryption", status: "unsupported" },

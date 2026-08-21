@@ -12,7 +12,11 @@ export interface AppConfig {
   serverPort: number;
 
   google: {
+    // Empty string means the Workspace-domain login path is disabled.
     workspaceDomain: string;
+    // Lowercased emails allowed to log in regardless of hosted domain.
+    // At least one of workspaceDomain or allowedEmails must be set.
+    allowedEmails: string[];
     clientId: string;
     clientSecret: string;
     redirectUri: string;
@@ -34,6 +38,10 @@ export interface AppConfig {
   s3PublicEndpoint: string;
   s3Region: string;
   s3RequireTls: boolean;
+  // "" disables virtual-hosted-style addressing (path-style only). When set,
+  // a request Host of "{bucket}.{this value}" is treated as virtual-hosted;
+  // any other Host (including the bare domain itself) stays path-style.
+  s3VirtualHostedDomain: string;
 
   maxSinglePutBytes: number;
   maxMultipartObjectBytes: number;
@@ -94,6 +102,15 @@ function optional(
   return value === undefined || value.trim() === "" ? fallback : value;
 }
 
+function parseAllowedEmails(value: string): string[] {
+  return [...new Set(
+    value
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  )];
+}
+
 function parseIntStrict(value: string, key: string): number {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 0) {
@@ -136,6 +153,17 @@ function validateUrl(value: string, key: string): string {
     throw new ConfigError(`Env var ${key} must be a valid URL, got: ${value}`);
   }
   return value;
+}
+
+const HOSTNAME_PATTERN = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))*$/i;
+
+function validateHostname(value: string, key: string): string {
+  if (!HOSTNAME_PATTERN.test(value)) {
+    throw new ConfigError(
+      `Env var ${key} must be a bare hostname (no scheme, path, or port), got: ${value}`,
+    );
+  }
+  return value.toLowerCase();
 }
 
 function validateEndpointUrl(value: string, key: string): string {
@@ -187,7 +215,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     serverPort: parseIntStrict(optional(env, "SERVER_PORT", "3000"), "SERVER_PORT"),
 
     google: {
-      workspaceDomain: required(env, "GOOGLE_WORKSPACE_DOMAIN"),
+      workspaceDomain: optional(env, "GOOGLE_WORKSPACE_DOMAIN", ""),
+      allowedEmails: parseAllowedEmails(optional(env, "ALLOWED_EMAILS", "")),
       clientId: required(env, "GOOGLE_CLIENT_ID"),
       clientSecret: required(env, "GOOGLE_CLIENT_SECRET"),
       redirectUri: validateUrl(required(env, "GOOGLE_REDIRECT_URI"), "GOOGLE_REDIRECT_URI"),
@@ -230,6 +259,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ),
     s3Region: optional(env, "S3_REGION", "us-east-1"),
     s3RequireTls,
+    s3VirtualHostedDomain: (() => {
+      const raw = optional(env, "S3_VIRTUAL_HOSTED_DOMAIN", "");
+      return raw === "" ? "" : validateHostname(raw, "S3_VIRTUAL_HOSTED_DOMAIN");
+    })(),
 
     maxSinglePutBytes: parseIntStrict(
       optional(env, "MAX_SINGLE_PUT_BYTES", "5368709120"),
@@ -345,6 +378,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   };
 
   // Cross-field security invariants.
+  if (config.google.workspaceDomain === "" && config.google.allowedEmails.length === 0) {
+    throw new ConfigError(
+      "Set GOOGLE_WORKSPACE_DOMAIN and/or ALLOWED_EMAILS so at least one login path is configured",
+    );
+  }
   if (config.isProduction && config.s3RequireTls === false) {
     throw new ConfigError("S3_REQUIRE_TLS must be true in production");
   }

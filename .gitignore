@@ -1,8 +1,8 @@
 node_modules/
 dist/
-data/*.sqlite
-data/*.sqlite-*
-data/multipart/
+**/data/*.sqlite
+**/data/*.sqlite-*
+**/data/multipart/
 .env
 .env.local
 *.log

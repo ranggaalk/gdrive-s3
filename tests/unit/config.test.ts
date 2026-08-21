@@ -48,6 +48,18 @@ describe("loadConfig", () => {
     expect(() => loadConfig(baseEnv({ GOOGLE_CLIENT_ID: undefined }))).toThrow(ConfigError);
   });
 
+  test("allows ALLOWED_EMAILS to substitute for GOOGLE_WORKSPACE_DOMAIN", () => {
+    const cfg = loadConfig(
+      baseEnv({ GOOGLE_WORKSPACE_DOMAIN: undefined, ALLOWED_EMAILS: "User@Example.com, a@b.com" }),
+    );
+    expect(cfg.google.workspaceDomain).toBe("");
+    expect(cfg.google.allowedEmails).toEqual(["user@example.com", "a@b.com"]);
+  });
+
+  test("rejects config with neither GOOGLE_WORKSPACE_DOMAIN nor ALLOWED_EMAILS", () => {
+    expect(() => loadConfig(baseEnv({ GOOGLE_WORKSPACE_DOMAIN: undefined }))).toThrow(ConfigError);
+  });
+
   test("rejects master key that is not 32 bytes", () => {
     const short = Buffer.alloc(16, 1).toString("base64");
     expect(() => loadConfig(baseEnv({ MASTER_ENCRYPTION_KEY: short }))).toThrow(ConfigError);
@@ -115,5 +127,26 @@ describe("loadConfig", () => {
       loadConfig(baseEnv({ RATE_LIMIT_SIGNATURE_FAILURES_PER_MINUTE: "0" })),
     ).toThrow(ConfigError);
     expect(() => loadConfig(baseEnv({ RATE_LIMIT_MAX_KEYS: "0" }))).toThrow(ConfigError);
+  });
+
+  test("defaults S3_VIRTUAL_HOSTED_DOMAIN to disabled", () => {
+    expect(loadConfig(baseEnv()).s3VirtualHostedDomain).toBe("");
+  });
+
+  test("lowercases a valid S3_VIRTUAL_HOSTED_DOMAIN", () => {
+    const cfg = loadConfig(baseEnv({ S3_VIRTUAL_HOSTED_DOMAIN: "Storage.Example.Com" }));
+    expect(cfg.s3VirtualHostedDomain).toBe("storage.example.com");
+  });
+
+  test("rejects an S3_VIRTUAL_HOSTED_DOMAIN with a scheme, path, or port", () => {
+    expect(() =>
+      loadConfig(baseEnv({ S3_VIRTUAL_HOSTED_DOMAIN: "https://storage.example.com" })),
+    ).toThrow(ConfigError);
+    expect(() =>
+      loadConfig(baseEnv({ S3_VIRTUAL_HOSTED_DOMAIN: "storage.example.com/prefix" })),
+    ).toThrow(ConfigError);
+    expect(() =>
+      loadConfig(baseEnv({ S3_VIRTUAL_HOSTED_DOMAIN: "storage.example.com:8787" })),
+    ).toThrow(ConfigError);
   });
 });

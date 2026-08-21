@@ -45,6 +45,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     s3PublicEndpoint: "http://localhost",
     s3Region: "us-east-1",
     s3RequireTls: false,
+    s3VirtualHostedDomain: "",
     maxSinglePutBytes: 100 * 1024 * 1024,
     maxMultipartObjectBytes: 1 * 1024 * 1024 * 1024,
     maxParts: 10000,

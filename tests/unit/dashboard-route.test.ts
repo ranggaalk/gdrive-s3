@@ -16,28 +16,28 @@ const sections: DashboardSection[] = [
 
 describe("dashboard route", () => {
   test("defaults empty and unknown locations to overview", () => {
-    expect(parseDashboardLocation({ search: "" })).toEqual({
+    expect(parseDashboardLocation({ pathname: "/" })).toEqual({
       kind: "section",
       page: "overview",
     });
-    expect(parseDashboardLocation({ search: "?page=unknown&bucket=ignored" })).toEqual({
+    expect(parseDashboardLocation({ pathname: "/unknown" })).toEqual({
       kind: "section",
       page: "overview",
     });
-    expect(dashboardRouteUrl(parseDashboardLocation({ search: "?page=unknown" }))).toBe("/");
+    expect(dashboardRouteUrl(parseDashboardLocation({ pathname: "/unknown" }))).toBe("/");
   });
 
   test("round trips every dashboard section", () => {
     for (const page of sections) {
       const route = { kind: "section" as const, page };
-      const url = new URL(dashboardRouteUrl(route), "http://dashboard.test");
-      expect(parseDashboardLocation(url)).toEqual(route);
+      const url = dashboardRouteUrl(route);
+      expect(parseDashboardLocation({ pathname: url })).toEqual(route);
       expect(dashboardSection(route)).toBe(page);
     }
   });
 
-  test("models bucket details as part of the buckets section", () => {
-    const route = parseDashboardLocation({ search: "?page=buckets&bucket=bucket_123" });
+  test("models bucket details as a nested buckets path", () => {
+    const route = parseDashboardLocation({ pathname: "/buckets/bucket_123" });
     expect(route).toEqual({
       kind: "bucket",
       page: "buckets",
@@ -46,31 +46,30 @@ describe("dashboard route", () => {
     expect(dashboardSection(route)).toBe("buckets");
   });
 
-  test("encodes bucket IDs safely and canonicalizes unrelated parameters", () => {
+  test("encodes bucket IDs safely and round trips them", () => {
     const url = dashboardRouteUrl({
       kind: "bucket",
       page: "buckets",
       bucketId: "bucket / finance",
     });
-    expect(url).toBe("/?page=buckets&bucket=bucket+%2F+finance");
-    expect(parseDashboardLocation(new URL(url, "http://dashboard.test"))).toEqual({
+    expect(url).toBe("/buckets/bucket%20%2F%20finance");
+    expect(parseDashboardLocation({ pathname: url })).toEqual({
       kind: "bucket",
       page: "buckets",
       bucketId: "bucket / finance",
     });
-    expect(
-      dashboardRouteUrl(
-        parseDashboardLocation({ search: "?extra=1&page=buckets&bucket=bucket_123&bucket=duplicate" }),
-      ),
-    ).toBe("/?page=buckets&bucket=bucket_123");
   });
 
-  test("ignores blank or misplaced bucket parameters", () => {
-    expect(parseDashboardLocation({ search: "?page=buckets&bucket=%20" })).toEqual({
+  test("ignores blank bucket segments and extra nested segments", () => {
+    expect(parseDashboardLocation({ pathname: "/buckets" })).toEqual({
       kind: "section",
       page: "buckets",
     });
-    expect(parseDashboardLocation({ search: "?page=activity&bucket=bucket_123" })).toEqual({
+    expect(parseDashboardLocation({ pathname: "/buckets/%20" })).toEqual({
+      kind: "section",
+      page: "buckets",
+    });
+    expect(parseDashboardLocation({ pathname: "/activity" })).toEqual({
       kind: "section",
       page: "activity",
     });

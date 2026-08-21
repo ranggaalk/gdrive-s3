@@ -65,8 +65,12 @@ export function buildAuthUrl(config: AppConfig, input: StartUrlInput): string {
     state: input.state,
     code_challenge: input.pkceChallenge,
     code_challenge_method: "S256",
-    hd: config.google.workspaceDomain, // UX hint only
   });
+  // UX hint only; omitted when the app also accepts non-Workspace accounts
+  // via ALLOWED_EMAILS, since Google rejects a blank `hd` param.
+  if (config.google.workspaceDomain !== "") {
+    params.set("hd", config.google.workspaceDomain);
+  }
   if (input.promptConsent) params.set("prompt", "consent");
   return `${AUTH_ENDPOINT}?${params.toString()}`;
 }
@@ -205,7 +209,8 @@ async function verifyRs256(
 
 /**
  * Verify a Google ID token: signature, issuer, audience, expiry, verified
- * email, and the `hd` claim equal to the configured Workspace domain.
+ * email, and that the account is allowed in — either its `hd` claim matches
+ * the configured Workspace domain, or its email is in ALLOWED_EMAILS.
  */
 export async function verifyIdToken(
   config: AppConfig,
@@ -232,8 +237,12 @@ export async function verifyIdToken(
     throw new Error("id token expired");
   }
   if (!claims.email_verified) throw new Error("email not verified");
-  if (claims.hd !== config.google.workspaceDomain) {
-    throw new Error("workspace domain not allowed");
+
+  const domainAllowed =
+    config.google.workspaceDomain !== "" && claims.hd === config.google.workspaceDomain;
+  const emailAllowed = config.google.allowedEmails.includes(claims.email.toLowerCase());
+  if (!domainAllowed && !emailAllowed) {
+    throw new Error("account not allowed");
   }
   return claims;
 }

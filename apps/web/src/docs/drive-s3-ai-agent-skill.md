@@ -10,7 +10,7 @@ DriveS3 Gateway exposes an S3-compatible API backed by Google Drive. Application
 - Use path-style addressing.
 - Use the configured endpoint: `{{S3_ENDPOINT}}`.
 - Use the signing region: `{{S3_REGION}}`.
-- Do not use virtual-hosted bucket subdomains.
+- Use path-style addressing unless the operator confirms this deployment has `S3_VIRTUAL_HOSTED_DOMAIN` set; virtual-hosted bucket subdomains are opt-in and off by default.
 - Store credentials in a secret manager or environment variables, never in source code.
 - SQLite is the namespace source of truth; applications must interact through the S3/API surface, not directly through Google Drive.
 
@@ -144,7 +144,7 @@ Do not design against unsupported S3 features unless the gateway compatibility m
 
 Avoid or explicitly handle:
 
-- Virtual-hosted bucket URLs.
+- Virtual-hosted bucket URLs, unless the operator confirms `S3_VIRTUAL_HOSTED_DOMAIN` is set for this deployment.
 - ACLs and bucket policies.
 - Object Lock and versioning.
 - SSE-KMS and SigV4A.

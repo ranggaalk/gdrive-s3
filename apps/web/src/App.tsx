@@ -89,8 +89,7 @@ export function App() {
 
   const navigate = useCallback((nextRoute: DashboardRoute) => {
     const url = dashboardRouteUrl(nextRoute);
-    const current = `${window.location.pathname}${window.location.search}`;
-    if (current !== url || window.location.hash) {
+    if (window.location.pathname !== url || window.location.search || window.location.hash) {
       window.history.pushState(null, "", url);
     }
     setRoute(nextRoute);
@@ -107,8 +106,7 @@ export function App() {
   useEffect(() => {
     if (!me) return;
     const canonical = dashboardRouteUrl(route);
-    const current = `${window.location.pathname}${window.location.search}`;
-    if (current !== canonical || window.location.hash) {
+    if (window.location.pathname !== canonical || window.location.search || window.location.hash) {
       window.history.replaceState(null, "", canonical);
     }
   }, [me, route]);

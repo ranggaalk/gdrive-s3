@@ -1,5 +1,8 @@
-// S3 data-plane router (AGENTS.md §11-13). Path-style only. Authenticates with
-// SigV4, resolves the owning user, and dispatches to bucket/object operations.
+// S3 data-plane router (AGENTS.md §11-13). Path-style always works; virtual-
+// hosted-style (`{bucket}.{S3_VIRTUAL_HOSTED_DOMAIN}`) is accepted only when
+// the Host header matches the configured domain (see s3/key.ts). Authenticates
+// with SigV4, resolves the owning user, and dispatches to bucket/object
+// operations.
 
 import type { AppContext } from "../context.ts";
 import type { S3RequestContext } from "./context.ts";
@@ -7,7 +10,7 @@ import { driveErrorToS3Error, S3Error, s3ErrorResponse } from "./errors.ts";
 import { DriveError } from "../drive/errors.ts";
 import { SigV4Verifier, type SigV4Failure } from "../auth/s3-sigv4.ts";
 import { SigV4PresignedVerifier } from "../auth/s3-sigv4-presigned.ts";
-import { decodeS3Path } from "./key.ts";
+import { resolveS3Path } from "./key.ts";
 import * as buckets from "./operations/buckets.ts";
 import * as objects from "./operations/objects.ts";
 import * as multipart from "./operations/multipart.ts";
@@ -78,7 +81,11 @@ export async function handleS3(
       throw failureToError(auth.failure);
     }
 
-    const { bucket, key } = decodeS3Path(url.pathname);
+    const { bucket, key } = resolveS3Path(
+      url.pathname,
+      req.headers.get("host"),
+      app.config.s3VirtualHostedDomain,
+    );
     const ctx: S3RequestContext = {
       app,
       userId: auth.userId,

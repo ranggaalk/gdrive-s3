@@ -96,6 +96,7 @@ describe("OAuth Shared Drive scopes", () => {
     const config = testConfig({
       google: {
         workspaceDomain: "x.com",
+        allowedEmails: [],
         clientId: "client",
         clientSecret: "secret",
         redirectUri: "http://localhost/callback",
@@ -118,5 +119,22 @@ describe("OAuth Shared Drive scopes", () => {
         "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive",
       ),
     ).toBe(true);
+  });
+
+  test("auth URL omits hd hint when only ALLOWED_EMAILS is configured", () => {
+    const config = testConfig({
+      google: {
+        workspaceDomain: "",
+        allowedEmails: ["user@example.com"],
+        clientId: "client",
+        clientSecret: "secret",
+        redirectUri: "http://localhost/callback",
+        driveScope: "https://www.googleapis.com/auth/drive",
+      },
+    });
+    const url = new URL(
+      buildAuthUrl(config, { state: "state", pkceChallenge: "challenge", promptConsent: true }),
+    );
+    expect(url.searchParams.has("hd")).toBe(false);
   });
 });

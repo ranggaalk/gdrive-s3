@@ -29,13 +29,13 @@ describe("DashboardServer", () => {
     expect(await res!.text()).toContain("DriveS3");
   });
 
-  test("serves dashboard routes encoded in the root query", async () => {
+  test("serves dashboard section and bucket detail paths", async () => {
     const dashboard = new DashboardServer(testConfig({ serveDashboard: true, staticRoot: makeRoot() }));
-    const res = await dashboard.serve(
-      new Request("http://x/?page=buckets&bucket=bucket_123"),
-    );
-    expect(res?.status).toBe(200);
-    expect(await res!.text()).toContain("DriveS3");
+    for (const path of ["/buckets", "/buckets/bucket_123", "/activity", "/credentials", "/documentation"]) {
+      const res = await dashboard.serve(new Request(`http://x${path}`));
+      expect(res?.status).toBe(200);
+      expect(await res!.text()).toContain("DriveS3");
+    }
   });
 
   test("serves hashed assets with immutable caching", async () => {

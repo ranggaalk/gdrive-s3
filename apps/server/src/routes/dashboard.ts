@@ -10,6 +10,22 @@ import type { AppConfig } from "../config.ts";
 const ASSET_PREFIX = "/__drives3_assets/";
 const ASSET_PATH = /^\/__drives3_assets\/[A-Za-z0-9._-]+$/;
 
+// Client-side dashboard routes (apps/web/src/lib/dashboard-route.ts). These
+// top-level segments are reserved bucket names (util/bucket-name.ts) so they
+// can never collide with a real S3 path-style request.
+const DASHBOARD_ROUTE_SEGMENTS = new Set([
+  "overview",
+  "buckets",
+  "credentials",
+  "activity",
+  "documentation",
+]);
+
+function isDashboardRoutePath(path: string): boolean {
+  const first = path.split("/").filter(Boolean)[0];
+  return first !== undefined && DASHBOARD_ROUTE_SEGMENTS.has(first);
+}
+
 export class DashboardServer {
   private readonly root: string;
   private readonly indexHtml: Uint8Array | null;
@@ -28,7 +44,7 @@ export class DashboardServer {
     if (looksLikeS3Request(req)) return null;
     const path = new URL(req.url).pathname;
 
-    if (path === "/" || path === "/index.html") {
+    if (path === "/" || path === "/index.html" || isDashboardRoutePath(path)) {
       return new Response(req.method === "HEAD" ? null : this.indexHtml.slice(), {
         status: 200,
         headers: {

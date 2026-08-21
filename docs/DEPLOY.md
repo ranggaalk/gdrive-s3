@@ -7,21 +7,31 @@ DriveS3 Gateway ships as a single Bun process serving:
 - `/api/*` — dashboard control plane;
 - `/`, `/index.html`, `/favicon.ico`, `/__drives3_assets/*` — the built dashboard
   (`STATIC_ROOT`);
+- `/overview`, `/buckets`, `/buckets/:bucketId`, `/credentials`, `/activity`,
+  `/documentation` — client-side dashboard section routes, also served as the
+  same `index.html` shell;
 - `/__drives3_share/:token` — rate-limited anonymous public object downloads;
 - everything else — the S3 path-style data plane.
 
 The reserved `__drives3_assets/` prefix is invalid as an S3 bucket name (underscore),
-so dashboard assets cannot collide with `/{bucket}/{key}` routes. Authenticated
-SigV4 requests never receive dashboard responses; the router falls through to
-the S3 handler as soon as an `Authorization` or `X-Amz-*` header/query is present.
+so dashboard assets cannot collide with `/{bucket}/{key}` routes. The dashboard
+section names above (`overview`, `buckets`, `credentials`, `activity`,
+`documentation`) are likewise rejected as bucket names by
+`util/bucket-name.ts`, so they can never collide with a real bucket either.
+Authenticated SigV4 requests never receive dashboard responses; the router
+falls through to the S3 handler as soon as an `Authorization` or `X-Amz-*`
+header/query is present.
 
 ## 1. Requirements
 
 - Reverse proxy (Caddy, nginx, Traefik) providing HTTPS and forwarding to the
   gateway on `127.0.0.1:8787`.
 - Persistent volume for `data/` (SQLite + multipart).
-- Google Workspace OAuth client with an authorized redirect URI equal to
-  `APP_ORIGIN + /auth/google/callback`.
+- Google OAuth client with an authorized redirect URI equal to
+  `APP_ORIGIN + /auth/google/callback`. Restrict who can log in via
+  `GOOGLE_WORKSPACE_DOMAIN` (a Workspace org), `ALLOWED_EMAILS` (a specific
+  allowlist, including personal Gmail accounts), or both — see
+  [README](../README.md#google-oauth-setup).
 - Base64-encoded 32-byte `MASTER_ENCRYPTION_KEY` and `SESSION_SECRET`
   (`openssl rand -base64 32`).
 
@@ -87,8 +97,9 @@ backup before upgrades.
 
 Required (see `.env.example`):
 
-- `GOOGLE_WORKSPACE_DOMAIN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  `GOOGLE_REDIRECT_URI`;
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`;
+- at least one of `GOOGLE_WORKSPACE_DOMAIN` or `ALLOWED_EMAILS` (startup
+  refuses to boot with neither set);
 - `MASTER_ENCRYPTION_KEY`, `SESSION_SECRET`;
 - production defaults: `NODE_ENV=production`, `S3_REQUIRE_TLS=true`,
   `APP_ORIGIN=https://…`, `TRUST_PROXY=true` when behind a proxy.
@@ -97,6 +108,11 @@ Recommended production overrides:
 
 - `S3_PUBLIC_ENDPOINT=https://<your-domain>` to make presigned URLs return the
   public URL clients should call.
+- `S3_VIRTUAL_HOSTED_DOMAIN=<your-domain>` to also accept virtual-hosted-style
+  requests (`{bucket}.<your-domain>`) alongside path-style, which stays the
+  default regardless. Requires a wildcard DNS record and wildcard/SAN TLS
+  certificate for `*.<your-domain>` at the reverse proxy — see
+  [README](../README.md#virtual-hosted-style-endpoint-optional).
 - Set `RATE_LIMIT_*` thresholds appropriate to your workload.
 
 The gateway refuses to start if any of these hold: `NODE_ENV=production` and

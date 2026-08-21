@@ -17,6 +17,11 @@ describe("isValidBucketName", () => {
     "192.168.0.1", // IPv4-like
     "bucket_name", // underscore
     "bucket name", // space
+    "buckets", // reserved dashboard route
+    "credentials", // reserved dashboard route
+    "activity", // reserved dashboard route
+    "documentation", // reserved dashboard route
+    "overview", // reserved dashboard route
   ];
 
   for (const name of valid) {

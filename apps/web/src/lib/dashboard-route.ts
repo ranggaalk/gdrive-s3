@@ -17,31 +17,38 @@ const SECTIONS = new Set<DashboardSection>([
   "documentation",
 ]);
 
-export function parseDashboardLocation(
-  location: { search: string },
-): DashboardRoute {
-  const params = new URLSearchParams(location.search);
-  const page = params.get("page");
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
 
-  if (!page) return { kind: "section", page: "overview" };
-  if (!SECTIONS.has(page as DashboardSection)) {
+export function parseDashboardLocation(
+  location: { pathname: string },
+): DashboardRoute {
+  const segments = location.pathname.split("/").filter(Boolean);
+  const first = segments[0];
+
+  if (!first || !SECTIONS.has(first as DashboardSection)) {
     return { kind: "section", page: "overview" };
   }
 
-  if (page === "buckets") {
-    const bucketId = params.get("bucket")?.trim();
+  if (first === "buckets" && segments[1] !== undefined) {
+    const bucketId = safeDecode(segments[1]).trim();
     if (bucketId) return { kind: "bucket", page: "buckets", bucketId };
   }
 
-  return { kind: "section", page: page as DashboardSection };
+  return { kind: "section", page: first as DashboardSection };
 }
 
 export function dashboardRouteUrl(route: DashboardRoute): string {
-  if (route.kind === "section" && route.page === "overview") return "/";
-
-  const params = new URLSearchParams({ page: route.page });
-  if (route.kind === "bucket") params.set("bucket", route.bucketId);
-  return `/?${params.toString()}`;
+  if (route.kind === "bucket") {
+    return `/buckets/${encodeURIComponent(route.bucketId)}`;
+  }
+  if (route.page === "overview") return "/";
+  return `/${route.page}`;
 }
 
 export function dashboardSection(route: DashboardRoute): DashboardSection {

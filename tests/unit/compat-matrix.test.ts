@@ -63,6 +63,13 @@ describe("S3 compatibility matrix", () => {
     expect(byFeature.get("Object versioning")).toBe("unsupported");
     expect(byFeature.get("Object Lock / Legal Hold")).toBe("unsupported");
     expect(byFeature.get("ACL & Bucket Policy")).toBe("unsupported");
-    expect(byFeature.get("Virtual-hosted style bucket endpoint")).toBe("unsupported");
+  });
+
+  test("virtual-hosted style bucket endpoint is supported with unit evidence", () => {
+    const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row]));
+    expect(byFeature.get("Virtual-hosted style bucket endpoint")).toMatchObject({
+      status: "supported",
+      verifiedBy: ["unit"],
+    });
   });
 });

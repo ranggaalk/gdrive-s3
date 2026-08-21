@@ -4,12 +4,23 @@
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
+// Top-level dashboard route segments (routes/dashboard.ts) — a bucket with
+// one of these names would be unreachable via plain browser navigation.
+const RESERVED_NAMES = new Set([
+  "overview",
+  "buckets",
+  "credentials",
+  "activity",
+  "documentation",
+]);
+
 export function isValidBucketName(name: string): boolean {
   if (name.length < 3 || name.length > 63) return false;
   if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(name)) return false;
   if (name.includes("..")) return false;
   if (name.includes(".-") || name.includes("-.")) return false;
   if (IPV4.test(name)) return false;
+  if (RESERVED_NAMES.has(name)) return false;
   return true;
 }
 

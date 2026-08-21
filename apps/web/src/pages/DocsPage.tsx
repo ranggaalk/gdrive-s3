@@ -170,7 +170,7 @@ export function DocsPage({ onOpenBuckets, onOpenCredentials }: { onOpenBuckets: 
           <CardHeader><CardTitle className="flex items-center gap-2"><CheckCircle2 className="size-5" /> Kompatibilitas</CardTitle><CardDescription>Ikuti matrix Overview sebagai sumber status dukungan lengkap.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             {clients.length > 0 ? <div className="space-y-3">{clients.map((item) => <div key={item.feature} className="flex items-start justify-between gap-3"><span className="text-sm">{item.feature}</span><Badge variant={statusVariant[item.status]}>{statusLabel[item.status]}</Badge></div>)}</div> : <p className="text-sm text-muted-foreground">AWS CLI dan AWS SDK JavaScript v3 telah diverifikasi. Status rclone dan MinIO mc mengikuti matrix kompatibilitas gateway.</p>}
-            <Alert variant="warning"><TriangleAlert /><AlertTitle>Batasan penting</AlertTitle><AlertDescription>Gunakan path-style, bukan bucket subdomain. Virtual-hosted style, ACL/bucket policy, versioning, Object Lock, SigV4A, dan SSE-KMS tidak didukung.</AlertDescription></Alert>
+            <Alert variant="warning"><TriangleAlert /><AlertTitle>Batasan penting</AlertTitle><AlertDescription>Path-style selalu aktif; virtual-hosted style (bucket subdomain) tersedia opsional lewat S3_VIRTUAL_HOSTED_DOMAIN. ACL/bucket policy, versioning, Object Lock, SigV4A, dan SSE-KMS tidak didukung.</AlertDescription></Alert>
           </CardContent>
         </Card>
       </div>
