@@ -40,6 +40,7 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const [sharedDrives, setSharedDrives] = useState<SharedDriveSummary[]>([]);
   const [sharedDriveId, setSharedDriveId] = useState("");
   const [drivesLoading, setDrivesLoading] = useState(false);
+  const [drivesLoaded, setDrivesLoaded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Bucket | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -59,18 +60,21 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   useEffect(() => { void load(); }, [load]);
 
   const loadSharedDrives = async () => {
-    if (sharedDrives.length > 0 || drivesLoading) return;
+    if (drivesLoaded || drivesLoading) return;
     setDrivesLoading(true);
     setFormError(null);
     try {
       const page = await listSharedDrives();
       setSharedDrives(page.items);
+      setDrivesLoaded(true);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setDrivesLoading(false);
     }
   };
+  const writableSharedDrives = sharedDrives.filter((drive) => drive.canAddChildren);
+  const noSharedDrives = drivesLoaded && writableSharedDrives.length === 0;
 
   const doCreate = async (event: FormEvent) => {
     event.preventDefault();
@@ -139,7 +143,7 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   return (
     <div className="space-y-6">
       {error ? <ErrorAlert message={error} /> : null}
-      <div className="flex justify-end"><Button onClick={() => setShowCreate(true)}><Plus /> Buat bucket</Button></div>
+      <div className="flex justify-end"><Button onClick={() => { setShowCreate(true); void loadSharedDrives(); }}><Plus /> Buat bucket</Button></div>
 
       {buckets.length === 0 ? (
         <EmptyState icon={PackageOpen} title="Belum ada bucket" description="Buat bucket pertama Anda di My Drive atau Shared Drive." />
@@ -160,14 +164,14 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
         </div>
       )}
 
-      <Dialog open={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); } }}>
+      <Dialog open={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); if (open) void loadSharedDrives(); } }}>
         <DialogContent>
           <form onSubmit={(event) => void doCreate(event)} className="space-y-5">
             <DialogHeader><DialogTitle>Buat bucket</DialogTitle><DialogDescription>Pilih lokasi penyimpanan. Lokasi tidak dapat dipindahkan setelah bucket dibuat.</DialogDescription></DialogHeader>
             {formError ? <ErrorAlert message={formError} /> : null}
             <div className="space-y-2"><Label htmlFor="bucket-name">Nama bucket</Label><Input id="bucket-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus aria-invalid={Boolean(formError)} aria-describedby="bucket-help" /><p id="bucket-help" className="text-xs text-muted-foreground">3-63 karakter, huruf kecil, angka, titik, dan minus.</p></div>
-            <fieldset className="space-y-2"><legend className="text-sm font-medium">Lokasi</legend><div className="grid grid-cols-2 gap-2"><Button type="button" variant={storageKind === "my_drive" ? "default" : "outline"} onClick={() => setStorageKind("my_drive")}><HardDrive /> My Drive</Button><Button type="button" variant={storageKind === "shared_drive" ? "default" : "outline"} onClick={() => { setStorageKind("shared_drive"); void loadSharedDrives(); }}><Share2 /> Shared Drive</Button></div></fieldset>
-            {storageKind === "shared_drive" ? <div className="space-y-2"><Label>Shared Drive</Label><Select value={sharedDriveId} onValueChange={setSharedDriveId} disabled={drivesLoading} placeholder={drivesLoading ? "Memuat Shared Drive…" : "Pilih Shared Drive"} options={sharedDrives.filter((drive) => drive.canAddChildren).map((drive) => ({ value: drive.id, label: drive.name }))} /><p className="text-xs text-muted-foreground">Hanya Shared Drive yang dapat ditulisi ditampilkan. Anggota S3 dikelola setelah bucket dibuat.</p></div> : null}
+            <fieldset className="space-y-2"><legend className="text-sm font-medium">Lokasi</legend><div className="grid grid-cols-2 gap-2"><Button type="button" variant={storageKind === "my_drive" ? "default" : "outline"} onClick={() => setStorageKind("my_drive")}><HardDrive /> My Drive</Button><Button type="button" variant={storageKind === "shared_drive" ? "default" : "outline"} disabled={drivesLoading || noSharedDrives} title={noSharedDrives ? "Tidak ada Shared Drive yang dapat ditulisi" : undefined} onClick={() => setStorageKind("shared_drive")}><Share2 /> Shared Drive</Button></div>{noSharedDrives ? <p className="text-xs text-muted-foreground">Tidak ada Shared Drive yang dapat ditulisi untuk akun Anda.</p> : null}</fieldset>
+            {storageKind === "shared_drive" ? <div className="space-y-2"><Label>Shared Drive</Label><Select value={sharedDriveId} onValueChange={setSharedDriveId} disabled={drivesLoading} placeholder={drivesLoading ? "Memuat Shared Drive…" : "Pilih Shared Drive"} options={writableSharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} /><p className="text-xs text-muted-foreground">Hanya Shared Drive yang dapat ditulisi ditampilkan. Anggota S3 dikelola setelah bucket dibuat.</p></div> : null}
             <DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>Batal</Button><Button type="submit" disabled={name.trim().length < 3 || creating || (storageKind === "shared_drive" && !sharedDriveId)}>{creating ? "Membuat…" : "Buat"}</Button></DialogFooter>
           </form>
         </DialogContent>
