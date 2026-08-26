@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Cloud, Database, PackageOpen, RefreshCw } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { CheckCircle2, Cloud, CloudOff, Database, PackageOpen, RefreshCw, ShieldAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -113,11 +114,17 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
 
   if (loading) return <LoadingState label={t.overview.loading} />;
 
-  const stats = [
-    { label: t.overview.statBucket, value: bucketCount, icon: Database, tone: "text-primary" },
-    { label: t.overview.statSharedDrive, value: sharedBucketCount, icon: Cloud, tone: "text-primary" },
-    { label: t.overview.statObjects, value: objectCount, icon: PackageOpen, tone: "text-primary" },
-    { label: t.overview.statAccessIssues, value: bucketAccessErrors, icon: RefreshCw, tone: bucketAccessErrors > 0 ? "text-destructive" : "text-primary" },
+  type StatTone = "accent" | "success" | "destructive";
+  const TONE_CLASSES: Record<StatTone, { badge: string; icon: string }> = {
+    accent: { badge: "bg-accent", icon: "text-accent-foreground" },
+    success: { badge: "bg-success/10", icon: "text-success" },
+    destructive: { badge: "bg-destructive/10", icon: "text-destructive" },
+  };
+
+  const stats: Array<{ label: string; value: number; icon: LucideIcon; tone: StatTone }> = [
+    { label: t.overview.statSharedDrive, value: sharedBucketCount, icon: Cloud, tone: "accent" },
+    { label: t.overview.statObjects, value: objectCount, icon: PackageOpen, tone: "success" },
+    { label: t.overview.statAccessIssues, value: bucketAccessErrors, icon: ShieldAlert, tone: bucketAccessErrors > 0 ? "destructive" : "success" },
   ];
 
   return (
@@ -131,29 +138,38 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
       ) : null}
 
       <section aria-label={t.overview.summaryLabel} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {stats.map(({ label, value, icon: Icon, tone }, index) => {
-          const highlighted = index === 0;
-          return (
-            <Card key={label} className={cn(highlighted && "border-transparent bg-primary text-primary-foreground")}>
-              <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-                <CardDescription className={highlighted ? "text-primary-foreground/80" : undefined}>{label}</CardDescription>
-                <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full", highlighted ? "bg-primary-foreground/15" : "bg-muted")}>
-                  <Icon className={cn("size-4", highlighted ? "text-primary-foreground" : tone)} aria-hidden="true" />
-                </span>
-              </CardHeader>
-              <CardContent><p className="text-3xl font-semibold tabular-nums">{value}</p></CardContent>
-            </Card>
-          );
-        })}
-        <Card>
+        <Card className="relative overflow-hidden border-transparent bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25">
+          <Database className="pointer-events-none absolute -right-5 -top-5 size-28 text-primary-foreground/10" aria-hidden="true" />
+          <CardHeader className="relative flex-row items-center justify-between space-y-0 pb-2">
+            <CardDescription className="text-primary-foreground/80">{t.overview.statBucket}</CardDescription>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-foreground/15">
+              <Database className="size-5" aria-hidden="true" />
+            </span>
+          </CardHeader>
+          <CardContent className="relative"><p className="text-4xl font-bold tabular-nums">{bucketCount}</p></CardContent>
+        </Card>
+
+        {stats.map(({ label, value, icon: Icon, tone }) => (
+          <Card key={label} className="border-border/60 shadow-sm transition-shadow hover:shadow-md">
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+              <CardDescription>{label}</CardDescription>
+              <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", TONE_CLASSES[tone].badge)}>
+                <Icon className={cn("size-5", TONE_CLASSES[tone].icon)} aria-hidden="true" />
+              </span>
+            </CardHeader>
+            <CardContent><p className="text-3xl font-bold tabular-nums">{value}</p></CardContent>
+          </Card>
+        ))}
+
+        <Card className="border-border/60 shadow-sm transition-shadow hover:shadow-md">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardDescription>{t.overview.googleDrive}</CardDescription>
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
-              <Cloud className={drive?.connected ? "size-4 text-success" : "size-4 text-destructive"} aria-hidden="true" />
+            <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", drive?.connected ? "bg-success/10" : "bg-destructive/10")}>
+              {drive?.connected ? <Cloud className="size-5 text-success" aria-hidden="true" /> : <CloudOff className="size-5 text-destructive" aria-hidden="true" />}
             </span>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className={`text-2xl font-semibold ${drive?.connected ? "text-success" : "text-destructive"}`}>{drive?.connected ? t.overview.connected : t.overview.disconnected}</p>
+            <p className={cn("text-2xl font-bold", drive?.connected ? "text-success" : "text-destructive")}>{drive?.connected ? t.overview.connected : t.overview.disconnected}</p>
             {drive && !drive.connected ? <Button size="sm" variant="outline" disabled={reconnecting} onClick={() => void onReconnect()}><RefreshCw className={reconnecting ? "animate-spin" : ""} />{reconnecting ? t.overview.reconnecting : t.overview.reconnect}</Button> : null}
           </CardContent>
         </Card>
