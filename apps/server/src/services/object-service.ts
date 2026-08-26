@@ -85,6 +85,7 @@ export class ObjectService {
           bucketId: input.bucket.id,
           bucketFolderId: input.bucket.drive_folder_id,
           objectId: staging.object_id,
+          objectKey: input.key,
           mimeType: input.metadata.contentType,
           body: input.body,
           contentLength: input.contentLength,

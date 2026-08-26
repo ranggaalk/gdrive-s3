@@ -16,6 +16,7 @@ export interface StreamingUploadInput {
   bucketId: string;
   bucketFolderId: string;
   objectId: string;
+  objectKey: string;
   mimeType: string;
   body: ReadableStream<Uint8Array>;
   contentLength: number | null;
@@ -74,6 +75,7 @@ async function uploadMultipart(input: StreamingUploadInput): Promise<StreamingUp
     userId: input.userId,
     bucketFolderId: input.bucketFolderId,
     objectId: input.objectId,
+    objectKey: input.objectKey,
     bucketId: input.bucketId,
     mimeType: input.mimeType,
     body,
@@ -89,6 +91,7 @@ async function uploadResumable(input: StreamingUploadInput): Promise<StreamingUp
     userId: input.userId,
     bucketFolderId: input.bucketFolderId,
     objectId: input.objectId,
+    objectKey: input.objectKey,
     bucketId: input.bucketId,
     mimeType: input.mimeType,
     target: input.target,

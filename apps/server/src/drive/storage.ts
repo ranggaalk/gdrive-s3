@@ -98,6 +98,7 @@ export interface UploadObjectInput {
   userId: string;
   bucketFolderId: string;
   objectId: string;
+  objectKey: string;
   bucketId: string;
   mimeType: string;
   body: ReadableStream<Uint8Array> | Uint8Array;
@@ -166,6 +167,7 @@ export interface BeginResumableUploadInput {
   userId: string;
   bucketFolderId: string;
   objectId: string;
+  objectKey: string;
   bucketId: string;
   mimeType: string;
   target?: DriveOperationTarget;
@@ -367,7 +369,10 @@ export class GoogleDriveStorage implements DriveStorage {
     const client = await this.client(input.userId, input.signal);
     const file = await client.uploadMedia(
       {
-        name: `${input.objectId}.blob`,
+        // Drive `name` is cosmetic — identity is appProperties.drives3ObjectId
+        // below — but using the real S3 key here (not objectId) lets the
+        // file be opened directly from Drive with a readable name/extension.
+        name: input.objectKey,
         mimeType: input.mimeType,
         appProperties: {
           [MARKER_TYPE]: "object",
@@ -417,7 +422,7 @@ export class GoogleDriveStorage implements DriveStorage {
     const client = await this.client(input.userId, input.signal);
     const sessionUrl = await client.beginResumableUpload(
       {
-        name: `${input.objectId}.blob`,
+        name: input.objectKey,
         mimeType: input.mimeType,
         appProperties: {
           [MARKER_TYPE]: "object",

@@ -117,6 +117,7 @@ async function completeLocked(
       bucketId: bucket.id,
       bucketFolderId: upload.drive_folder_id ?? bucket.drive_folder_id,
       objectId: staging.object_id,
+      objectKey: key,
       mimeType: upload.content_type,
       body: multipartConcatStream(selected),
       contentLength: totalSize,

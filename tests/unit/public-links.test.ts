@@ -17,6 +17,7 @@ describe("public object links", () => {
       bucketFolderId: bucket.drive_folder_id,
       bucketId: bucket.id,
       objectId: "obj-link",
+      objectKey: "a.txt",
       mimeType: "text/plain",
       body: new TextEncoder().encode("hello"),
     });

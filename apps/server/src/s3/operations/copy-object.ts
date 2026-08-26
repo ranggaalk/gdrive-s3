@@ -93,6 +93,7 @@ export async function copyObject(
       bucketId: targetBucket.id,
       bucketFolderId: targetBucket.drive_folder_id,
       objectId: staging.object_id,
+      objectKey: targetKey,
       mimeType: contentType,
       body: sourceResponse.body,
       contentLength: source.size_bytes,
