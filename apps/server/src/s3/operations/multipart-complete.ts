@@ -153,6 +153,7 @@ async function completeLocked(
       credentialId: ctx.credentialId,
       action: "s3.CompleteMultipartUpload",
       bucketName,
+      bucketId: bucket.id,
       objectKey: key,
       statusCode: 200,
       bytesIn: totalSize,

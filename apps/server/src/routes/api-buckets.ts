@@ -19,6 +19,7 @@ import type { BucketMemberRole } from "../db/repositories/bucket-members.ts";
 import { InvalidBucketNameError } from "../util/bucket-name.ts";
 import { handleObjects } from "./api-objects.ts";
 import { handleBucketImports } from "./api-drive-imports.ts";
+import { resolveTrafficWindow } from "./traffic-range.ts";
 
 function bucketView(b: {
   id: string;
@@ -97,6 +98,7 @@ export async function handleBuckets(
           userId,
           action: "bucket.create",
           bucketName: bucket.name,
+          bucketId: bucket.id,
           statusCode: 201,
           requestId,
         });
@@ -194,6 +196,18 @@ export async function handleBuckets(
     return handleObjects(ctx, req, session, requestId, bucketId, objectSegments);
   }
 
+  if (segments[1] === "traffic") {
+    if (req.method !== "GET") return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+    const bucket = ctx.bucketAccess.findById(userId, bucketId, "read");
+    if (!bucket) return apiError("NOT_FOUND", "Bucket tidak ditemukan.", 404, requestId);
+    const range = new URL(req.url).searchParams.get("range") ?? "1h";
+    const window = resolveTrafficWindow(range);
+    if (!window) return apiError("INVALID", "range harus salah satu dari: 1h, 24h, 7d.", 400, requestId);
+    const since = new Date(Date.now() - window.windowMs);
+    const points = ctx.repos.audit.trafficSeries(bucket.id, since, window.granularity);
+    return ok({ range, granularity: window.granularity, points }, requestId);
+  }
+
   if (segments.length === 1) {
     if (req.method === "GET") {
       const bucket = ctx.bucketAccess.findById(userId, bucketId, "read");
@@ -216,6 +230,8 @@ export async function handleBuckets(
           userId,
           action: "bucket.delete",
           bucketName: bucketId,
+          // No bucketId here: the row is already gone by this point (FK
+          // would reject a reference to a bucket that no longer exists).
           statusCode: 200,
           requestId,
         });

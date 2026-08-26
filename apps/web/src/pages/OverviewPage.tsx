@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Cloud, Database, PackageOpen, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,12 @@ import {
   type GatewayStatus,
 } from "../api/client.ts";
 
+// Lazy: apexcharts/react-apexcharts are heavy and only needed once this
+// page actually renders the traffic chart, not on every dashboard load.
+const OverviewTraffic = lazy(() =>
+  import("@/components/bucket-traffic").then((m) => ({ default: m.OverviewTraffic })),
+);
+
 const statusVariant: Record<CompatibilityItem["status"], "success" | "destructive" | "warning"> = {
   supported: "success",
   unsupported: "destructive",
@@ -28,7 +34,7 @@ const statusLabel: Record<CompatibilityItem["status"], string> = {
   untested: "Belum diuji",
 };
 
-export function OverviewPage() {
+export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: () => void }) {
   const [drive, setDrive] = useState<DriveStatus | null>(null);
   const [gateway, setGateway] = useState<GatewayStatus | null>(null);
   const [bucketCount, setBucketCount] = useState(0);
@@ -140,6 +146,12 @@ export function OverviewPage() {
           <RefreshCw className={reconciling ? "animate-spin" : ""} />{reconciling ? "Merekonsiliasi" : "Rekonsiliasi object terindeks"}
         </Button>
       </div>
+
+      <section aria-label="Traffic keseluruhan">
+        <Suspense fallback={<LoadingState label="Memuat traffic" />}>
+          <OverviewTraffic onViewDetail={onViewTrafficDetail} />
+        </Suspense>
+      </section>
 
       <Card>
         <CardHeader><CardTitle>Kompatibilitas S3</CardTitle><CardDescription>Status dukungan yang diverifikasi terhadap gateway saat ini.</CardDescription></CardHeader>

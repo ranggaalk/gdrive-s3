@@ -125,6 +125,7 @@ export async function copyObject(
       credentialId: ctx.credentialId,
       action: "s3.CopyObject",
       bucketName: targetBucketName,
+      bucketId: targetBucket.id,
       objectKey: targetKey,
       statusCode: 200,
       bytesIn: result.size,

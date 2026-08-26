@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource-variable/mona-sans/wght.css";
+import "@fontsource-variable/plus-jakarta-sans/wght.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { App } from "./App.tsx";
 import "./index.css";

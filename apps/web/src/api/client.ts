@@ -189,6 +189,25 @@ export const reconnectDrive = async () =>
 export const listBuckets = async () => unwrap<Bucket[]>(await fetch("/api/buckets"));
 export const getBucket = async (id: string) =>
   unwrap<Bucket>(await fetch(`/api/buckets/${encodeURIComponent(id)}`));
+export type TrafficRange = "1h" | "24h" | "7d";
+export interface TrafficPoint {
+  t: string;
+  requests: number;
+  errors: number;
+  bytesIn: number;
+  bytesOut: number;
+}
+export interface BucketTraffic {
+  range: TrafficRange;
+  granularity: "minute" | "hour" | "day";
+  points: TrafficPoint[];
+}
+export const getBucketTraffic = async (bucketId: string, range: TrafficRange) =>
+  unwrap<BucketTraffic>(
+    await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/traffic?range=${range}`),
+  );
+export const getOverviewTraffic = async (range: TrafficRange) =>
+  unwrap<BucketTraffic>(await fetch(`/api/traffic?range=${range}`));
 export const listSharedDrives = async () =>
   unwrap<{ items: SharedDriveSummary[]; nextPageToken: string | null }>(
     await fetch("/api/drive/shared-drives"),

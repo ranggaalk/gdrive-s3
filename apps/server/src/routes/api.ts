@@ -6,6 +6,7 @@ import { apiError, authenticate, ok } from "./api-helpers.ts";
 import { handleCredentials } from "./api-credentials.ts";
 import { handleBuckets } from "./api-buckets.ts";
 import { handleAudit } from "./api-audit.ts";
+import { handleTraffic } from "./api-traffic.ts";
 import { TokenRevokedError } from "../drive/oauth-token.ts";
 import { compatMatrix } from "../compat/matrix.ts";
 import { hasRequiredScopes } from "../auth/google-oauth.ts";
@@ -141,6 +142,10 @@ export async function handleApi(
 
   if (path === "/api/audit") {
     return handleAudit(ctx, req, session, requestId);
+  }
+
+  if (path === "/api/traffic") {
+    return handleTraffic(ctx, req, session, requestId);
   }
 
   if (path === "/api/status" && req.method === "GET") {

@@ -52,6 +52,9 @@ service-account backdoor into anyone's Drive.
 - S3 credential lifecycle: create, atomic rotate, revoke, revoked-only
   permanent delete.
 - One-time import of an existing Google Drive folder tree into a bucket.
+- Traffic charts (bandwidth, request count, error count) over 1h/24h/7d
+  windows, auto-refreshing every 15s — a dashboard-wide overview summed
+  across every accessible bucket, and a per-bucket detail view.
 
 **Operations**
 - Encrypted backup/restore, a load-test harness, and a Docker image.

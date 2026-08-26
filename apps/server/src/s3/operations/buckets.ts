@@ -34,8 +34,9 @@ export async function createBucket(ctx: S3RequestContext, bucketName: string): P
   if (ctx.app.repos.buckets.hasAccessibleName(ctx.userId, bucketName)) {
     throw new S3Error("BucketAlreadyOwnedByYou");
   }
+  let bucket;
   try {
-    await ctx.app.bucketService.create(ctx.userId, bucketName);
+    bucket = await ctx.app.bucketService.create(ctx.userId, bucketName);
   } catch (err) {
     if (err instanceof BucketAlreadyOwnedError) throw new S3Error("BucketAlreadyOwnedByYou");
     throw err;
@@ -45,6 +46,7 @@ export async function createBucket(ctx: S3RequestContext, bucketName: string): P
     credentialId: ctx.credentialId,
     action: "s3.CreateBucket",
     bucketName,
+    bucketId: bucket.id,
     statusCode: 200,
     requestId: ctx.requestId,
   });
@@ -90,6 +92,8 @@ export async function deleteBucket(ctx: S3RequestContext, bucketName: string): P
     credentialId: ctx.credentialId,
     action: "s3.DeleteBucket",
     bucketName,
+    // No bucketId here: the row is already gone by this point (FK would
+    // reject a reference to a bucket that no longer exists).
     statusCode: 204,
     requestId: ctx.requestId,
   });

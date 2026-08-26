@@ -9,15 +9,17 @@
     "preview": "bunx vite preview"
   },
   "dependencies": {
-    "@fontsource-variable/mona-sans": "5.2.7",
+    "@fontsource-variable/plus-jakarta-sans": "5.3.0",
     "@radix-ui/react-alert-dialog": "1.1.14",
     "@radix-ui/react-dialog": "1.1.14",
     "@radix-ui/react-label": "2.1.7",
     "@radix-ui/react-slot": "1.2.3",
+    "apexcharts": "7.0.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "lucide-react": "0.525.0",
     "react": "18.2.0",
+    "react-apexcharts": "2.1.1",
     "react-dom": "18.2.0",
     "tailwind-merge": "3.3.0"
   },

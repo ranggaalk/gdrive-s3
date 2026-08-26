@@ -170,7 +170,9 @@ export function App() {
       active={section}
       onSelect={navigateSection}
     >
-      {route.kind === "section" && route.page === "overview" ? <OverviewPage /> : null}
+      {route.kind === "section" && route.page === "overview" ? (
+        <OverviewPage onViewTrafficDetail={() => navigateSection("activity")} />
+      ) : null}
       {route.kind === "section" && route.page === "buckets" ? (
         <BucketsPage onOpen={(bucket) => navigate({ kind: "bucket", page: "buckets", bucketId: bucket.id })} />
       ) : null}

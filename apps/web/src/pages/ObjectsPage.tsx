@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDownToLine, ArrowLeft, CloudDownload, Eye, Files, Folder, Link2, Plus, Search, Trash2 } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Activity, ArrowDownToLine, ArrowLeft, CloudDownload, Eye, Files, Folder, Link2, Plus, Search, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -20,6 +20,13 @@ import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
 import { CopyableCode } from "@/components/copyable-code";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
+import { humanBytes } from "@/lib/format";
+
+// Lazy: apexcharts/react-apexcharts are heavy and only needed when the
+// Traffic tab is actually opened, not on every dashboard page load.
+const BucketTraffic = lazy(() =>
+  import("@/components/bucket-traffic").then((m) => ({ default: m.BucketTraffic })),
+);
 import {
   cancelDriveImport,
   createDriveImport,
@@ -50,15 +57,6 @@ import {
   type PublicLinkSummary,
 } from "../api/client.ts";
 
-function humanBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let value = n / 1024;
-  let index = 0;
-  while (value >= 1024 && index < units.length - 1) { value /= 1024; index++; }
-  return `${value.toFixed(1)} ${units[index]}`;
-}
-
 function isPreviewable(contentType: string): boolean {
   const mime = contentType.split(";", 1)[0]!.toLowerCase();
   return mime === "application/pdf" || mime === "application/json" || mime === "text/plain" || mime === "text/csv" || ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp", "image/x-icon"].includes(mime) || mime.startsWith("audio/") || mime.startsWith("video/");
@@ -77,6 +75,7 @@ const EXPIRY_OPTIONS = [
 ];
 
 export function ObjectsPage({ bucket, onBack }: { bucket: Bucket; onBack: () => void }) {
+  const [view, setView] = useState<"objects" | "traffic">("objects");
   const [items, setItems] = useState<ObjectItem[]>([]);
   const [prefix, setPrefix] = useState("");
   const [nextAfter, setNextAfter] = useState<string | null>(null);
@@ -275,11 +274,16 @@ export function ObjectsPage({ bucket, onBack }: { bucket: Bucket; onBack: () => 
       {bucket.storageStatus !== "active" ? <Alert variant="destructive"><AlertTitle>Akses Drive bermasalah</AlertTitle><AlertDescription>Bucket masih terdaftar, tetapi akses Google ke {bucket.storageDisplayName} perlu dipulihkan.</AlertDescription></Alert> : null}
       {bucket.effectiveRole === "viewer" ? <Alert><AlertTitle>Akses Viewer</AlertTitle><AlertDescription>Anda dapat list, preview, dan download, tetapi tidak dapat mengubah objek atau membuat public link.</AlertDescription></Alert> : null}
       {error ? <ErrorAlert message={error} /> : null}
+
+      <div className="grid w-fit grid-cols-2 gap-2"><Button type="button" variant={view === "objects" ? "default" : "outline"} onClick={() => setView("objects")}><Files /> Objek</Button><Button type="button" variant={view === "traffic" ? "default" : "outline"} onClick={() => setView("traffic")}><Activity /> Traffic</Button></div>
+
+      {view === "traffic" ? <Suspense fallback={<LoadingState label="Memuat traffic" />}><BucketTraffic bucketId={bucket.id} /></Suspense> : <>
       {importJob ? <Alert variant={importJob.status === "failed" ? "destructive" : "default"}><CloudDownload /><AlertTitle>Import Drive: {importJob.status}</AlertTitle><AlertDescription><p>{importJob.sourceFolderName}: {importJob.discovered} ditemukan, {importJob.imported} diimpor, {importJob.conflicts} konflik, {importJob.unsupported} tidak didukung, {importJob.failed} gagal.</p>{importJob.lastError ? <p>{importJob.lastError}</p> : null}<div className="mt-3 flex gap-2">{!["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void cancelDriveImport(bucket.id, importJob.id)}>Batalkan import</Button> : null}{["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void listDriveImportIssues(bucket.id, importJob.id).then((page) => setImportIssues(page.items))}>Lihat laporan</Button> : null}</div></AlertDescription></Alert> : null}
       {importIssues.length ? <div className="rounded-lg border bg-card"><Table><TableHeader><TableRow><TableHead>Key</TableHead><TableHead>Status</TableHead><TableHead>Alasan</TableHead></TableRow></TableHeader><TableBody>{importIssues.map((issue) => <TableRow key={issue.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{issue.key}</TableRowHeader><TableCell>{issue.status}</TableCell><TableCell>{issue.reason ?? "-"}</TableCell></TableRow>)}</TableBody></Table></div> : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><form onSubmit={search} role="search" className="flex flex-1 gap-2"><Input placeholder="Filter prefix…" value={prefix} onChange={(event) => setPrefix(event.target.value)} aria-label="Filter objek berdasarkan prefix" /><Button type="submit" variant="outline" disabled={loading}><Search /> <span className="hidden sm:inline">Cari</span></Button></form><div className="flex gap-2">{owner ? <Button variant="outline" onClick={() => void openImport()}><CloudDownload /> Import dari Drive</Button> : null}{writable ? <Button onClick={() => setShowUpload(true)}><Plus /> Upload</Button> : null}</div></div>
 
       {loading ? <LoadingState label="Memuat objek" /> : items.length === 0 ? <EmptyState icon={Files} title="Belum ada objek" description={writable ? "Upload file melalui dashboard atau S3 API." : "Bucket ini belum memiliki objek."} /> : <><div className="rounded-lg border bg-card"><Table><TableHeader><TableRow><TableHead>Key</TableHead><TableHead>Ukuran</TableHead><TableHead>Tipe</TableHead><TableHead>Diubah</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader><TableBody>{items.map((item) => <TableRow key={item.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{item.key}</TableRowHeader><TableCell className="whitespace-nowrap">{humanBytes(item.size)}</TableCell><TableCell className="max-w-48 break-all">{item.contentType}</TableCell><TableCell className="whitespace-nowrap">{new Date(item.lastModified).toLocaleString()}</TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title="Download" aria-label={`Download ${item.key}`} asChild><a href={objectDownloadUrl(bucket.id, item.id)}><ArrowDownToLine /></a></Button>{isPreviewable(item.contentType) ? <Button size="icon" variant="ghost" title="Preview" aria-label={`Preview ${item.key}`} onClick={() => window.open(objectPreviewUrl(bucket.id, item.id), "_blank", "noopener,noreferrer")}><Eye /></Button> : null}{owner ? <Button size="icon" variant="ghost" title="Public link" aria-label={`Public link ${item.key}`} onClick={() => void openLinks(item)}><Link2 /></Button> : null}{writable ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" title="Delete" aria-label={`Delete ${item.key}`} onClick={() => setDeleteTarget(item)}><Trash2 /></Button> : null}</div></TableCell></TableRow>)}</TableBody></Table></div>{nextAfter ? <div className="flex justify-center"><Button variant="outline" disabled={loadingMore} onClick={() => void more()}>{loadingMore ? "Memuat…" : "Muat lebih banyak"}</Button></div> : null}</>}
+      </>}
 
       <Dialog open={showImport} onOpenChange={(open) => { if (!importBusy) setShowImport(open); }}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Import folder Google Drive</DialogTitle><DialogDescription>Snapshot satu kali. Path relatif dipertahankan, key yang sudah ada dilewati, dan file sumber tidak diubah. Google Docs dan shortcut belum didukung.</DialogDescription></DialogHeader><div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>Lokasi</Label><Select value={importKind} options={IMPORT_KIND_OPTIONS} onValueChange={(kind) => { setImportKind(kind); const driveId = kind === "shared_drive" ? sharedDrives[0]?.id ?? "" : ""; setImportDriveId(driveId); setFolderStack([]); setSelectedFolder(null); void browseFolders(kind, driveId, []); }} /></div>{importKind === "shared_drive" ? <div className="space-y-2"><Label>Shared Drive</Label><Select value={importDriveId} options={sharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} placeholder="Pilih Shared Drive" onValueChange={(driveId) => { setImportDriveId(driveId); setFolderStack([]); setSelectedFolder(null); void browseFolders("shared_drive", driveId, []); }} /></div> : null}</div><div className="flex flex-wrap items-center gap-2 text-sm"><Button size="sm" variant="ghost" disabled={folderStack.length === 0 || importBusy} onClick={() => { const stack = folderStack.slice(0, -1); setFolderStack(stack); setSelectedFolder(null); void browseFolders(importKind, importDriveId, stack); }}>Naik</Button><span className="text-muted-foreground">/{folderStack.map((folder) => folder.name).join("/")}</span></div><div className="max-h-72 space-y-1 overflow-y-auto rounded-md border p-2">{importBusy ? <LoadingState label="Memuat folder" /> : driveFolders.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Tidak ada subfolder.</p> : driveFolders.map((folder) => <div key={folder.id} className={`flex items-center justify-between rounded-md p-2 ${selectedFolder?.id === folder.id ? "bg-muted" : ""}`}><button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setSelectedFolder(folder)}><Folder className="size-4 shrink-0" /><span className="truncate">{folder.name}</span></button><Button size="sm" variant="ghost" onClick={() => { const stack = [...folderStack, folder]; setFolderStack(stack); setSelectedFolder(null); void browseFolders(importKind, importDriveId, stack); }}>Buka</Button></div>)}</div>{selectedFolder ? <Alert><AlertTitle>Folder dipilih</AlertTitle><AlertDescription>{selectedFolder.name}</AlertDescription></Alert> : null}</div><DialogFooter><Button variant="outline" disabled={importBusy} onClick={() => setShowImport(false)}>Batal</Button><Button disabled={!selectedFolder || importBusy || (importKind === "shared_drive" && !importDriveId)} onClick={() => void startImport()}>{importBusy ? "Menyiapkan…" : "Mulai import"}</Button></DialogFooter></DialogContent></Dialog>
 

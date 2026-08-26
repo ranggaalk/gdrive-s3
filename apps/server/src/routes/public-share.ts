@@ -88,6 +88,7 @@ export async function handlePublicShare(
       userId: resolved.owner_user_id,
       action: "public_link.access",
       bucketName: resolved.bucket_name,
+      bucketId: bucket.id,
       objectKey: resolved.object_key,
       statusCode: downloaded.status,
       bytesOut: downloaded.contentLength,
