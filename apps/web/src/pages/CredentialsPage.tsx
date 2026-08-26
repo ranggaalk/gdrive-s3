@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { KeyRound, Plus, RefreshCw, ShieldOff, Trash2, TriangleAlert } from "lucide-react";
+import { Download, KeyRound, Plus, RefreshCw, ShieldOff, Trash2, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
 import { CopyableCode } from "@/components/copyable-code";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
-import { credentialSetupExample } from "@/lib/s3-cli";
+import { credentialFileContent, credentialSetupExample } from "@/lib/s3-cli";
 import {
   createCredential,
   deleteCredential,
@@ -97,6 +97,20 @@ export function CredentialsPage() {
     }
   };
 
+  const downloadCredential = () => {
+    if (!created) return;
+    const content = credentialFileContent(created, created);
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `drives3-${created.accessKeyId}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) return <LoadingState label="Memuat kredensial" />;
 
   return (
@@ -131,7 +145,7 @@ export function CredentialsPage() {
         <DialogContent className="min-w-0 max-h-[90vh] max-w-2xl overflow-x-hidden overflow-y-auto">
           <DialogHeader><DialogTitle>{secretTitle}</DialogTitle><DialogDescription>Simpan kredensial ini sebelum menutup dialog.</DialogDescription></DialogHeader>
           {created ? <div className="min-w-0 space-y-5"><Alert variant="warning"><TriangleAlert /><AlertTitle>Simpan secret sekarang</AlertTitle><AlertDescription>Secret access key hanya ditampilkan satu kali dan tidak dapat dilihat kembali.</AlertDescription></Alert><div className="grid gap-3 text-sm sm:grid-cols-2"><div><p className="text-muted-foreground">S3 endpoint</p><p className="break-all font-mono text-xs">{created.s3Endpoint}</p></div><div><p className="text-muted-foreground">Region</p><p className="font-mono text-xs">{created.s3Region}</p></div></div><div className="space-y-2"><Label>Access Key ID</Label><CopyableCode value={created.accessKeyId} label="Access Key ID" /></div><div className="space-y-2"><Label>Secret Access Key</Label><CopyableCode value={created.secretAccessKey} label="Secret Access Key" /></div><div className="space-y-2"><Label>Contoh AWS CLI (path-style)</Label><CopyableCode value={credentialSetupExample(created, { accessKeyId: created.accessKeyId, secretAccessKey: created.secretAccessKey })} label="contoh AWS CLI" /></div></div> : null}
-          <DialogFooter><Button onClick={() => setCreated(null)}>Selesai</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={downloadCredential}><Download /> Download sebagai file</Button><Button onClick={() => setCreated(null)}>Selesai</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

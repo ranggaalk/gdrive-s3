@@ -33,6 +33,31 @@ export function documentationSetupExample(config: S3ConnectionConfig): string {
   });
 }
 
+export function credentialFileContent(
+  config: S3ConnectionConfig,
+  credentials: S3CliCredentials & { label: string; createdAt: string },
+): string {
+  return [
+    "DriveS3 Gateway — S3 access key",
+    "================================",
+    "",
+    `Label             : ${credentials.label}`,
+    `Access Key ID     : ${credentials.accessKeyId}`,
+    `Secret Access Key : ${credentials.secretAccessKey}`,
+    `S3 Endpoint       : ${config.s3Endpoint}`,
+    `Region            : ${config.s3Region}`,
+    `Dibuat            : ${credentials.createdAt}`,
+    "",
+    "PENTING: Secret access key ini hanya ditampilkan satu kali dan tidak",
+    "dapat dilihat lagi dari dashboard setelah dialog ini ditutup. Simpan",
+    "file ini di tempat yang aman.",
+    "",
+    "Contoh setup AWS CLI:",
+    credentialSetupExample(config, credentials),
+    "",
+  ].join("\n");
+}
+
 export function s3CommandExamples(config: S3ConnectionConfig) {
   const aws = baseCommand(config);
   return {
