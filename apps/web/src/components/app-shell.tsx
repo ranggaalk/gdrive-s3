@@ -82,10 +82,16 @@ export function AppShell<T extends string>({
   const [collapsed, setCollapsed] = useState(
     () => window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "1",
   );
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -135,22 +141,28 @@ export function AppShell<T extends string>({
 
         <div className={cn("lg:grid", collapsed ? "lg:grid-cols-[4rem_minmax(0,1fr)]" : "lg:grid-cols-[16rem_minmax(0,1fr)]")}>
           <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] flex-col gap-2 border-r bg-card p-2 lg:flex">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="self-end"
-                  aria-label={collapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
-                  onClick={() => setCollapsed((value) => !value)}
-                >
-                  {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">{collapsed ? "Perluas sidebar" : "Ciutkan sidebar"}</TooltipContent>
-            </Tooltip>
             <Navigation items={navigation} active={active} onSelect={onSelect} collapsed={collapsed} />
+            <div className={cn("mt-auto flex items-center gap-2", collapsed ? "justify-end" : "justify-between")}>
+              {collapsed ? null : (
+                <span className="pl-2 font-mono text-xs tabular-nums text-muted-foreground">
+                  {now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={collapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
+                    onClick={() => setCollapsed((value) => !value)}
+                  >
+                    {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{collapsed ? "Perluas sidebar" : "Ciutkan sidebar"}</TooltipContent>
+              </Tooltip>
+            </div>
           </aside>
           <main className="min-w-0 p-4 sm:p-6 lg:p-8">
             <div className="mx-auto w-full max-w-7xl space-y-6">
