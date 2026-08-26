@@ -391,8 +391,10 @@ export const revokeCredential = async (id: string) =>
 export const deleteCredential = async (id: string) =>
   unwrap(await fetch(`/api/credentials/${encodeURIComponent(id)}`, mutate("DELETE")));
 
-export const listAudit = async () =>
-  unwrap<{ items: AuditItem[]; nextBefore: string | null }>(await fetch("/api/audit"));
+export const listAudit = async (before = "") => {
+  const query = before ? `?before=${encodeURIComponent(before)}` : "";
+  return unwrap<{ items: AuditItem[]; nextBefore: string | null }>(await fetch(`/api/audit${query}`));
+};
 
 export const getGatewayStatus = async () =>
   unwrap<GatewayStatus>(await fetch("/api/status"));
