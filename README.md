@@ -155,6 +155,11 @@ disable virtual-hosted addressing entirely.
 
 ## Dashboard
 
+Dashboard sections are plain paths — `/buckets`, `/buckets/:id`,
+`/credentials`, `/activity`, `/documentation` — not query strings. Those five
+names are reserved: `util/bucket-name.ts` rejects them as bucket names, so a
+dashboard route can never collide with a real S3 bucket.
+
 ### Object sharing
 
 Bucket Owners and Editors can upload and delete objects from the Objects
