@@ -10,7 +10,8 @@ export type RateLimitScope =
   | "credentialCreate"
   | "signatureFailure"
   | "s3Public"
-  | "publicShare";
+  | "publicShare"
+  | "mfaVerify";
 
 export class RateLimits {
   private readonly limiters: Record<RateLimitScope, KeyedRateLimiter>;
@@ -41,6 +42,11 @@ export class RateLimits {
       publicShare: new KeyedRateLimiter({
         capacity: config.rateLimit.publicShareRpsPerIp,
         refillPerSecond: config.rateLimit.publicShareRpsPerIp,
+        maxKeys,
+      }),
+      mfaVerify: new KeyedRateLimiter({
+        capacity: config.rateLimit.mfaVerifyPerMinute,
+        refillPerSecond: config.rateLimit.mfaVerifyPerMinute / 60,
         maxKeys,
       }),
     };

@@ -27,6 +27,7 @@ describe("rate limiting", () => {
         signatureFailuresPerMinute: 2,
         s3PublicRpsPerIp: 100_000,
         publicShareRpsPerIp: 100_000,
+        mfaVerifyPerMinute: 100_000,
         maxKeys: 10,
       },
     });
@@ -56,6 +57,7 @@ describe("rate limiting", () => {
         signatureFailuresPerMinute: 100_000,
         s3PublicRpsPerIp: 1,
         publicShareRpsPerIp: 100_000,
+        mfaVerifyPerMinute: 100_000,
         maxKeys: 10,
       },
     });

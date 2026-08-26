@@ -13,6 +13,10 @@ export interface SessionRow {
   last_seen_at: string;
   user_agent: string | null;
   ip_hash: string | null;
+  // 1 while a 2FA-enabled login is awaiting its code: the session exists
+  // (cookie set, csrf_secret usable) but every normal route must treat it
+  // as unauthenticated until this flips to 0 via markMfaVerified.
+  mfa_pending: number;
 }
 
 export interface CreateSessionInput {
@@ -22,6 +26,7 @@ export interface CreateSessionInput {
   expiresAt: string;
   userAgent: string | null;
   ipHash: string | null;
+  mfaPending: boolean;
 }
 
 export class SessionsRepository {
@@ -32,8 +37,8 @@ export class SessionsRepository {
     this.db
       .query(
         `INSERT INTO sessions
-           (id_hash, user_id, csrf_secret, expires_at, created_at, last_seen_at, user_agent, ip_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id_hash, user_id, csrf_secret, expires_at, created_at, last_seen_at, user_agent, ip_hash, mfa_pending)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.idHash,
@@ -44,6 +49,7 @@ export class SessionsRepository {
         now,
         input.userAgent,
         input.ipHash,
+        input.mfaPending ? 1 : 0,
       );
   }
 
@@ -59,6 +65,11 @@ export class SessionsRepository {
 
   touch(idHash: string): void {
     this.db.query("UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?").run(nowIso(), idHash);
+  }
+
+  /** Promotes a pending (2FA-awaiting) session to fully authenticated. */
+  markMfaVerified(idHash: string): void {
+    this.db.query("UPDATE sessions SET mfa_pending = 0, last_seen_at = ? WHERE id_hash = ?").run(nowIso(), idHash);
   }
 
   delete(idHash: string): void {

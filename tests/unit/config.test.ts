@@ -111,6 +111,7 @@ describe("loadConfig", () => {
       signatureFailuresPerMinute: 30,
       s3PublicRpsPerIp: 200,
       publicShareRpsPerIp: 50,
+      mfaVerifyPerMinute: 8,
       maxKeys: 10_000,
     });
   });

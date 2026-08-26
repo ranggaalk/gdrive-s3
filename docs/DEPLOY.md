@@ -104,6 +104,11 @@ Required (see `.env.example`):
 - production defaults: `NODE_ENV=production`, `S3_REQUIRE_TLS=true`,
   `APP_ORIGIN=https://…`, `TRUST_PROXY=true` when behind a proxy.
 
+Optional: `ADMIN_EMAILS` (comma-separated) grants the dashboard's Settings
+page, where `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` can be overridden at
+runtime (stored encrypted in SQLite, no restart needed). Empty by default —
+nobody can reach it until set.
+
 Recommended production overrides:
 
 - `S3_PUBLIC_ENDPOINT=https://<your-domain>` to make presigned URLs return the

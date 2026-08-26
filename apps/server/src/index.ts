@@ -9,11 +9,14 @@ import { runMigrations } from "./db/migrate.ts";
 import { handleLive, handleReady } from "./routes/health.ts";
 import { createContext } from "./context.ts";
 import { handleAuthCallback, handleAuthStart, handleLogout } from "./routes/auth.ts";
+import { handleBackupLinkStart } from "./routes/backup-auth.ts";
+import { handleMfaStatus, handleMfaVerify } from "./routes/mfa-auth.ts";
 import { handleApi } from "./routes/api.ts";
 import { handleS3 } from "./s3/router.ts";
 import { CleanupWorker } from "./jobs/orphan-cleanup.ts";
 import { MultipartExpiryWorker } from "./jobs/multipart-expiry.ts";
 import { DriveImportWorker } from "./jobs/drive-import.ts";
+import { BackupTransferWorker } from "./jobs/backup-transfer.ts";
 import { recoverStaleStaging } from "./jobs/staging-recovery.ts";
 import { applySecurityHeaders, classifyResponseKind } from "./security/headers.ts";
 import { DashboardServer } from "./routes/dashboard.ts";
@@ -57,9 +60,11 @@ function main(): void {
   const cleanupWorker = new CleanupWorker(ctx);
   const multipartExpiryWorker = new MultipartExpiryWorker(ctx);
   const driveImportWorker = new DriveImportWorker(ctx);
+  const backupTransferWorker = new BackupTransferWorker(ctx);
   cleanupWorker.start();
   multipartExpiryWorker.start();
   driveImportWorker.start();
+  backupTransferWorker.start();
   const dashboard = new DashboardServer(config);
 
   const server = Bun.serve({
@@ -82,8 +87,14 @@ function main(): void {
           res = await handleAuthStart(ctx, req, server);
         } else if (path === "/auth/google/callback") {
           res = await handleAuthCallback(ctx, req, server);
+        } else if (path === "/auth/google/link-start") {
+          res = await handleBackupLinkStart(ctx, req);
         } else if (path === "/auth/logout") {
           res = await handleLogout(ctx, req);
+        } else if (path === "/auth/mfa/status") {
+          res = await handleMfaStatus(ctx, req, requestId);
+        } else if (path === "/auth/mfa/verify") {
+          res = await handleMfaVerify(ctx, req, requestId);
         } else if (path.startsWith("/api/")) {
           res = await handleApi(ctx, req, requestId);
         } else if (path.startsWith(PUBLIC_SHARE_PREFIX)) {
@@ -131,6 +142,7 @@ function main(): void {
   const shutdown = async (signal: string) => {
     log.info("shutdown signal received", { signal });
     server.stop();
+    await backupTransferWorker.stop();
     await driveImportWorker.stop();
     await multipartExpiryWorker.stop();
     await cleanupWorker.stop();

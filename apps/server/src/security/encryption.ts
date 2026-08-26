@@ -87,4 +87,7 @@ export function constantTimeEqual(a: string, b: string): boolean {
 export const aad = {
   oauthRefreshToken: (userId: string) => `oauth-refresh-token:${userId}`,
   s3Secret: (credentialId: string) => `s3-secret:${credentialId}`,
+  appSetting: (key: string) => `app-setting:${key}`,
+  backupRefreshToken: (backupAccountId: string) => `backup-refresh-token:${backupAccountId}`,
+  totpSecret: (userId: string) => `totp-secret:${userId}`,
 };

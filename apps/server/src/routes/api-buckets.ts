@@ -19,6 +19,7 @@ import type { BucketMemberRole } from "../db/repositories/bucket-members.ts";
 import { InvalidBucketNameError } from "../util/bucket-name.ts";
 import { handleObjects } from "./api-objects.ts";
 import { handleBucketImports } from "./api-drive-imports.ts";
+import { handleBucketBackups } from "./api-backup.ts";
 import { resolveTrafficWindow } from "./traffic-range.ts";
 
 function bucketView(b: {
@@ -186,6 +187,11 @@ export async function handleBuckets(
   if (segments[1] === "imports") {
     const importSegments = segments.slice(2).filter(Boolean);
     return handleBucketImports(ctx, req, session, requestId, bucketId, importSegments);
+  }
+
+  if (segments[1] === "backups") {
+    const backupSegments = segments.slice(2).filter(Boolean);
+    return handleBucketBackups(ctx, req, session, requestId, bucketId, backupSegments);
   }
 
   if (segments[1] === "objects") {

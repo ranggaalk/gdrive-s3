@@ -18,6 +18,9 @@ export const newPublicLinkId = () => id("lnk");
 export const newDriveImportJobId = () => id("imp");
 export const newDriveImportFolderId = () => id("imf");
 export const newDriveImportItemId = () => id("imi");
+export const newBackupAccountId = () => id("bka");
+export const newBackupTransferId = () => id("bkx");
+export const newTotpRecoveryCodeId = () => id("trc");
 
 export function nowIso(): string {
   return new Date().toISOString();

@@ -9,6 +9,7 @@ import { TokenProvider } from "./oauth-token.ts";
 import { DriveRootsRepository } from "../db/repositories/drive-roots.ts";
 import { DriveError } from "./errors.ts";
 import type { DriveLimits } from "./limits.ts";
+import type { RuntimeSettingsService } from "../services/runtime-settings-service.ts";
 
 export type DriveOperationTarget =
   | { kind: "my_drive" }
@@ -27,7 +28,6 @@ export interface SharedDriveListPage {
   nextPageToken: string | null;
 }
 
-const ROOT_FOLDER_NAME = "DriveS3 Gateway";
 const MARKER_TYPE = "drives3Type";
 const MARKER_USER = "drives3UserId";
 
@@ -194,6 +194,7 @@ export class GoogleDriveStorage implements DriveStorage {
   constructor(
     private readonly tokens: TokenProvider,
     private readonly roots: DriveRootsRepository,
+    private readonly runtimeSettings: RuntimeSettingsService,
     private readonly limits: DriveLimits | null = null,
     private readonly retryMaxAttempts = 5,
   ) {}
@@ -325,7 +326,7 @@ export class GoogleDriveStorage implements DriveStorage {
     }
     const created = await this.run(input.userId, input.signal, (client) =>
       client.createFolder(
-        ROOT_FOLDER_NAME,
+        this.runtimeSettings.getRootFolderName(),
         { [MARKER_TYPE]: markerValue, [MARKER_USER]: input.userId },
         parentId,
         input.signal,

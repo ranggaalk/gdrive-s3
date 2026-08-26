@@ -23,6 +23,11 @@ export interface AppConfig {
     driveScope: string;
   };
 
+  // Lowercased emails granted admin access (e.g. the Settings page that can
+  // change the Google OAuth client credentials at runtime). Empty by default:
+  // nobody is admin until explicitly configured.
+  adminEmails: string[];
+
   masterEncryptionKey: Buffer; // exactly 32 bytes
   sessionSecret: Buffer; // >= 32 bytes
 
@@ -76,6 +81,7 @@ export interface AppConfig {
     signatureFailuresPerMinute: number;
     s3PublicRpsPerIp: number;
     publicShareRpsPerIp: number;
+    mfaVerifyPerMinute: number;
     maxKeys: number;
   };
 
@@ -227,6 +233,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       ),
     },
 
+    adminEmails: parseAllowedEmails(optional(env, "ADMIN_EMAILS", "")),
+
     masterEncryptionKey: decodeBase64Key(
       required(env, "MASTER_ENCRYPTION_KEY"),
       "MASTER_ENCRYPTION_KEY",
@@ -367,6 +375,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         optional(env, "RATE_LIMIT_PUBLIC_SHARE_RPS_PER_IP", "50"),
         "RATE_LIMIT_PUBLIC_SHARE_RPS_PER_IP",
       ),
+      mfaVerifyPerMinute: parseIntStrict(
+        optional(env, "RATE_LIMIT_MFA_VERIFY_PER_MINUTE", "8"),
+        "RATE_LIMIT_MFA_VERIFY_PER_MINUTE",
+      ),
       maxKeys: parseIntStrict(
         optional(env, "RATE_LIMIT_MAX_KEYS", "10000"),
         "RATE_LIMIT_MAX_KEYS",
@@ -438,6 +450,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ["RATE_LIMIT_SIGNATURE_FAILURES_PER_MINUTE", config.rateLimit.signatureFailuresPerMinute],
     ["RATE_LIMIT_S3_PUBLIC_RPS_PER_IP", config.rateLimit.s3PublicRpsPerIp],
     ["RATE_LIMIT_PUBLIC_SHARE_RPS_PER_IP", config.rateLimit.publicShareRpsPerIp],
+    ["RATE_LIMIT_MFA_VERIFY_PER_MINUTE", config.rateLimit.mfaVerifyPerMinute],
     ["RATE_LIMIT_MAX_KEYS", config.rateLimit.maxKeys],
   ] as const) {
     if (value <= 0) throw new ConfigError(`${key} must be > 0`);

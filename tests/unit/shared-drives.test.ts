@@ -104,7 +104,7 @@ describe("OAuth Shared Drive scopes", () => {
       },
     });
     const url = new URL(
-      buildAuthUrl(config, {
+      buildAuthUrl(config, { clientId: config.google.clientId }, {
         state: "state",
         pkceChallenge: "challenge",
         promptConsent: true,
@@ -133,7 +133,11 @@ describe("OAuth Shared Drive scopes", () => {
       },
     });
     const url = new URL(
-      buildAuthUrl(config, { state: "state", pkceChallenge: "challenge", promptConsent: true }),
+      buildAuthUrl(
+        config,
+        { clientId: config.google.clientId },
+        { state: "state", pkceChallenge: "challenge", promptConsent: true },
+      ),
     );
     expect(url.searchParams.has("hd")).toBe(false);
   });

@@ -26,14 +26,17 @@ describe("S3 CLI examples", () => {
   });
 
   test("uses inert placeholders in documentation", () => {
-    const output = documentationSetupExample(config);
+    const output = documentationSetupExample(config, {
+      accessKeyId: "ACCESS_KEY_ID_ANDA",
+      secretAccessKey: "SECRET_ACCESS_KEY_ANDA",
+    });
     expect(output).toContain("ACCESS_KEY_ID_ANDA");
     expect(output).toContain("SECRET_ACCESS_KEY_ANDA");
     expect(output).not.toContain("test-secret");
   });
 
   test("adds endpoint and path-style targets to every S3 operation", () => {
-    const commands = s3CommandExamples(config);
+    const commands = s3CommandExamples(config, "nama-bucket");
     for (const command of Object.values(commands)) {
       expect(command).toContain("--endpoint-url 'http://localhost:3000'");
     }
@@ -42,10 +45,13 @@ describe("S3 CLI examples", () => {
   });
 
   test("quotes shell-sensitive configuration values", () => {
-    const output = documentationSetupExample({
-      s3Endpoint: "https://s3.example.test/it's-here",
-      s3Region: "region with spaces",
-    });
+    const output = documentationSetupExample(
+      {
+        s3Endpoint: "https://s3.example.test/it's-here",
+        s3Region: "region with spaces",
+      },
+      { accessKeyId: "ACCESS_KEY_ID_ANDA", secretAccessKey: "SECRET_ACCESS_KEY_ANDA" },
+    );
     expect(output).toContain(`'https://s3.example.test/it'"'"'s-here'`);
     expect(output).toContain("'region with spaces'");
   });

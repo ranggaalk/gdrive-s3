@@ -43,6 +43,9 @@ export function authenticate(
   if (!user || user.status !== "active") {
     return apiError("UNAUTHENTICATED", "Akun tidak aktif.", 401, requestId);
   }
+  if (session.mfa_pending) {
+    return apiError("MFA_REQUIRED", "Verifikasi 2FA belum selesai.", 401, requestId);
+  }
   if (requiresCsrf(req.method)) {
     if (!hasAllowedOrigin(req, ctx.config)) {
       return apiError("CSRF_FAILED", "Origin permintaan tidak diizinkan.", 403, requestId);

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, Copy, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLocale } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 
 export function MarkdownCanvas({
@@ -14,6 +15,7 @@ export function MarkdownCanvas({
   label: string;
   className?: string;
 }) {
+  const { t } = useLocale();
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
 
   const copy = async () => {
@@ -43,12 +45,12 @@ export function MarkdownCanvas({
       <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2">
         <span className="truncate font-mono text-xs text-muted-foreground">{fileName}</span>
         <div className="flex shrink-0 gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => void copy()} aria-label={`Salin ${label}`}>
+          <Button type="button" size="sm" variant="outline" onClick={() => void copy()} aria-label={t.copy.copyLabel(label)}>
             {copyStatus === "copied" ? <Check /> : <Copy />}
-            {copyStatus === "copied" ? "Disalin" : "Salin"}
+            {copyStatus === "copied" ? t.copy.copied : t.copy.copy}
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={download} aria-label={`Unduh ${label}`}>
-            <Download /> Unduh .md
+          <Button type="button" size="sm" variant="outline" onClick={download} aria-label={t.copy.downloadLabel(label)}>
+            <Download /> {t.copy.downloadMd}
           </Button>
         </div>
       </div>
@@ -56,7 +58,7 @@ export function MarkdownCanvas({
         <code>{value}</code>
       </pre>
       <span className="sr-only" aria-live="polite">
-        {copyStatus === "copied" ? `${label} berhasil disalin.` : copyStatus === "error" ? `${label} gagal disalin.` : ""}
+        {copyStatus === "copied" ? t.copy.copiedNotice(label) : copyStatus === "error" ? t.copy.errorNotice(label) : ""}
       </span>
     </div>
   );

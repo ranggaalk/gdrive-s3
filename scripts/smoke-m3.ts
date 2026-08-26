@@ -30,6 +30,7 @@ sessions.create({
   expiresAt: new Date(Date.now() + 3600_000).toISOString(),
   userAgent: "smoke",
   ipHash: null,
+  mfaPending: false,
 });
 db.close();
 writeFileSync("/tmp/smoke_raw", rawId);

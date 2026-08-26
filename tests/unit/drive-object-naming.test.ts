@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { GoogleDriveStorage } from "../../apps/server/src/drive/storage.ts";
 import type { TokenProvider } from "../../apps/server/src/drive/oauth-token.ts";
 import type { DriveRootsRepository } from "../../apps/server/src/db/repositories/drive-roots.ts";
+import type { RuntimeSettingsService } from "../../apps/server/src/services/runtime-settings-service.ts";
 
 const fakeTokens = {
   getAccessToken: async () => "fake-token",
@@ -13,7 +14,11 @@ const fakeTokens = {
 } as unknown as TokenProvider;
 
 function newStorage(): GoogleDriveStorage {
-  return new GoogleDriveStorage(fakeTokens, null as unknown as DriveRootsRepository);
+  return new GoogleDriveStorage(
+    fakeTokens,
+    null as unknown as DriveRootsRepository,
+    null as unknown as RuntimeSettingsService,
+  );
 }
 
 describe("GoogleDriveStorage object naming", () => {

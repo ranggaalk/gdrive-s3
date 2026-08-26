@@ -1,13 +1,15 @@
 import type { LucideIcon } from "lucide-react";
 import { LoaderCircle, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useLocale } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 
-export function ErrorAlert({ message, title = "Kesalahan" }: { message: string; title?: string }) {
+export function ErrorAlert({ message, title }: { message: string; title?: string }) {
+  const { t } = useLocale();
   return (
     <Alert variant="destructive">
       <TriangleAlert />
-      <AlertTitle>{title}</AlertTitle>
+      <AlertTitle>{title ?? t.feedback.errorTitle}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
     </Alert>
   );
@@ -38,19 +40,21 @@ export function EmptyState({
   );
 }
 
-export function Spinner({ className, label = "Memuat" }: { className?: string; label?: string }) {
+export function Spinner({ className, label }: { className?: string; label?: string }) {
+  const { t } = useLocale();
   return (
     <span role="status" className={cn("inline-flex items-center justify-center", className)}>
       <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
-      <span className="sr-only">{label}</span>
+      <span className="sr-only">{label ?? t.feedback.loading}</span>
     </span>
   );
 }
 
-export function LoadingState({ label = "Memuat data" }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+  const { t } = useLocale();
   return (
     <div className="flex min-h-64 items-center justify-center rounded-lg border bg-card">
-      <Spinner className="text-primary" label={label} />
+      <Spinner className="text-primary" label={label ?? t.feedback.loadingData} />
     </div>
   );
 }

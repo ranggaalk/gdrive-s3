@@ -7,6 +7,9 @@ import { handleCredentials } from "./api-credentials.ts";
 import { handleBuckets } from "./api-buckets.ts";
 import { handleAudit } from "./api-audit.ts";
 import { handleTraffic } from "./api-traffic.ts";
+import { handleSettings } from "./api-settings.ts";
+import { handleBackupAccounts } from "./api-backup.ts";
+import { handleSecurityTotp } from "./api-security.ts";
 import { TokenRevokedError } from "../drive/oauth-token.ts";
 import { compatMatrix } from "../compat/matrix.ts";
 import { hasRequiredScopes } from "../auth/google-oauth.ts";
@@ -32,6 +35,7 @@ export async function handleApi(
         email: user.email,
         displayName: user.display_name,
         hostedDomain: user.hosted_domain,
+        isAdmin: !!user.is_admin,
         csrfToken: session.csrf_secret,
       },
       requestId,
@@ -146,6 +150,18 @@ export async function handleApi(
 
   if (path === "/api/traffic") {
     return handleTraffic(ctx, req, session, requestId);
+  }
+
+  if (path === "/api/settings" || path.startsWith("/api/settings/")) {
+    return handleSettings(ctx, req, session, requestId, path.slice("/api/settings".length));
+  }
+
+  if (path === "/api/backup-accounts" || path.startsWith("/api/backup-accounts/")) {
+    return handleBackupAccounts(ctx, req, session, requestId, path.slice("/api/backup-accounts".length));
+  }
+
+  if (path === "/api/security/totp" || path.startsWith("/api/security/totp/")) {
+    return handleSecurityTotp(ctx, req, session, requestId, path.slice("/api/security/totp".length));
   }
 
   if (path === "/api/status" && req.method === "GET") {

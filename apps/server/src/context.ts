@@ -20,9 +20,15 @@ import { DriveTargetsRepository } from "./db/repositories/drive-targets.ts";
 import { BucketMembersRepository } from "./db/repositories/bucket-members.ts";
 import { PublicObjectLinksRepository } from "./db/repositories/public-object-links.ts";
 import { DriveImportsRepository } from "./db/repositories/drive-imports.ts";
+import { SettingsRepository } from "./db/repositories/settings.ts";
+import { BackupAccountsRepository } from "./db/repositories/backup-accounts.ts";
+import { BackupTransfersRepository } from "./db/repositories/backup-transfers.ts";
+import { TotpRepository } from "./db/repositories/totp.ts";
 import { UploadLockRegistry } from "./util/upload-lock.ts";
 import { SessionService } from "./auth/session.ts";
 import { TokenProvider } from "./drive/oauth-token.ts";
+import { BackupTokenProvider } from "./drive/backup-token-provider.ts";
+import { RuntimeSettingsService } from "./services/runtime-settings-service.ts";
 import { RootFolderService } from "./drive/root-folder.ts";
 import { GoogleDriveStorage, type DriveStorage } from "./drive/storage.ts";
 import { DriveLimits } from "./drive/limits.ts";
@@ -55,10 +61,16 @@ export interface AppContext {
     bucketMembers: BucketMembersRepository;
     publicObjectLinks: PublicObjectLinksRepository;
     driveImports: DriveImportsRepository;
+    settings: SettingsRepository;
+    backupAccounts: BackupAccountsRepository;
+    backupTransfers: BackupTransfersRepository;
+    totp: TotpRepository;
   };
   uploadLocks: UploadLockRegistry;
   sessionService: SessionService;
   tokenProvider: TokenProvider;
+  backupTokenProvider: BackupTokenProvider;
+  runtimeSettings: RuntimeSettingsService;
   driveStorage: DriveStorage;
   driveLimits: DriveLimits;
   reconcileService: ReconcileService;
@@ -71,6 +83,8 @@ export interface AppContext {
   rateLimits: RateLimits;
   // Ephemeral OAuth login flows keyed by state (in-memory, short-lived).
   loginFlows: Map<string, { pkceVerifier: string; createdAt: number }>;
+  // Ephemeral backup-account link flows keyed by state (in-memory, short-lived).
+  backupLinkFlows: Map<string, { pkceVerifier: string; userId: string; createdAt: number }>;
 }
 
 export function createContext(
@@ -95,10 +109,16 @@ export function createContext(
   const bucketMembers = new BucketMembersRepository(db);
   const publicObjectLinks = new PublicObjectLinksRepository(db);
   const driveImports = new DriveImportsRepository(db);
+  const settings = new SettingsRepository(db);
+  const backupAccounts = new BackupAccountsRepository(db);
+  const backupTransfers = new BackupTransfersRepository(db);
+  const totp = new TotpRepository(db);
   const uploadLocks = new UploadLockRegistry();
 
   const sessionService = new SessionService(sessions, config);
-  const tokenProvider = new TokenProvider(config, oauth);
+  const runtimeSettings = new RuntimeSettingsService(config, settings);
+  const tokenProvider = new TokenProvider(config, oauth, runtimeSettings);
+  const backupTokenProvider = new BackupTokenProvider(config, backupAccounts, runtimeSettings);
   // storageOverride lets tests inject InMemoryDriveStorage.
   const driveLimits = new DriveLimits({
     uploads: config.maxUserUploads,
@@ -107,7 +127,7 @@ export function createContext(
   });
   const driveStorage: DriveStorage =
     storageOverride ??
-    new GoogleDriveStorage(tokenProvider, driveRoots, driveLimits, config.driveRetryMaxAttempts);
+    new GoogleDriveStorage(tokenProvider, driveRoots, runtimeSettings, driveLimits, config.driveRetryMaxAttempts);
   const rootFolder = new RootFolderService(driveStorage);
   const bucketService = new BucketService(
     buckets,
@@ -147,10 +167,16 @@ export function createContext(
       bucketMembers,
       publicObjectLinks,
       driveImports,
+      settings,
+      backupAccounts,
+      backupTransfers,
+      totp,
     },
     uploadLocks,
     sessionService,
     tokenProvider,
+    backupTokenProvider,
+    runtimeSettings,
     driveStorage,
     driveLimits,
     reconcileService: new ReconcileService(
@@ -170,5 +196,6 @@ export function createContext(
     presignedUrlService: new PresignedUrlService(config, credentials),
     rateLimits: new RateLimits(config),
     loginFlows: new Map(),
+    backupLinkFlows: new Map(),
   };
 }

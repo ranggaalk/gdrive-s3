@@ -75,6 +75,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       signatureFailuresPerMinute: 100_000,
       s3PublicRpsPerIp: 100_000,
       publicShareRpsPerIp: 100_000,
+      mfaVerifyPerMinute: 100_000,
       maxKeys: 10_000,
     },
     logLevel: "error",

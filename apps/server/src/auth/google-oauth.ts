@@ -13,6 +13,15 @@ const VALID_ISSUERS = new Set(["https://accounts.google.com", "accounts.google.c
 
 export const IDENTITY_SCOPES = ["openid", "email", "profile"] as const;
 
+// The client id/secret actually used for a request. Resolved dynamically
+// (env, unless overridden at runtime via the Settings page) rather than
+// read directly off AppConfig, so a credential change takes effect without
+// a restart.
+export interface GoogleOAuthCredentials {
+  clientId: string;
+  clientSecret: string;
+}
+
 function requiredDriveScopes(config: AppConfig): string[] {
   return config.google.driveScope
     .split(/[\s,]+/)
@@ -54,10 +63,14 @@ export interface StartUrlInput {
   promptConsent: boolean;
 }
 
-export function buildAuthUrl(config: AppConfig, input: StartUrlInput): string {
+export function buildAuthUrl(
+  config: AppConfig,
+  oauth: Pick<GoogleOAuthCredentials, "clientId">,
+  input: StartUrlInput,
+): string {
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: config.google.clientId,
+    client_id: oauth.clientId,
     redirect_uri: config.google.redirectUri,
     scope: requiredScopes(config).join(" "),
     access_type: "offline",
@@ -86,14 +99,15 @@ export interface TokenResponse {
 
 export async function exchangeCode(
   config: AppConfig,
+  oauth: GoogleOAuthCredentials,
   code: string,
   pkceVerifier: string,
   signal?: AbortSignal,
 ): Promise<TokenResponse> {
   const body = new URLSearchParams({
     code,
-    client_id: config.google.clientId,
-    client_secret: config.google.clientSecret,
+    client_id: oauth.clientId,
+    client_secret: oauth.clientSecret,
     redirect_uri: config.google.redirectUri,
     grant_type: "authorization_code",
     code_verifier: pkceVerifier,
@@ -119,13 +133,13 @@ export interface RefreshResponse {
 }
 
 export async function refreshAccessToken(
-  config: AppConfig,
+  oauth: GoogleOAuthCredentials,
   refreshToken: string,
   signal?: AbortSignal,
 ): Promise<RefreshResponse> {
   const body = new URLSearchParams({
-    client_id: config.google.clientId,
-    client_secret: config.google.clientSecret,
+    client_id: oauth.clientId,
+    client_secret: oauth.clientSecret,
     refresh_token: refreshToken,
     grant_type: "refresh_token",
   });
@@ -208,12 +222,15 @@ async function verifyRs256(
 }
 
 /**
- * Verify a Google ID token: signature, issuer, audience, expiry, verified
- * email, and that the account is allowed in — either its `hd` claim matches
- * the configured Workspace domain, or its email is in ALLOWED_EMAILS.
+ * Verify a Google ID token's cryptographic integrity: signature, issuer,
+ * audience, expiry, and verified email. Does NOT check the login allowlist
+ * (Workspace domain / ALLOWED_EMAILS) — callers that authenticate an app
+ * login must layer that check themselves (see verifyIdToken below). Reused
+ * as-is for linking a backup Drive account, which is intentionally allowed
+ * to be any Google account, not just ones permitted to log into this app.
  */
-export async function verifyIdToken(
-  config: AppConfig,
+async function verifyIdTokenIntegrity(
+  oauth: Pick<GoogleOAuthCredentials, "clientId">,
   idToken: string,
   signal?: AbortSignal,
 ): Promise<IdTokenClaims> {
@@ -232,12 +249,26 @@ export async function verifyIdToken(
   if (!ok) throw new Error("id token signature invalid");
 
   if (!VALID_ISSUERS.has(claims.iss)) throw new Error("id token issuer invalid");
-  if (claims.aud !== config.google.clientId) throw new Error("id token audience mismatch");
+  if (claims.aud !== oauth.clientId) throw new Error("id token audience mismatch");
   if (typeof claims.exp !== "number" || claims.exp * 1000 <= Date.now()) {
     throw new Error("id token expired");
   }
   if (!claims.email_verified) throw new Error("email not verified");
+  return claims;
+}
 
+/**
+ * Verify a Google ID token for an app login: integrity checks plus the
+ * login allowlist — either its `hd` claim matches the configured Workspace
+ * domain, or its email is in ALLOWED_EMAILS.
+ */
+export async function verifyIdToken(
+  config: AppConfig,
+  oauth: Pick<GoogleOAuthCredentials, "clientId">,
+  idToken: string,
+  signal?: AbortSignal,
+): Promise<IdTokenClaims> {
+  const claims = await verifyIdTokenIntegrity(oauth, idToken, signal);
   const domainAllowed =
     config.google.workspaceDomain !== "" && claims.hd === config.google.workspaceDomain;
   const emailAllowed = config.google.allowedEmails.includes(claims.email.toLowerCase());
@@ -245,4 +276,18 @@ export async function verifyIdToken(
     throw new Error("account not allowed");
   }
   return claims;
+}
+
+/**
+ * Verify a Google ID token for linking a secondary backup Drive account:
+ * integrity checks only, deliberately no login-allowlist check — the whole
+ * point is letting a user link a Drive account (e.g. a personal Gmail) that
+ * may not be permitted to log into this app at all.
+ */
+export async function verifyLinkedAccountIdToken(
+  oauth: Pick<GoogleOAuthCredentials, "clientId">,
+  idToken: string,
+  signal?: AbortSignal,
+): Promise<IdTokenClaims> {
+  return verifyIdTokenIntegrity(oauth, idToken, signal);
 }

@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
 import { useTheme } from "@/components/theme-provider";
+import { useLocale } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { humanBytes } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import {
   getBucketTraffic,
   getOverviewTraffic,
@@ -14,12 +16,6 @@ import {
 } from "@/api/client";
 
 const POLL_MS = 15_000;
-
-const RANGES: Array<{ value: TrafficRange; label: string }> = [
-  { value: "1h", label: "1 Jam" },
-  { value: "24h", label: "24 Jam" },
-  { value: "7d", label: "7 Hari" },
-];
 
 // Colors follow the dataviz skill's validated default palette (categorical
 // slots 1/2 for identity series, status "critical" for the error count) —
@@ -65,6 +61,12 @@ interface TrafficChartsProps {
 
 function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
   const { resolvedTheme } = useTheme();
+  const { t } = useLocale();
+  const RANGES: Array<{ value: TrafficRange; label: string }> = [
+    { value: "1h", label: t.traffic.range1h },
+    { value: "24h", label: t.traffic.range24h },
+    { value: "7d", label: t.traffic.range7d },
+  ];
   const [range, setRange] = useState<TrafficRange>("1h");
   const [data, setData] = useState<BucketTrafficData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,18 +118,29 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="inline-flex items-center gap-1 rounded-full bg-muted p-1">
           {RANGES.map((r) => (
-            <Button key={r.value} type="button" size="sm" variant={range === r.value ? "default" : "outline"} onClick={() => setRange(r.value)}>
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => setRange(r.value)}
+              aria-pressed={range === r.value}
+              className={cn(
+                "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+                range === r.value
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
               {r.label}
-            </Button>
+            </button>
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <p className="text-xs text-muted-foreground">Diperbarui otomatis tiap {POLL_MS / 1000} detik.</p>
+          <p className="text-xs text-muted-foreground">{t.traffic.autoRefresh(POLL_MS / 1000)}</p>
           {onViewDetail ? (
             <Button type="button" size="sm" variant="outline" onClick={onViewDetail}>
-              Lihat detail
+              {t.traffic.viewDetail}
             </Button>
           ) : null}
         </div>
@@ -135,16 +148,13 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
 
       {error ? <ErrorAlert message={error} /> : null}
       {loading && !data ? (
-        <LoadingState label="Memuat traffic" />
+        <LoadingState label={t.traffic.loading} />
       ) : (
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Bandwidth</CardTitle>
-              <CardDescription>
-                Total: <span className="font-medium text-foreground">{humanBytes(totals.bytesIn)} masuk</span> ·{" "}
-                <span className="font-medium text-foreground">{humanBytes(totals.bytesOut)} keluar</span>
-              </CardDescription>
+              <CardTitle className="text-base">{t.traffic.bandwidthTitle}</CardTitle>
+              <CardDescription>{t.traffic.bandwidthTotal(humanBytes(totals.bytesIn), humanBytes(totals.bytesOut))}</CardDescription>
             </CardHeader>
             <CardContent>
               <Chart
@@ -152,8 +162,8 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
                 height={260}
                 colors={[c.blue, c.orange]}
                 series={[
-                  { name: "Bytes masuk", data: xy(points.map((p) => p.bytesIn)) },
-                  { name: "Bytes keluar", data: xy(points.map((p) => p.bytesOut)) },
+                  { name: t.traffic.bytesInSeries, data: xy(points.map((p) => p.bytesIn)) },
+                  { name: t.traffic.bytesOutSeries, data: xy(points.map((p) => p.bytesOut)) },
                 ]}
                 options={{
                   ...opts,
@@ -166,10 +176,10 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Request</CardTitle>
+              <CardTitle className="text-base">{t.traffic.requestTitle}</CardTitle>
               <CardDescription>
-                Total: <span className="font-medium text-foreground">{totals.requests} request</span>
-                {totals.errors > 0 ? <span className="text-destructive"> · {totals.errors} error</span> : null}
+                {t.traffic.requestTotal(totals.requests)}
+                {totals.errors > 0 ? <span className="text-destructive">{t.traffic.errorSuffix(totals.errors)}</span> : null}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -178,8 +188,8 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
                 height={260}
                 colors={[c.blue, c.critical]}
                 series={[
-                  { name: "Request", data: xy(points.map((p) => p.requests)) },
-                  { name: "Error", data: xy(points.map((p) => p.errors)) },
+                  { name: t.traffic.requestSeries, data: xy(points.map((p) => p.requests)) },
+                  { name: t.traffic.errorSeries, data: xy(points.map((p) => p.errors)) },
                 ]}
                 options={{
                   ...opts,

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLocale } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 
 export function CopyableCode({
@@ -12,6 +13,7 @@ export function CopyableCode({
   label: string;
   className?: string;
 }) {
+  const { t } = useLocale();
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
 
   const copy = async () => {
@@ -34,13 +36,13 @@ export function CopyableCode({
         size="icon"
         variant="ghost"
         className="absolute right-2 top-2 text-neutral-300 hover:bg-white/10 hover:text-white"
-        aria-label={status === "copied" ? `${label} disalin` : `Salin ${label}`}
+        aria-label={status === "copied" ? t.copy.copiedLabel(label) : t.copy.copyLabel(label)}
         onClick={copy}
       >
         {status === "copied" ? <Check /> : <Copy />}
       </Button>
       <span className="sr-only" aria-live="polite">
-        {status === "copied" ? `${label} berhasil disalin.` : status === "error" ? `${label} gagal disalin.` : ""}
+        {status === "copied" ? t.copy.copiedNotice(label) : status === "error" ? t.copy.errorNotice(label) : ""}
       </span>
     </div>
   );

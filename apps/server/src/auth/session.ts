@@ -38,6 +38,8 @@ export interface EstablishInput {
   userId: string;
   userAgent: string | null;
   ip: string | null;
+  // True when the user still owes a 2FA code — see SessionRow.mfa_pending.
+  mfaPending?: boolean;
 }
 
 export class SessionService {
@@ -70,6 +72,7 @@ export class SessionService {
       expiresAt,
       userAgent: input.userAgent,
       ipHash: hashIp(input.ip, this.config.sessionSecret),
+      mfaPending: input.mfaPending ?? false,
     });
     return {
       rawId,

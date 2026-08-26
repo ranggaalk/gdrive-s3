@@ -10,6 +10,8 @@ export interface UserRow {
   display_name: string | null;
   hosted_domain: string;
   status: "active" | "revoked" | "disabled";
+  is_admin: number;
+  totp_enabled: number;
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
@@ -20,6 +22,9 @@ export interface UpsertUserInput {
   email: string;
   displayName: string | null;
   hostedDomain: string;
+  // Recomputed from ADMIN_EMAILS on every login; omit in contexts (tests,
+  // seeding) that don't care about admin status.
+  isAdmin?: boolean;
 }
 
 export class UsersRepository {
@@ -50,26 +55,27 @@ export class UsersRepository {
   upsertOnLogin(input: UpsertUserInput): UserRow {
     const existing = this.findByGoogleSub(input.googleSub);
     const now = nowIso();
+    const isAdmin = (input.isAdmin ?? false) ? 1 : 0;
     if (existing) {
       this.db
         .query(
           `UPDATE users
-             SET email = ?, display_name = ?, hosted_domain = ?,
+             SET email = ?, display_name = ?, hosted_domain = ?, is_admin = ?,
                  updated_at = ?, last_login_at = ?
            WHERE id = ?`,
         )
-        .run(input.email, input.displayName, input.hostedDomain, now, now, existing.id);
+        .run(input.email, input.displayName, input.hostedDomain, isAdmin, now, now, existing.id);
       return this.findById(existing.id)!;
     }
     const id = newUserId();
     this.db
       .query(
         `INSERT INTO users
-           (id, google_sub, email, display_name, hosted_domain, status,
+           (id, google_sub, email, display_name, hosted_domain, status, is_admin,
             created_at, updated_at, last_login_at)
-         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
       )
-      .run(id, input.googleSub, input.email, input.displayName, input.hostedDomain, now, now, now);
+      .run(id, input.googleSub, input.email, input.displayName, input.hostedDomain, isAdmin, now, now, now);
     return this.findById(id)!;
   }
 }

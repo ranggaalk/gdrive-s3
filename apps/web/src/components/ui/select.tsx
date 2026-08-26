@@ -69,7 +69,9 @@ export function Select<T extends string>({
       {open ? (
         <div className="absolute z-50 mt-1 min-w-full overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg">
           <div role="listbox" className="max-h-60 overflow-auto p-1">
-            {options.map((option) => {
+            {options.length === 0 ? (
+              <p className="px-2 py-1.5 text-sm text-muted-foreground">Tidak ada pilihan.</p>
+            ) : options.map((option) => {
               const active = option.value === value;
               return (
                 <button

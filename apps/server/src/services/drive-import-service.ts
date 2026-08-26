@@ -13,6 +13,7 @@ import {
   unsupportedImportReason,
 } from "../drive/import-path.ts";
 import type { AppContext } from "../context.ts";
+import { releaseWhenConsumed } from "../drive/stream-utils.ts";
 import {
   ObjectAlreadyExistsError,
   ObjectService,
@@ -70,7 +71,13 @@ export class DriveImportService {
         sourceFolderName: folder.name,
       });
     } catch (error) {
-      if (String(error).includes("idx_drive_import_one_active_bucket")) {
+      // SQLite reports a partial unique index by its column list, not its
+      // name (e.g. "UNIQUE constraint failed: drive_import_jobs.bucket_id"),
+      // so match on that instead — the index name never appears here.
+      if (
+        String(error).includes("UNIQUE constraint failed") &&
+        String(error).includes("drive_import_jobs.bucket_id")
+      ) {
         throw new DriveImportAlreadyExistsError();
       }
       throw error;
@@ -275,39 +282,6 @@ export class DriveImportService {
       await importedBody?.cancel().catch(() => {});
     }
   }
-}
-
-function releaseWhenConsumed(
-  body: ReadableStream<Uint8Array>,
-  slot: { release(): void },
-): ReadableStream<Uint8Array> {
-  const reader = body.getReader();
-  let released = false;
-  const release = () => {
-    if (released) return;
-    released = true;
-    slot.release();
-  };
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const next = await reader.read();
-        if (next.done) {
-          release();
-          controller.close();
-        } else if (next.value) {
-          controller.enqueue(next.value);
-        }
-      } catch (error) {
-        release();
-        controller.error(error);
-      }
-    },
-    async cancel(reason) {
-      release();
-      await reader.cancel(reason);
-    },
-  });
 }
 
 function sourceTarget(kind: DriveImportSourceKind, driveId?: string): DriveOperationTarget {

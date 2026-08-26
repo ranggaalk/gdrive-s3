@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
+import { useLocale } from "@/components/locale-provider";
 import {
   addBucketMember,
   createBucket,
@@ -24,12 +25,13 @@ import {
   type StorageKind,
 } from "../api/client.ts";
 
-const ROLE_OPTIONS: Array<{ value: "viewer" | "editor"; label: string }> = [
-  { value: "viewer", label: "Viewer" },
-  { value: "editor", label: "Editor" },
-];
-
 export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
+  const { t } = useLocale();
+  const ROLE_OPTIONS: Array<{ value: "viewer" | "editor"; label: string }> = [
+    { value: "viewer", label: t.common.role.viewer },
+    { value: "editor", label: t.common.role.editor },
+  ];
+
   const [buckets, setBuckets] = useState<Bucket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,50 +140,51 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
     }
   };
 
-  if (loading) return <LoadingState label="Memuat bucket" />;
+  if (loading) return <LoadingState label={t.buckets.loading} />;
+
+  const roleLabel = (role: "owner" | "editor" | "viewer") =>
+    role === "owner" ? t.common.role.owner : role === "editor" ? t.common.role.editor : t.common.role.viewer;
 
   return (
     <div className="space-y-6">
       {error ? <ErrorAlert message={error} /> : null}
-      <div className="flex justify-end"><Button onClick={() => { setShowCreate(true); void loadSharedDrives(); }}><Plus /> Buat bucket</Button></div>
+      <div className="flex justify-end"><Button onClick={() => { setShowCreate(true); void loadSharedDrives(); }}><Plus /> {t.buckets.createButton}</Button></div>
 
       {buckets.length === 0 ? (
-        <EmptyState icon={PackageOpen} title="Belum ada bucket" description="Buat bucket pertama Anda di My Drive atau Shared Drive." />
+        <EmptyState icon={PackageOpen} title={t.buckets.emptyTitle} description={t.buckets.emptyDescription} />
       ) : (
-        <div className="rounded-lg border bg-card">
-          <Table>
-            <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>Lokasi</TableHead><TableHead>Akses</TableHead><TableHead>Objek</TableHead><TableHead>Multipart</TableHead><TableHead>Status</TableHead><TableHead>Dibuat</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+        <Table>
+            <TableHeader><TableRow><TableHead>{t.buckets.tableName}</TableHead><TableHead>{t.buckets.tableLocation}</TableHead><TableHead>{t.buckets.tableAccess}</TableHead><TableHead>{t.buckets.tableObjects}</TableHead><TableHead>{t.buckets.tableMultipart}</TableHead><TableHead>{t.buckets.tableStatus}</TableHead><TableHead>{t.buckets.tableCreated}</TableHead><TableHead className="text-right">{t.buckets.tableAction}</TableHead></TableRow></TableHeader>
             <TableBody>{buckets.map((bucket) => (
               <TableRow key={bucket.id}>
                 <TableRowHeader><Button variant="link" className="h-auto p-0" onClick={() => onOpen(bucket)}>{bucket.name}</Button></TableRowHeader>
                 <TableCell><div className="flex min-w-40 items-center gap-2">{bucket.storageKind === "shared_drive" ? <Share2 className="size-4 text-muted-foreground" /> : <HardDrive className="size-4 text-muted-foreground" />}<span>{bucket.storageDisplayName}</span></div></TableCell>
-                <TableCell><Badge variant={bucket.effectiveRole === "owner" ? "default" : "secondary"}>{bucket.effectiveRole === "owner" ? "Pemilik" : bucket.effectiveRole === "editor" ? "Editor" : "Viewer"}</Badge></TableCell>
-                <TableCell>{bucket.objectCount ?? 0}</TableCell><TableCell>{bucket.multipartOpen ?? 0}</TableCell><TableCell><Badge variant={bucket.storageStatus === "active" ? "success" : "destructive"}>{bucket.storageStatus === "active" ? "Aktif" : "Bermasalah"}</Badge></TableCell><TableCell className="whitespace-nowrap">{new Date(bucket.createdAt).toLocaleString()}</TableCell>
-                <TableCell className="text-right"><div className="flex justify-end gap-1">{bucket.ownedByMe && bucket.storageKind === "shared_drive" ? <Button size="icon" variant="ghost" aria-label={`Kelola akses ${bucket.name}`} title="Kelola akses" onClick={() => void openAccess(bucket)}><Users /></Button> : null}{bucket.ownedByMe ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={`Hapus bucket ${bucket.name}`} title="Hapus bucket" onClick={() => setPendingDelete(bucket)}><Trash2 /></Button> : null}</div></TableCell>
+                <TableCell><Badge variant={bucket.effectiveRole === "owner" ? "default" : "secondary"}>{roleLabel(bucket.effectiveRole)}</Badge></TableCell>
+                <TableCell>{bucket.objectCount ?? 0}</TableCell><TableCell>{bucket.multipartOpen ?? 0}</TableCell><TableCell><Badge variant={bucket.storageStatus === "active" ? "success" : "destructive"}>{bucket.storageStatus === "active" ? t.buckets.statusActive : t.buckets.statusIssue}</Badge></TableCell><TableCell className="whitespace-nowrap">{new Date(bucket.createdAt).toLocaleString()}</TableCell>
+                <TableCell className="text-right"><div className="flex justify-end gap-1">{bucket.ownedByMe && bucket.storageKind === "shared_drive" ? <Button size="icon" variant="ghost" aria-label={t.buckets.manageAccessLabel(bucket.name)} title={t.buckets.manageAccessTitle} onClick={() => void openAccess(bucket)}><Users /></Button> : null}{bucket.ownedByMe ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.deleteBucketLabel(bucket.name)} title={t.buckets.deleteBucketTitle} onClick={() => setPendingDelete(bucket)}><Trash2 /></Button> : null}</div></TableCell>
               </TableRow>
             ))}</TableBody>
           </Table>
-        </div>
       )}
 
       <Dialog open={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); if (open) void loadSharedDrives(); } }}>
         <DialogContent>
           <form onSubmit={(event) => void doCreate(event)} className="space-y-5">
-            <DialogHeader><DialogTitle>Buat bucket</DialogTitle><DialogDescription>Pilih lokasi penyimpanan. Lokasi tidak dapat dipindahkan setelah bucket dibuat.</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>{t.buckets.createDialogTitle}</DialogTitle><DialogDescription>{t.buckets.createDialogDescription}</DialogDescription></DialogHeader>
             {formError ? <ErrorAlert message={formError} /> : null}
-            <div className="space-y-2"><Label htmlFor="bucket-name">Nama bucket</Label><Input id="bucket-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus aria-invalid={Boolean(formError)} aria-describedby="bucket-help" /><p id="bucket-help" className="text-xs text-muted-foreground">3-63 karakter, huruf kecil, angka, titik, dan minus.</p></div>
-            <fieldset className="space-y-2"><legend className="text-sm font-medium">Lokasi</legend><div className="grid grid-cols-2 gap-2"><Button type="button" variant={storageKind === "my_drive" ? "default" : "outline"} onClick={() => setStorageKind("my_drive")}><HardDrive /> My Drive</Button><Button type="button" variant={storageKind === "shared_drive" ? "default" : "outline"} disabled={drivesLoading || noSharedDrives} title={noSharedDrives ? "Tidak ada Shared Drive yang dapat ditulisi" : undefined} onClick={() => setStorageKind("shared_drive")}><Share2 /> Shared Drive</Button></div>{noSharedDrives ? <p className="text-xs text-muted-foreground">Tidak ada Shared Drive yang dapat ditulisi untuk akun Anda.</p> : null}</fieldset>
-            {storageKind === "shared_drive" ? <div className="space-y-2"><Label>Shared Drive</Label><Select value={sharedDriveId} onValueChange={setSharedDriveId} disabled={drivesLoading} placeholder={drivesLoading ? "Memuat Shared Drive…" : "Pilih Shared Drive"} options={writableSharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} /><p className="text-xs text-muted-foreground">Hanya Shared Drive yang dapat ditulisi ditampilkan. Anggota S3 dikelola setelah bucket dibuat.</p></div> : null}
-            <DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>Batal</Button><Button type="submit" disabled={name.trim().length < 3 || creating || (storageKind === "shared_drive" && !sharedDriveId)}>{creating ? "Membuat…" : "Buat"}</Button></DialogFooter>
+            <div className="space-y-2"><Label htmlFor="bucket-name">{t.buckets.nameLabel}</Label><Input id="bucket-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus aria-invalid={Boolean(formError)} aria-describedby="bucket-help" /><p id="bucket-help" className="text-xs text-muted-foreground">{t.buckets.nameHelp}</p></div>
+            <fieldset className="space-y-2"><legend className="text-sm font-medium">{t.buckets.locationLegend}</legend><div className="grid grid-cols-2 gap-2"><Button type="button" variant={storageKind === "my_drive" ? "default" : "outline"} onClick={() => setStorageKind("my_drive")}><HardDrive /> My Drive</Button><Button type="button" variant={storageKind === "shared_drive" ? "default" : "outline"} disabled={drivesLoading || noSharedDrives} title={noSharedDrives ? t.buckets.noWritableSharedDriveTitle : undefined} onClick={() => setStorageKind("shared_drive")}><Share2 /> Shared Drive</Button></div>{noSharedDrives ? <p className="text-xs text-muted-foreground">{t.buckets.noWritableSharedDriveHelp}</p> : null}</fieldset>
+            {storageKind === "shared_drive" ? <div className="space-y-2"><Label>{t.buckets.sharedDriveLabel}</Label><Select value={sharedDriveId} onValueChange={setSharedDriveId} disabled={drivesLoading} placeholder={drivesLoading ? t.buckets.loadingSharedDrives : t.buckets.pickSharedDrive} options={writableSharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} /><p className="text-xs text-muted-foreground">{t.buckets.sharedDriveHelp}</p></div> : null}
+            <DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>{t.common.cancel}</Button><Button type="submit" disabled={name.trim().length < 3 || creating || (storageKind === "shared_drive" && !sharedDriveId)}>{creating ? t.buckets.creating : t.buckets.create}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(accessBucket)} onOpenChange={(open) => { if (!open && !memberBusy) setAccessBucket(null); }}>
-        <DialogContent className="max-w-xl"><DialogHeader><DialogTitle>Kelola akses {accessBucket?.name}</DialogTitle><DialogDescription>Pengguna harus sudah login ke DriveS3 dan menjadi anggota Google Shared Drive yang sama.</DialogDescription></DialogHeader><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder="nama@domain.com" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label="Email anggota" /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? "Menambah…" : "Tambah"}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">Belum ada anggota tambahan.</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={`Hapus akses ${member.email}`} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></DialogContent>
+        <DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{t.buckets.manageAccessDialogDescription}</DialogDescription></DialogHeader><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></DialogContent>
       </Dialog>
 
-      <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Hapus bucket {pendingDelete?.name}?</AlertDialogTitle><AlertDialogDescription>Bucket harus kosong. Folder pada {pendingDelete?.storageDisplayName} juga akan dihapus sesuai konfigurasi server.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>Batal</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={(event) => { event.preventDefault(); void doDelete(); }}>{deleting ? "Menghapus…" : "Hapus"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.buckets.deleteBucketConfirmTitle(pendingDelete?.name ?? "")}</AlertDialogTitle><AlertDialogDescription>{t.buckets.deleteBucketConfirmDescription(pendingDelete?.storageDisplayName ?? "")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={(event) => { event.preventDefault(); void doDelete(); }}>{deleting ? t.buckets.deleting : t.buckets.delete}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>
   );
 }

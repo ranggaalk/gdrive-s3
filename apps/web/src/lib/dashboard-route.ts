@@ -3,7 +3,10 @@ export type DashboardSection =
   | "buckets"
   | "credentials"
   | "activity"
-  | "documentation";
+  | "documentation"
+  | "backup"
+  | "settings"
+  | "security";
 
 export type DashboardRoute =
   | { kind: "section"; page: DashboardSection }
@@ -15,6 +18,9 @@ const SECTIONS = new Set<DashboardSection>([
   "credentials",
   "activity",
   "documentation",
+  "backup",
+  "settings",
+  "security",
 ]);
 
 function safeDecode(segment: string): string {

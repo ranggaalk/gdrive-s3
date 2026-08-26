@@ -6,6 +6,7 @@ export interface Me {
   email: string;
   displayName: string | null;
   hostedDomain: string;
+  isAdmin: boolean;
   csrfToken: string;
 }
 
@@ -144,6 +145,12 @@ export interface AuditItem {
 
 let csrfToken: string | null = null;
 
+export class MfaRequiredError extends Error {
+  constructor() {
+    super("MFA_REQUIRED");
+  }
+}
+
 async function unwrap<T>(res: Response): Promise<T> {
   const json = (await res.json()) as { data?: T; error?: { code: string; message: string } };
   if (!res.ok || json.error) {
@@ -176,7 +183,11 @@ function mutateRaw(method: string, body: BodyInit, contentType: string): Request
 
 export async function getMe(): Promise<Me | null> {
   const res = await fetch("/api/me");
-  if (res.status === 401) return null;
+  if (res.status === 401) {
+    const json = (await res.json().catch(() => null)) as { error?: { code: string } } | null;
+    if (json?.error?.code === "MFA_REQUIRED") throw new MfaRequiredError();
+    return null;
+  }
   const me = await unwrap<Me>(res);
   csrfToken = me.csrfToken;
   return me;
@@ -398,4 +409,155 @@ export interface ReconcileResult {
 export const reconcileDrive = async () =>
   unwrap<ReconcileResult>(
     await fetch("/api/drive/reconcile", mutate("POST")),
+  );
+
+export type SettingSource = "env" | "database";
+export type NameSettingSource = "default" | "custom";
+
+export interface GoogleOAuthSettingsStatus {
+  clientId: string;
+  clientIdSource: SettingSource;
+  clientSecretSource: SettingSource;
+  updatedAt: string | null;
+}
+
+export interface RootFolderNameStatus {
+  name: string;
+  source: NameSettingSource;
+  updatedAt: string | null;
+}
+
+export const getSettingsStatus = async () =>
+  unwrap<{ googleOAuth: GoogleOAuthSettingsStatus; rootFolderName: RootFolderNameStatus }>(
+    await fetch("/api/settings"),
+  );
+
+export const updateGoogleOAuthSettings = async (clientId: string, clientSecret: string) =>
+  unwrap<{ googleOAuth: GoogleOAuthSettingsStatus }>(
+    await fetch("/api/settings/google-oauth", mutate("PUT", { clientId, clientSecret })),
+  );
+
+export const resetGoogleOAuthSettings = async () =>
+  unwrap<{ googleOAuth: GoogleOAuthSettingsStatus }>(
+    await fetch("/api/settings/google-oauth", mutate("DELETE")),
+  );
+
+export const updateRootFolderNameSetting = async (name: string) =>
+  unwrap<{ rootFolderName: RootFolderNameStatus }>(
+    await fetch("/api/settings/root-folder-name", mutate("PUT", { name })),
+  );
+
+export const resetRootFolderNameSetting = async () =>
+  unwrap<{ rootFolderName: RootFolderNameStatus }>(
+    await fetch("/api/settings/root-folder-name", mutate("DELETE")),
+  );
+
+export interface BackupAccount {
+  id: string;
+  email: string;
+  status: "active" | "reauthorization_required" | "error";
+  lastError: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export type BackupTransferStatus =
+  | "queued"
+  | "running"
+  | "cancel_requested"
+  | "completed"
+  | "cancelled"
+  | "failed";
+
+export interface BackupTransfer {
+  id: string;
+  bucketId: string;
+  backupAccountId: string;
+  status: BackupTransferStatus;
+  total: number;
+  skipped: number;
+  copied: number;
+  failed: number;
+  lastError: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export const listBackupAccounts = async () =>
+  unwrap<BackupAccount[]>(await fetch("/api/backup-accounts"));
+
+export const startBackupAccountLink = () => {
+  window.location.href = "/auth/google/link-start";
+};
+
+export const deleteBackupAccount = async (id: string) =>
+  unwrap(await fetch(`/api/backup-accounts/${encodeURIComponent(id)}`, mutate("DELETE")));
+
+export const listBucketBackups = async (bucketId: string) =>
+  unwrap<BackupTransfer[]>(await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/backups`));
+
+export const startBucketBackup = async (bucketId: string, backupAccountId: string) =>
+  unwrap<BackupTransfer>(
+    await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/backups`, mutate("POST", { backupAccountId })),
+  );
+
+export const getBucketBackup = async (bucketId: string, transferId: string) =>
+  unwrap<BackupTransfer>(
+    await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/backups/${encodeURIComponent(transferId)}`),
+  );
+
+export const cancelBucketBackup = async (bucketId: string, transferId: string) =>
+  unwrap(
+    await fetch(
+      `/api/buckets/${encodeURIComponent(bucketId)}/backups/${encodeURIComponent(transferId)}/cancel`,
+      mutate("POST"),
+    ),
+  );
+
+// Login-time 2FA verification (/auth/mfa/*, deliberately outside /api/* —
+// see server routes/mfa-auth.ts). getMfaLoginStatus also refreshes the
+// module-level csrfToken since the normal /api/me bootstrap never succeeds
+// while a session is mfa_pending.
+export interface MfaLoginStatus {
+  pending: boolean;
+  csrfToken: string;
+}
+
+export const getMfaLoginStatus = async () => {
+  const status = await unwrap<MfaLoginStatus>(await fetch("/auth/mfa/status"));
+  csrfToken = status.csrfToken;
+  return status;
+};
+
+export const verifyMfaLogin = async (code: string) =>
+  unwrap<{ ok: true }>(await fetch("/auth/mfa/verify", mutate("POST", { code })));
+
+// TOTP 2FA setup/management for the current user (/api/security/totp/*).
+export interface TotpStatus {
+  enabled: boolean;
+  pendingSetup: boolean;
+  recoveryCodesRemaining: number;
+}
+
+export interface TotpSetupInfo {
+  otpauthUri: string;
+  manualEntryKey: string;
+}
+
+export const getTotpStatus = async () => unwrap<TotpStatus>(await fetch("/api/security/totp"));
+
+export const startTotpSetup = async () =>
+  unwrap<TotpSetupInfo>(await fetch("/api/security/totp/setup", mutate("POST")));
+
+export const confirmTotpSetup = async (code: string) =>
+  unwrap<{ recoveryCodes: string[] }>(
+    await fetch("/api/security/totp/confirm", mutate("POST", { code })),
+  );
+
+export const disableTotp = async (code: string) =>
+  unwrap<{ disabled: true }>(await fetch("/api/security/totp/disable", mutate("POST", { code })));
+
+export const regenerateRecoveryCodes = async (code: string) =>
+  unwrap<{ recoveryCodes: string[] }>(
+    await fetch("/api/security/totp/recovery-codes", mutate("POST", { code })),
   );

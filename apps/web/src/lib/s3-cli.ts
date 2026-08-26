@@ -5,6 +5,18 @@ export interface S3CliCredentials {
   secretAccessKey: string;
 }
 
+export interface CredentialFileLabels {
+  heading: string;
+  label: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  s3Endpoint: string;
+  region: string;
+  createdAt: string;
+  warningLines: string[];
+  cliExampleHeading: string;
+}
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
@@ -26,45 +38,48 @@ export function credentialSetupExample(
   ].join("\n");
 }
 
-export function documentationSetupExample(config: S3ConnectionConfig): string {
-  return credentialSetupExample(config, {
-    accessKeyId: "ACCESS_KEY_ID_ANDA",
-    secretAccessKey: "SECRET_ACCESS_KEY_ANDA",
-  });
+export function documentationSetupExample(
+  config: S3ConnectionConfig,
+  placeholders: S3CliCredentials,
+): string {
+  return credentialSetupExample(config, placeholders);
 }
 
 export function credentialFileContent(
   config: S3ConnectionConfig,
   credentials: S3CliCredentials & { label: string; createdAt: string },
+  labels: CredentialFileLabels,
 ): string {
+  const fields: Array<[string, string]> = [
+    [labels.label, credentials.label],
+    [labels.accessKeyId, credentials.accessKeyId],
+    [labels.secretAccessKey, credentials.secretAccessKey],
+    [labels.s3Endpoint, config.s3Endpoint],
+    [labels.region, config.s3Region],
+    [labels.createdAt, credentials.createdAt],
+  ];
+  const width = Math.max(...fields.map(([field]) => field.length));
   return [
-    "DriveS3 Gateway — S3 access key",
-    "================================",
+    labels.heading,
+    "=".repeat(labels.heading.length),
     "",
-    `Label             : ${credentials.label}`,
-    `Access Key ID     : ${credentials.accessKeyId}`,
-    `Secret Access Key : ${credentials.secretAccessKey}`,
-    `S3 Endpoint       : ${config.s3Endpoint}`,
-    `Region            : ${config.s3Region}`,
-    `Dibuat            : ${credentials.createdAt}`,
+    ...fields.map(([field, value]) => `${field.padEnd(width)} : ${value}`),
     "",
-    "PENTING: Secret access key ini hanya ditampilkan satu kali dan tidak",
-    "dapat dilihat lagi dari dashboard setelah dialog ini ditutup. Simpan",
-    "file ini di tempat yang aman.",
+    ...labels.warningLines,
     "",
-    "Contoh setup AWS CLI:",
+    labels.cliExampleHeading,
     credentialSetupExample(config, credentials),
     "",
   ].join("\n");
 }
 
-export function s3CommandExamples(config: S3ConnectionConfig) {
+export function s3CommandExamples(config: S3ConnectionConfig, bucketName: string) {
   const aws = baseCommand(config);
   return {
     test: `${aws} s3 ls`,
-    upload: `${aws} s3 cp ./file.txt s3://nama-bucket/file.txt`,
-    list: `${aws} s3 ls s3://nama-bucket/`,
-    download: `${aws} s3 cp s3://nama-bucket/file.txt ./file.txt`,
-    remove: `${aws} s3 rm s3://nama-bucket/file.txt`,
+    upload: `${aws} s3 cp ./file.txt s3://${bucketName}/file.txt`,
+    list: `${aws} s3 ls s3://${bucketName}/`,
+    download: `${aws} s3 cp s3://${bucketName}/file.txt ./file.txt`,
+    remove: `${aws} s3 rm s3://${bucketName}/file.txt`,
   };
 }

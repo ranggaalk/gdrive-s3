@@ -6,6 +6,7 @@ import type { AppConfig } from "../config.ts";
 import { openFromString, aad } from "../security/encryption.ts";
 import { refreshAccessToken } from "../auth/google-oauth.ts";
 import { OAuthAccountsRepository } from "../db/repositories/oauth-accounts.ts";
+import type { RuntimeSettingsService } from "../services/runtime-settings-service.ts";
 
 interface CachedToken {
   accessToken: string;
@@ -27,6 +28,7 @@ export class TokenProvider {
   constructor(
     private readonly config: AppConfig,
     private readonly oauthRepo: OAuthAccountsRepository,
+    private readonly runtimeSettings: RuntimeSettingsService,
   ) {}
 
   /** Return a valid access token for the user, refreshing if needed. */
@@ -51,7 +53,8 @@ export class TokenProvider {
     }
 
     try {
-      const res = await refreshAccessToken(this.config, refreshToken, signal);
+      const oauthCreds = this.runtimeSettings.getGoogleOAuthCredentials();
+      const res = await refreshAccessToken(oauthCreds, refreshToken, signal);
       const token: CachedToken = {
         accessToken: res.access_token,
         expiresAtMs: Date.now() + res.expires_in * 1000,

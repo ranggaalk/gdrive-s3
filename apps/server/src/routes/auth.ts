@@ -13,6 +13,7 @@ import { sealToString, aad } from "../security/encryption.ts";
 import { readCookie, SESSION_COOKIE } from "../auth/session.ts";
 import { clientIpFrom, rawClientIp, type HasRequestIp } from "../util/client-ip.ts";
 import { retryAfterSeconds } from "../security/rate-limits.ts";
+import { finishBackupLink } from "./backup-auth.ts";
 
 const FLOW_TTL_MS = 10 * 60 * 1000;
 
@@ -46,7 +47,7 @@ export async function handleAuthStart(
   const state = generateState();
   const pkce = generatePkce();
   ctx.loginFlows.set(state, { pkceVerifier: pkce.verifier, createdAt: Date.now() });
-  const url = buildAuthUrl(ctx.config, {
+  const url = buildAuthUrl(ctx.config, ctx.runtimeSettings.getGoogleOAuthCredentials(), {
     state,
     pkceChallenge: pkce.challenge,
     promptConsent: true,
@@ -70,6 +71,23 @@ export async function handleAuthCallback(
       headers: { Location: new URL(query || "/", ctx.config.appOrigin).toString() },
     });
 
+  const redirectBackup = (query: string) =>
+    new Response(null, {
+      status: 302,
+      headers: { Location: new URL(`/backup${query}`, ctx.config.appOrigin).toString() },
+    });
+
+  const linkFlow = state ? ctx.backupLinkFlows.get(state) : undefined;
+  if (linkFlow) {
+    ctx.backupLinkFlows.delete(state!);
+    if (oauthError) return redirectBackup("?link_error=denied");
+    if (!code) return redirectBackup("?link_error=invalid");
+    const result = await finishBackupLink(ctx, code, linkFlow, req.signal);
+    return result.ok
+      ? redirectBackup("?linked=1")
+      : redirectBackup(`?link_error=${encodeURIComponent(result.error)}`);
+  }
+
   if (oauthError) return redirectHome("?login_error=denied");
   if (!code || !state) return redirectHome("?login_error=invalid");
 
@@ -78,8 +96,9 @@ export async function handleAuthCallback(
   if (!flow) return redirectHome("?login_error=state");
 
   try {
-    const tokens = await exchangeCode(ctx.config, code, flow.pkceVerifier);
-    const claims = await verifyIdToken(ctx.config, tokens.id_token);
+    const oauthCreds = ctx.runtimeSettings.getGoogleOAuthCredentials();
+    const tokens = await exchangeCode(ctx.config, oauthCreds, code, flow.pkceVerifier);
+    const claims = await verifyIdToken(ctx.config, oauthCreds, tokens.id_token);
 
     const user = ctx.repos.users.upsertOnLogin({
       googleSub: claims.sub,
@@ -89,6 +108,9 @@ export async function handleAuthCallback(
       // fall back to the email's domain so Shared Drive member lookups
       // (which join on hosted_domain) stay scoped consistently.
       hostedDomain: claims.hd ?? claims.email.split("@")[1]!,
+      // Recomputed every login so revoking ADMIN_EMAILS takes effect on
+      // the admin's next sign-in, not just for new users.
+      isAdmin: ctx.config.adminEmails.includes(claims.email.toLowerCase()),
     });
 
     // Google may omit refresh_token on incremental consent. Preserve the
@@ -114,16 +136,18 @@ export async function handleAuthCallback(
       });
     }
 
+    const mfaPending = !!user.totp_enabled;
     const session = ctx.sessionService.establish({
       userId: user.id,
       userAgent: req.headers.get("user-agent"),
       ip: proxyClientIp(ctx, req) ?? rawClientIp(req, server, ctx.config),
+      mfaPending,
     });
 
     return new Response(null, {
       status: 302,
       headers: {
-        Location: ctx.config.appOrigin,
+        Location: new URL(mfaPending ? "/mfa" : "/", ctx.config.appOrigin).toString(),
         "Set-Cookie": session.setCookie,
       },
     });

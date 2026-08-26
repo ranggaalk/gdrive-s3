@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, BookOpen, Gauge, HardDrive, KeyRound, LogIn, PackageOpen, RefreshCw } from "lucide-react";
-import { getBucket, getMe, type Me, type Bucket } from "./api/client.ts";
+import { Activity, BookOpen, Gauge, HardDrive, HardDriveDownload, KeyRound, LogIn, PackageOpen, RefreshCw, Settings } from "lucide-react";
+import { getBucket, getMe, MfaRequiredError, type Me, type Bucket } from "./api/client.ts";
 import { AppShell, type NavigationItem } from "@/components/app-shell";
 import { ErrorAlert, LoadingState, Spinner } from "@/components/feedback";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useLocale } from "@/components/locale-provider";
 import {
   dashboardRouteUrl,
   dashboardSection,
@@ -18,24 +19,13 @@ import { CredentialsPage } from "./pages/CredentialsPage.tsx";
 import { ObjectsPage } from "./pages/ObjectsPage.tsx";
 import { ActivityPage } from "./pages/ActivityPage.tsx";
 import { DocsPage } from "./pages/DocsPage.tsx";
-
-const TITLES: Record<DashboardSection, string> = {
-  overview: "Overview",
-  buckets: "Buckets",
-  credentials: "S3 Credentials",
-  activity: "Activity",
-  documentation: "Dokumentasi",
-};
-
-const NAVIGATION: Array<NavigationItem<DashboardSection>> = [
-  { id: "overview", name: "Overview", icon: Gauge },
-  { id: "buckets", name: "Buckets", icon: PackageOpen },
-  { id: "credentials", name: "S3 Credentials", icon: KeyRound },
-  { id: "activity", name: "Activity", icon: Activity },
-  { id: "documentation", name: "Dokumentasi", icon: BookOpen },
-];
+import { SettingsPage } from "./pages/SettingsPage.tsx";
+import { BackupAccountsPage } from "./pages/BackupAccountsPage.tsx";
+import { SecurityPage } from "./pages/SecurityPage.tsx";
+import { MfaVerifyPage } from "./pages/MfaVerifyPage.tsx";
 
 function LoginPage() {
+  const { t, locale } = useLocale();
   const params = new URLSearchParams(window.location.search);
   const loginError = params.get("login_error");
 
@@ -46,16 +36,27 @@ function LoginPage() {
           <div className="mb-3 rounded-2xl bg-primary p-3 text-primary-foreground shadow-lg shadow-primary/20">
             <HardDrive className="size-8" aria-hidden="true" />
           </div>
-          <CardTitle className="text-2xl">DriveS3 Gateway</CardTitle>
+          <CardTitle className="text-2xl">{t.nav.appName}</CardTitle>
           <CardDescription className="max-w-md text-base">
-            Bucket dapat disimpan di <strong className="text-foreground">My Drive</strong> pribadi atau Google <strong className="text-foreground">Shared Drive</strong> organisasi.
-            Masuk hanya diizinkan untuk domain Google Workspace organisasi Anda.
+            {locale === "en" ? (
+              <>
+                Buckets can be stored in your personal <strong className="text-foreground">My Drive</strong> or your
+                organization's Google <strong className="text-foreground">Shared Drive</strong>. Sign-in is only
+                allowed for your organization's Google Workspace domain.
+              </>
+            ) : (
+              <>
+                Bucket dapat disimpan di <strong className="text-foreground">My Drive</strong> pribadi atau Google{" "}
+                <strong className="text-foreground">Shared Drive</strong> organisasi. Masuk hanya diizinkan untuk
+                domain Google Workspace organisasi Anda.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {loginError ? <ErrorAlert title="Login gagal" message="Google tidak dapat menyelesaikan proses masuk. Silakan coba lagi." /> : null}
+          {loginError ? <ErrorAlert title={t.login.loginFailedTitle} message={t.login.loginFailedMessage} /> : null}
           <Button asChild size="lg" className="w-full">
-            <a href="/auth/google/start"><LogIn /> Masuk dengan Google</a>
+            <a href="/auth/google/start"><LogIn /> {t.login.loginButton}</a>
           </Button>
         </CardContent>
       </Card>
@@ -64,8 +65,10 @@ function LoginPage() {
 }
 
 export function App() {
+  const { t } = useLocale();
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<Me | null>(null);
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [route, setRoute] = useState<DashboardRoute>(() =>
     parseDashboardLocation(window.location),
@@ -75,13 +78,39 @@ export function App() {
   const [bucketError, setBucketError] = useState<string | null>(null);
   const [bucketLoadAttempt, setBucketLoadAttempt] = useState(0);
 
+  const TITLES: Record<DashboardSection, string> = {
+    overview: t.nav.overview,
+    buckets: t.nav.buckets,
+    credentials: t.nav.credentials,
+    activity: t.nav.activity,
+    documentation: t.nav.documentation,
+    backup: t.nav.backup,
+    settings: t.nav.settings,
+    security: t.nav.security,
+  };
+
+  const NAVIGATION: Array<NavigationItem<DashboardSection>> = [
+    { id: "overview", name: t.nav.overview, icon: Gauge },
+    { id: "buckets", name: t.nav.buckets, icon: PackageOpen },
+    { id: "credentials", name: t.nav.credentials, icon: KeyRound },
+    { id: "backup", name: t.nav.backup, icon: HardDriveDownload },
+    { id: "activity", name: t.nav.activity, icon: Activity },
+    { id: "documentation", name: t.nav.documentation, icon: BookOpen },
+  ];
+
   const load = useCallback(async () => {
     setLoading(true);
     setBootstrapError(null);
+    setMfaRequired(false);
     try {
       setMe(await getMe());
     } catch (error) {
-      setBootstrapError(error instanceof Error ? error.message : String(error));
+      if (error instanceof MfaRequiredError) {
+        setMe(null);
+        setMfaRequired(true);
+      } else {
+        setBootstrapError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       setLoading(false);
     }
@@ -139,36 +168,42 @@ export function App() {
   }, [me, route, bucketLoadAttempt]);
 
   if (loading) {
-    return <main className="flex min-h-screen items-center justify-center"><Spinner className="text-primary" label="Memuat sesi" /></main>;
+    return <main className="flex min-h-screen items-center justify-center"><Spinner className="text-primary" label={t.login.loadingSession} /></main>;
   }
 
   if (bootstrapError) {
     return (
       <main className="flex min-h-screen items-center justify-center p-4">
         <Card className="w-full max-w-lg">
-          <CardHeader><CardTitle>Dashboard tidak dapat dimuat</CardTitle><CardDescription>Koneksi ke control plane gagal.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{t.login.dashboardUnavailableTitle}</CardTitle><CardDescription>{t.login.dashboardUnavailableDescription}</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <ErrorAlert message={bootstrapError} />
-            <Button onClick={() => void load()}><RefreshCw /> Coba lagi</Button>
+            <Button onClick={() => void load()}><RefreshCw /> {t.common.retry}</Button>
           </CardContent>
         </Card>
       </main>
     );
   }
 
+  if (mfaRequired) return <MfaVerifyPage onVerified={() => void load()} />;
+
   if (!me) return <LoginPage />;
 
   const section = dashboardSection(route);
   const navigateSection = (page: DashboardSection) =>
     navigate({ kind: "section", page });
+  const navigation = me.isAdmin
+    ? [...NAVIGATION, { id: "settings" as const, name: t.nav.settings, icon: Settings }]
+    : NAVIGATION;
 
   return (
     <AppShell
       email={me.email}
-      title={route.kind === "bucket" ? "Objects" : TITLES[section]}
-      navigation={NAVIGATION}
+      title={route.kind === "bucket" ? t.nav.objects : TITLES[section]}
+      navigation={navigation}
       active={section}
       onSelect={navigateSection}
+      onOpenSecurity={() => navigateSection("security")}
     >
       {route.kind === "section" && route.page === "overview" ? (
         <OverviewPage onViewTrafficDetail={() => navigateSection("activity")} />
@@ -184,21 +219,28 @@ export function App() {
           onOpenCredentials={() => navigateSection("credentials")}
         />
       ) : null}
+      {route.kind === "section" && route.page === "backup" ? <BackupAccountsPage /> : null}
+      {route.kind === "section" && route.page === "settings" ? <SettingsPage /> : null}
+      {route.kind === "section" && route.page === "security" ? <SecurityPage /> : null}
       {route.kind === "bucket" &&
       (bucketLoading || (!bucketError && activeBucket?.id !== route.bucketId)) ? (
-        <LoadingState label="Memuat bucket" />
+        <LoadingState label={t.login.loadingBucket} />
       ) : null}
       {route.kind === "bucket" && bucketError ? (
         <div className="space-y-4">
-          <ErrorAlert title="Bucket tidak dapat dimuat" message={bucketError} />
+          <ErrorAlert title={t.login.bucketUnavailableTitle} message={bucketError} />
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => setBucketLoadAttempt((attempt) => attempt + 1)}><RefreshCw /> Coba lagi</Button>
-            <Button variant="outline" onClick={() => navigateSection("buckets")}>Kembali ke buckets</Button>
+            <Button onClick={() => setBucketLoadAttempt((attempt) => attempt + 1)}><RefreshCw /> {t.common.retry}</Button>
+            <Button variant="outline" onClick={() => navigateSection("buckets")}>{t.login.backToBuckets}</Button>
           </div>
         </div>
       ) : null}
       {route.kind === "bucket" && activeBucket?.id === route.bucketId ? (
-        <ObjectsPage bucket={activeBucket} onBack={() => navigateSection("buckets")} />
+        <ObjectsPage
+          bucket={activeBucket}
+          onBack={() => navigateSection("buckets")}
+          onOpenBackupAccounts={() => navigateSection("backup")}
+        />
       ) : null}
     </AppShell>
   );
