@@ -90,4 +90,8 @@ export const aad = {
   appSetting: (key: string) => `app-setting:${key}`,
   backupRefreshToken: (backupAccountId: string) => `backup-refresh-token:${backupAccountId}`,
   totpSecret: (userId: string) => `totp-secret:${userId}`,
+  kmsKey: (kmsKeyId: string) => `kms-key:${kmsKeyId}`,
+  // The version is bound in so a data key wrapped under one CMK version can
+  // never be opened as though it belonged to another.
+  kmsDataKey: (kmsKeyId: string, version: number) => `kms-data-key:${kmsKeyId}:${version}`,
 };

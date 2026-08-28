@@ -26,6 +26,12 @@ export interface MultipartUploadRow {
   total_parts: number | null;
   last_error: string | null;
   drive_target_id: string | null;
+  sse_algorithm: string | null;
+  sse_kms_key_id: string | null;
+  sse_kms_key_version: number | null;
+  sse_wrapped_data_key: string | null;
+  sse_iv: string | null;
+  sse_customer_key_md5: string | null;
 }
 
 export interface CreateMultipartInput {
@@ -38,6 +44,16 @@ export interface CreateMultipartInput {
   metadata: Record<string, string>;
   expiresAt: string;
   driveTargetId?: string;
+  /** Chosen once at CreateMultipartUpload so every part and the final
+   *  assembly share one data key. */
+  sse?: {
+    algorithm: string;
+    kmsKeyId: string | null;
+    kmsKeyVersion: number | null;
+    wrappedDataKey: string | null;
+    iv: string;
+    customerKeyMd5: string | null;
+  } | null;
 }
 
 export class MultipartUploadsRepository {
@@ -49,8 +65,10 @@ export class MultipartUploadsRepository {
       .query(
         `INSERT INTO multipart_uploads
            (id, bucket_id, object_key, user_id, content_type, metadata_json,
-            status, initiated_at, expires_at, drive_folder_id, drive_target_id)
-         VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
+            status, initiated_at, expires_at, drive_folder_id, drive_target_id,
+            sse_algorithm, sse_kms_key_id, sse_kms_key_version,
+            sse_wrapped_data_key, sse_iv, sse_customer_key_md5)
+         VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -63,6 +81,12 @@ export class MultipartUploadsRepository {
         input.expiresAt,
         input.driveFolderId,
         input.driveTargetId ?? null,
+        input.sse?.algorithm ?? null,
+        input.sse?.kmsKeyId ?? null,
+        input.sse?.kmsKeyVersion ?? null,
+        input.sse?.wrappedDataKey ?? null,
+        input.sse?.iv ?? null,
+        input.sse?.customerKeyMd5 ?? null,
       );
     return this.byId(input.id)!;
   }

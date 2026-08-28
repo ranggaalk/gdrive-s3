@@ -137,6 +137,8 @@ function resolvedBucket(
     // The signed link is the authorization here, not the ACL, so the
     // non-widening default is what belongs on this synthetic row.
     acl: "private",
+    default_sse_algorithm: null,
+    default_kms_key_id: null,
     created_at: "",
     updated_at: "",
     effective_role: "owner",

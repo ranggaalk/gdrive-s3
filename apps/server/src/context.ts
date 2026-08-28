@@ -40,6 +40,9 @@ import { RateLimits } from "./security/rate-limits.ts";
 import { PublicLinkService } from "./services/public-link-service.ts";
 import { AuthorizationService } from "./services/authorization-service.ts";
 import { BucketPoliciesRepository } from "./db/repositories/bucket-policies.ts";
+import { KmsKeysRepository } from "./db/repositories/kms-keys.ts";
+import { ObjectEncryptionRepository } from "./db/repositories/object-encryption.ts";
+import { KmsService } from "./security/kms.ts";
 import { PresignedUrlService } from "./services/presigned-url-service.ts";
 
 export interface AppContext {
@@ -63,6 +66,8 @@ export interface AppContext {
     bucketMembers: BucketMembersRepository;
     publicObjectLinks: PublicObjectLinksRepository;
     bucketPolicies: BucketPoliciesRepository;
+    kmsKeys: KmsKeysRepository;
+    objectEncryption: ObjectEncryptionRepository;
     driveImports: DriveImportsRepository;
     settings: SettingsRepository;
     backupAccounts: BackupAccountsRepository;
@@ -81,6 +86,7 @@ export interface AppContext {
   bucketService: BucketService;
   bucketAccess: BucketAccessService;
   authorization: AuthorizationService;
+  kms: KmsService;
   credentialService: CredentialService;
   publicLinkService: PublicLinkService;
   presignedUrlService: PresignedUrlService;
@@ -113,6 +119,8 @@ export function createContext(
   const bucketMembers = new BucketMembersRepository(db);
   const publicObjectLinks = new PublicObjectLinksRepository(db);
   const bucketPolicies = new BucketPoliciesRepository(db);
+  const kmsKeys = new KmsKeysRepository(db);
+  const objectEncryption = new ObjectEncryptionRepository(db);
   const driveImports = new DriveImportsRepository(db);
   const settings = new SettingsRepository(db);
   const backupAccounts = new BackupAccountsRepository(db);
@@ -172,6 +180,8 @@ export function createContext(
       bucketMembers,
       publicObjectLinks,
       bucketPolicies,
+      kmsKeys,
+      objectEncryption,
       driveImports,
       settings,
       backupAccounts,
@@ -198,6 +208,7 @@ export function createContext(
     bucketService,
     bucketAccess,
     authorization: new AuthorizationService(buckets, bucketPolicies, users, bucketMembers, objects),
+    kms: new KmsService(config, kmsKeys),
     credentialService,
     publicLinkService: new PublicLinkService(publicObjectLinks, config),
     presignedUrlService: new PresignedUrlService(config, credentials),

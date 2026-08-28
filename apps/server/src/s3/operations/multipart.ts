@@ -5,6 +5,8 @@
 import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { requireUser, type S3RequestContext } from "../context.ts";
+import { parseSseRequest } from "../sse.ts";
+import { EncryptionService } from "../../services/encryption-service.ts";
 import { S3Error } from "../errors.ts";
 import { parseObjectMetadata } from "../metadata.ts";
 import { validateObjectKey } from "../key.ts";
@@ -57,6 +59,13 @@ export async function createMultipartUpload(
     throw new S3Error("AccessDenied");
   }
   const meta = parseObjectMetadata(ctx.headers);
+  // The data key is chosen now, not at completion, so every part of this
+  // upload is encrypted under one key and the final assembly can stream.
+  const encryption = new EncryptionService(ctx.app).planFor({
+    ownerUserId: bucket.user_id,
+    bucket,
+    request: parseSseRequest(ctx.headers),
+  });
   const id = newUploadId();
   const expiresAt = new Date(
     Date.now() + ctx.app.config.multipartTtlHours * 60 * 60 * 1000,
@@ -70,6 +79,16 @@ export async function createMultipartUpload(
     contentType: meta.contentType,
     metadata: meta.userMetadata,
     expiresAt,
+    sse: encryption
+      ? {
+          algorithm: encryption.algorithm,
+          kmsKeyId: encryption.kmsKeyId,
+          kmsKeyVersion: encryption.kmsKeyVersion,
+          wrappedDataKey: encryption.wrappedDataKey,
+          iv: encryption.iv.toString("base64"),
+          customerKeyMd5: encryption.customerKeyMd5,
+        }
+      : null,
     driveTargetId: bucket.drive_target_id,
   });
   ctx.app.repos.audit.record({

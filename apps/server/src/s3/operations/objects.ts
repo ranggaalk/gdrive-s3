@@ -4,6 +4,12 @@
 import type { S3RequestContext } from "../context.ts";
 import { authorizeBucket, verifyDriveAccess } from "../authorize.ts";
 import { isObjectAcl } from "../acl.ts";
+import {
+  applySseResponseHeaders,
+  assertCustomerKeyMatches,
+  parseSseRequest,
+} from "../sse.ts";
+import { EncryptionService } from "../../services/encryption-service.ts";
 import { S3Error } from "../errors.ts";
 import { quoteEtag } from "../etag.ts";
 import { parseObjectMetadata, applyObjectMetadataHeaders } from "../metadata.ts";
@@ -17,6 +23,12 @@ import {
   ObjectNotFoundError,
   ObjectService,
 } from "../../services/object-service.ts";
+
+/** The SSE-C key on a read request, or null when none was sent. */
+function customerKeyFrom(ctx: S3RequestContext): { key: Buffer; keyMd5: string } | null {
+  const parsed = parseSseRequest(ctx.headers);
+  return parsed.kind === "sse-c" ? { key: parsed.key, keyMd5: parsed.keyMd5 } : null;
+}
 
 /** The canned ACL a PUT asked for, defaulting to private as S3 does. */
 function requestedAcl(ctx: S3RequestContext): string {
@@ -35,9 +47,17 @@ export async function putObject(
   if (ctx.headers.has("x-amz-copy-source")) throw new S3Error("NotImplemented");
 
   const acl = requestedAcl(ctx);
+  const sseRequest = parseSseRequest(ctx.headers);
   const authorized = authorizeBucket(ctx, bucketName, "s3:PutObject", key);
   const { bucket } = authorized;
   await verifyDriveAccess(ctx, authorized, true);
+  // The bucket owner's key catalogue backs the encryption, since the bytes
+  // land in their Drive regardless of who is writing.
+  const encryption = new EncryptionService(ctx.app).planFor({
+    ownerUserId: bucket.user_id,
+    bucket,
+    request: sseRequest,
+  });
   const payload = preparePayload(ctx);
   const meta = parseObjectMetadata(ctx.headers);
   let uploaded;
@@ -47,6 +67,7 @@ export async function putObject(
       bucket,
       key,
       acl,
+      encryption,
       requestId: `${ctx.requestId}:put:${crypto.randomUUID()}`,
       body: payload.body,
       contentLength: payload.contentLength,
@@ -71,13 +92,18 @@ export async function putObject(
     requestId: ctx.requestId,
   });
 
-  return new Response(null, {
-    status: 200,
-    headers: {
-      ETag: quoteEtag(uploaded.result.md5Hex),
-      "x-amz-request-id": ctx.requestId,
-    },
+  const putHeaders = new Headers({
+    ETag: quoteEtag(uploaded.result.md5Hex),
+    "x-amz-request-id": ctx.requestId,
   });
+  if (encryption) {
+    applySseResponseHeaders(putHeaders, {
+      sse_algorithm: encryption.algorithm,
+      kms_key_id: encryption.kmsKeyId,
+      customer_key_md5: encryption.customerKeyMd5,
+    });
+  }
+  return new Response(null, { status: 200, headers: putHeaders });
 }
 
 export async function headObject(
@@ -89,6 +115,13 @@ export async function headObject(
   await verifyDriveAccess(ctx, authorized, false);
   const obj = authorized.object;
   if (!obj) throw new S3Error("NoSuchKey", { Key: key });
+  const headEncryption = ctx.app.repos.objectEncryption.find(obj.id);
+  // A HEAD reads no bytes, but the key still has to be right or the caller
+  // would believe it can read the object when it cannot.
+  assertCustomerKeyMatches(
+    customerKeyFrom(ctx),
+    headEncryption?.customer_key_md5 ?? null,
+  );
   if (evaluateConditions(ctx.headers, obj) === "not-modified") {
     return new Response(null, {
       status: 304,
@@ -104,6 +137,7 @@ export async function headObject(
     "x-amz-request-id": ctx.requestId,
   });
   applyObjectMetadataHeaders(headers, obj);
+  applySseResponseHeaders(headers, headEncryption);
   return new Response(null, { status: 200, headers });
 }
 
@@ -117,6 +151,13 @@ export async function getObject(
   const obj = authorized.object;
   if (!obj) throw new S3Error("NoSuchKey", { Key: key });
   if (obj.status !== "active") throw new S3Error("NoSuchKey", { Key: key });
+  // Checked here as well as inside the decryptor, because a plaintext object
+  // never reaches the decryptor and a key sent for it must still be refused
+  // rather than silently ignored.
+  assertCustomerKeyMatches(
+    customerKeyFrom(ctx),
+    ctx.app.repos.objectEncryption.find(obj.id)?.customer_key_md5 ?? null,
+  );
   if (evaluateConditions(ctx.headers, obj) === "not-modified") {
     return new Response(null, {
       status: 304,
@@ -128,6 +169,7 @@ export async function getObject(
   try {
     download = await new ObjectService(ctx.app).download({
       actorUserId: authorized.actorUserId,
+      customerKey: customerKeyFrom(ctx),
       bucket,
       object: obj,
       range: ctx.headers.get("range"),
@@ -149,6 +191,7 @@ export async function getObject(
     "x-amz-request-id": ctx.requestId,
   });
   applyObjectMetadataHeaders(headers, obj);
+  applySseResponseHeaders(headers, ctx.app.repos.objectEncryption.find(obj.id));
   if (download.contentRange) headers.set("Content-Range", download.contentRange);
 
   ctx.app.repos.audit.record({

@@ -25,6 +25,16 @@ export interface StreamingUploadInput {
   chunkSize: number;
   target?: DriveOperationTarget;
   signal?: AbortSignal;
+  /**
+   * Optional server-side encryption. Applied *after* the MD5 and SHA-256 are
+   * taken, so the ETag stays the MD5 of the plaintext and the stored checksum
+   * still describes what the caller uploaded. AES-CTR preserves length, so
+   * the recorded size is unchanged too.
+   */
+  cipher?: {
+    update(chunk: Uint8Array): Uint8Array;
+    final(): Uint8Array;
+  };
 }
 
 export interface StreamingUploadResult {
@@ -67,7 +77,11 @@ async function uploadMultipart(input: StreamingUploadInput): Promise<StreamingUp
     if (size > input.maxBytes) throw new S3Error("EntityTooLarge");
     md5.update(value);
     sha256.update(value);
-    chunks.push(value);
+    chunks.push(input.cipher ? input.cipher.update(value) : value);
+  }
+  if (input.cipher) {
+    const tail = input.cipher.final();
+    if (tail.byteLength > 0) chunks.push(tail);
   }
 
   const body = concatUint8(chunks, size);
@@ -115,9 +129,13 @@ async function uploadResumable(input: StreamingUploadInput): Promise<StreamingUp
       if (streamedSize > input.maxBytes) throw new S3Error("EntityTooLarge");
       md5.update(next.value);
       sha256.update(next.value);
-      buffer = append(buffer, next.value);
+      buffer = append(buffer, input.cipher ? input.cipher.update(next.value) : next.value);
     }
     done = next.done;
+    if (done && input.cipher) {
+      const tail = input.cipher.final();
+      if (tail.byteLength > 0) buffer = append(buffer, tail);
+    }
     // Keep the last full chunk buffered until EOF so an exact chunk-multiple
     // object can send that chunk with a concrete final total (not `*/total`).
     while (buffer.byteLength > chunkTarget || (done && buffer.byteLength > 0)) {
