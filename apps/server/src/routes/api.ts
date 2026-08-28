@@ -8,7 +8,7 @@ import { handleBuckets } from "./api-buckets.ts";
 import { handleAudit } from "./api-audit.ts";
 import { handleTraffic } from "./api-traffic.ts";
 import { handleSettings } from "./api-settings.ts";
-import { handleBackupAccounts } from "./api-backup.ts";
+import { handleBackupAccounts, handleBackupHistory } from "./api-backup.ts";
 import { handleSecurityTotp } from "./api-security.ts";
 import { handleSecurityKms } from "./api-kms.ts";
 import { TokenRevokedError } from "../drive/oauth-token.ts";
@@ -164,6 +164,10 @@ export async function handleApi(
 
   if (path === "/api/backup-accounts" || path.startsWith("/api/backup-accounts/")) {
     return handleBackupAccounts(ctx, req, session, requestId, path.slice("/api/backup-accounts".length));
+  }
+
+  if (path === "/api/backups" || path.startsWith("/api/backups/")) {
+    return handleBackupHistory(ctx, req, session, requestId, path.slice("/api/backups".length));
   }
 
   if (path === "/api/security/kms" || path.startsWith("/api/security/kms/")) {

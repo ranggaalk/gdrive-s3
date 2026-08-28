@@ -38,6 +38,72 @@ export interface BackupTransferRow {
   updated_at: string;
 }
 
+/** A transfer row joined with the names history views need. The bucket and
+ *  the destination account both cascade-delete into `backup_transfers`, so an
+ *  inner join can never drop a surviving run. */
+export interface BackupTransferHistoryRow extends BackupTransferRow {
+  bucket_name: string;
+  account_email: string;
+}
+
+export type BackupObjectStatus = "copied" | "failed";
+
+/** One line of the per-object ledger, as written by the run that produced it. */
+export interface BackupObjectStatusRow {
+  backup_account_id: string;
+  object_id: string;
+  object_key: string;
+  object_etag: string;
+  status: BackupObjectStatus;
+  destination_file_id: string | null;
+  attempts: number;
+  last_error: string | null;
+  last_transfer_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Per-destination rollup for the account cards. */
+export interface BackupAccountSummaryRow {
+  backup_account_id: string;
+  runs: number;
+  last_run_at: string | null;
+  last_status: BackupTransferStatus | null;
+  copied_total: number;
+  failed_total: number;
+  skipped_total: number;
+  active_runs: number;
+  objects_on_record: number;
+}
+
+export interface BackupHistoryFilter {
+  backupAccountId?: string;
+  bucketId?: string;
+  status?: BackupTransferStatus;
+}
+
+/**
+ * History pages are keyed on (timestamp, id) rather than the timestamp alone.
+ * Two runs started in the same millisecond are entirely possible -- one per
+ * bucket against the same destination -- and a timestamp-only cursor would
+ * either repeat them or skip them.
+ */
+export interface HistoryCursor {
+  at: string;
+  id: string;
+}
+
+export function encodeHistoryCursor(cursor: HistoryCursor): string {
+  return `${cursor.at}|${cursor.id}`;
+}
+
+export function parseHistoryCursor(raw: string | null | undefined): HistoryCursor | null {
+  if (!raw) return null;
+  const separator = raw.indexOf("|");
+  if (separator <= 0 || separator === raw.length - 1) return null;
+  return { at: raw.slice(0, separator), id: raw.slice(separator + 1) };
+}
+
 export const MAX_BACKUP_ITEM_ATTEMPTS = 3;
 
 export class BackupAlreadyActiveError extends Error {
@@ -306,5 +372,134 @@ export class BackupTransfersRepository {
         )
         .run(nowIso(), id, userId, bucketId).changes > 0
     );
+  }
+
+  /** Newest-first history across every bucket the user owns, optionally
+   *  narrowed to one destination account, one bucket, or one status. */
+  listForUser(
+    userId: string,
+    options: { limit: number; before?: HistoryCursor | null } & BackupHistoryFilter,
+  ): BackupTransferHistoryRow[] {
+    const where = ["t.user_id = ?"];
+    const params: (string | number)[] = [userId];
+    if (options.backupAccountId) {
+      where.push("t.backup_account_id = ?");
+      params.push(options.backupAccountId);
+    }
+    if (options.bucketId) {
+      where.push("t.bucket_id = ?");
+      params.push(options.bucketId);
+    }
+    if (options.status) {
+      where.push("t.status = ?");
+      params.push(options.status);
+    }
+    if (options.before) {
+      where.push("(t.created_at < ? OR (t.created_at = ? AND t.id < ?))");
+      params.push(options.before.at, options.before.at, options.before.id);
+    }
+    params.push(options.limit);
+    return this.db
+      .query<BackupTransferHistoryRow, (string | number)[]>(
+        `SELECT t.*, b.name AS bucket_name, a.email AS account_email
+           FROM backup_transfers t
+           JOIN buckets b ON b.id = t.bucket_id
+           JOIN backup_accounts a ON a.id = t.backup_account_id
+          WHERE ${where.join(" AND ")}
+          ORDER BY t.created_at DESC, t.id DESC
+          LIMIT ?`,
+      )
+      .all(...params);
+  }
+
+  /** A single run by id, not scoped to a bucket -- the history views reach a
+   *  run from the account side, where the bucket is what they want told. */
+  findOwnedHistory(userId: string, id: string): BackupTransferHistoryRow | null {
+    return (
+      this.db
+        .query<BackupTransferHistoryRow, [string, string]>(
+          `SELECT t.*, b.name AS bucket_name, a.email AS account_email
+             FROM backup_transfers t
+             JOIN buckets b ON b.id = t.bucket_id
+             JOIN backup_accounts a ON a.id = t.backup_account_id
+            WHERE t.id = ? AND t.user_id = ?`,
+        )
+        .get(id, userId) ?? null
+    );
+  }
+
+  /**
+   * The per-object ledger lines this run wrote. The ledger keeps one row per
+   * (destination, object) and stamps it with `last_transfer_id`, so a later run
+   * that re-copies the same object takes the line over -- an older run then
+   * reports fewer lines than its counters. That is the ledger telling the
+   * truth about what is currently attributable to the run, so the API reports
+   * both numbers rather than pretending they always agree.
+   */
+  listTransferObjects(
+    transferId: string,
+    options: { limit: number; before?: HistoryCursor | null; status?: BackupObjectStatus },
+  ): BackupObjectStatusRow[] {
+    const where = ["last_transfer_id = ?"];
+    const params: (string | number)[] = [transferId];
+    if (options.status) {
+      where.push("status = ?");
+      params.push(options.status);
+    }
+    if (options.before) {
+      where.push("(updated_at < ? OR (updated_at = ? AND object_id < ?))");
+      params.push(options.before.at, options.before.at, options.before.id);
+    }
+    params.push(options.limit);
+    return this.db
+      .query<BackupObjectStatusRow, (string | number)[]>(
+        `SELECT * FROM backup_object_status
+          WHERE ${where.join(" AND ")}
+          ORDER BY updated_at DESC, object_id DESC
+          LIMIT ?`,
+      )
+      .all(...params);
+  }
+
+  /** How many ledger lines this run currently owns, per status. */
+  countTransferObjects(transferId: string): { copied: number; failed: number } {
+    const rows = this.db
+      .query<{ status: BackupObjectStatus; n: number }, [string]>(
+        `SELECT status, COUNT(*) AS n FROM backup_object_status
+          WHERE last_transfer_id = ? GROUP BY status`,
+      )
+      .all(transferId);
+    return {
+      copied: rows.find((r) => r.status === "copied")?.n ?? 0,
+      failed: rows.find((r) => r.status === "failed")?.n ?? 0,
+    };
+  }
+
+  /** Rollup per destination account, for the account cards and the totals
+   *  strip above the history table. */
+  summarizeByAccount(userId: string): BackupAccountSummaryRow[] {
+    return this.db
+      .query<BackupAccountSummaryRow, [string, string]>(
+        `SELECT a.id AS backup_account_id,
+                COUNT(t.id) AS runs,
+                MAX(t.created_at) AS last_run_at,
+                (SELECT l.status FROM backup_transfers l
+                  WHERE l.backup_account_id = a.id AND l.user_id = ?
+                  ORDER BY l.created_at DESC, l.id DESC LIMIT 1) AS last_status,
+                COALESCE(SUM(t.copied_count), 0) AS copied_total,
+                COALESCE(SUM(t.failed_count), 0) AS failed_total,
+                COALESCE(SUM(t.skipped_count), 0) AS skipped_total,
+                COALESCE(SUM(CASE WHEN t.status IN ('queued', 'running', 'cancel_requested')
+                                  THEN 1 ELSE 0 END), 0) AS active_runs,
+                (SELECT COUNT(*) FROM backup_object_status s
+                  WHERE s.backup_account_id = a.id AND s.status = 'copied') AS objects_on_record
+           FROM backup_accounts a
+           LEFT JOIN backup_transfers t
+             ON t.backup_account_id = a.id AND t.user_id = a.owner_user_id
+          WHERE a.owner_user_id = ?
+          GROUP BY a.id
+          ORDER BY a.created_at ASC`,
+      )
+      .all(userId, userId);
   }
 }

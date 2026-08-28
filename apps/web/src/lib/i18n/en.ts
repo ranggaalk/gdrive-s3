@@ -577,7 +577,7 @@ export const en: Dictionary = {
     disconnectLabel: (email: string) => `Disconnect ${email}`,
     reauthHint: "Disconnect and reconnect this account to continue backing up.",
     disconnectConfirmTitle: "Disconnect this backup account?",
-    disconnectConfirmDescription: "can no longer be used as a backup destination. History and files already copied to that account are not deleted.",
+    disconnectConfirmDescription: "can no longer be used as a backup destination. Files already copied there stay where they are, but this account's backup history disappears from the dashboard along with the link.",
     disconnecting: "Disconnecting…",
     disconnect: "Disconnect",
 
@@ -604,6 +604,74 @@ export const en: Dictionary = {
     statusCompleted: "Completed",
     statusCancelled: "Cancelled",
     statusFailed: "Failed",
+
+    // Gateway-wide history (Backup page)
+    historyTitle: "Backup history",
+    historyDescription: "Every backup run across all your buckets, and what each one did to each object.",
+    historyLoading: "Loading backup history",
+    historyEmptyTitle: "No backup runs yet",
+    historyEmptyDescription: "Start a backup from a bucket (Objects > Backup) and every run will be recorded here.",
+    historyFilteredEmpty: "No backup runs match these filters.",
+    historyRefresh: "Refresh",
+    filterAccountLabel: "Destination account",
+    filterBucketLabel: "Bucket",
+    filterStatusLabel: "Status",
+    filterAll: "All",
+    tableTime: "Started",
+    tableBucket: "Bucket",
+    tableDestination: "Destination",
+    tableStatus: "Status",
+    tableResult: "Result",
+    tableActions: "Detail",
+    viewDetail: "Detail",
+    statRuns: "Backup runs",
+    statActive: "Running now",
+    statCopied: "Objects copied",
+    statSkipped: "Skipped (already there)",
+    statFailed: "Failed",
+    statObjectsOnRecord: "Objects on record",
+    accountNeverRun: "Never backed up",
+    accountLastRun: (date: string) => `Last run ${date}`,
+    accountRunsLabel: (runs: number) => (runs === 1 ? "1 run" : `${runs} runs`),
+    accountObjectsOnRecord: (count: number) =>
+      count === 1 ? "1 object stored here" : `${count} objects stored here`,
+    viewAccountHistory: "View history",
+    clearAccountFilter: "Show all accounts",
+    filteredByAccount: (email: string) => `Showing runs sent to ${email}`,
+
+    // One run, in detail
+    detailTitle: "Backup run",
+    detailLoading: "Loading the run",
+    detailBucket: "Bucket",
+    detailDestination: "Destination",
+    detailStarted: "Started",
+    detailFinished: "Finished",
+    detailDuration: "Duration",
+    detailStillRunning: "Still running",
+    detailNotStarted: "Not started yet",
+    detailRunId: "Run ID",
+    durationLabel: (seconds: number) => {
+      if (seconds < 60) return `${seconds}s`;
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+      return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+    },
+    objectsLabel: "Objects in this run",
+    objectsLoading: "Loading objects",
+    objectsEmpty: "This run has no object records — every object was already backed up, or it was cancelled before copying anything.",
+    objectsFilterAll: "All",
+    objectsFilterCopied: "Copied",
+    objectsFilterFailed: "Failed",
+    objectKey: "Key",
+    objectStatus: "Status",
+    objectAttempts: "Attempts",
+    objectDetail: "Detail",
+    objectStatusCopied: "Copied",
+    objectStatusFailed: "Failed",
+    objectDestinationFile: (fileId: string) => `Drive file ${fileId}`,
+    ledgerNoteTitle: "Some records now belong to a newer run",
+    ledgerNote: (input: { owned: number; recorded: number }) =>
+      `This run copied ${input.recorded} objects, but only ${input.owned} are still listed below. The rest were copied again by a later backup, which took the record over.`,
   },
 
   objects: {
