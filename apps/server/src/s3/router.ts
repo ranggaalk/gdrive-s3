@@ -10,6 +10,7 @@ import { driveErrorToS3Error, S3Error, s3ErrorResponse } from "./errors.ts";
 import { DriveError } from "../drive/errors.ts";
 import { SigV4Verifier, type SigV4Failure } from "../auth/s3-sigv4.ts";
 import { SigV4PresignedVerifier } from "../auth/s3-sigv4-presigned.ts";
+import { SigV4aVerifier } from "../auth/s3-sigv4a.ts";
 import { resolveS3Path } from "./key.ts";
 import * as buckets from "./operations/buckets.ts";
 import * as objects from "./operations/objects.ts";
@@ -52,23 +53,22 @@ export async function handleS3(
     return res;
   }
   try {
-    const presigned = new SigV4PresignedVerifier(app.config, app.repos.credentials).verify({
+    const verifierInput = {
       method: req.method,
       pathname: url.pathname,
       query: url.searchParams,
       headers: req.headers,
-    });
-    let auth = presigned;
+    };
+    // SigV4A first: it owns its own algorithm label in both the header and the
+    // query form, and returns null for anything that is not SigV4A.
+    let auth =
+      new SigV4aVerifier(app.config, app.repos.credentials).verify(verifierInput) ??
+      new SigV4PresignedVerifier(app.config, app.repos.credentials).verify(verifierInput);
     if (!auth) {
       if (url.searchParams.has("X-Amz-Signature")) {
         throw new S3Error("AuthorizationQueryParametersError");
       }
-      auth = new SigV4Verifier(app.config, app.repos.credentials).verify({
-        method: req.method,
-        pathname: url.pathname,
-        query: url.searchParams,
-        headers: req.headers,
-      });
+      auth = new SigV4Verifier(app.config, app.repos.credentials).verify(verifierInput);
     }
     if (!auth.ok) {
       const failureDecision = app.rateLimits.take("signatureFailure", ipKey);
