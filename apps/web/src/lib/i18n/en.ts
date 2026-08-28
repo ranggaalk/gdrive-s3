@@ -706,6 +706,7 @@ export const en: Dictionary = {
     versionsDisabledHint: "Versioning is off for this bucket, so only the current version is kept. Turn it on in the bucket access settings to retain previous versions.",
     versionCurrent: "Current",
     versionDeleteMarker: "Delete marker",
+    versionRestore: "Restore object",
     versionDelete: "Delete version",
     versionDeleteLabel: (id: string) => `Delete version ${id}`,
     loadingVersions: "Loading version history",

@@ -730,6 +730,7 @@ export const id = {
     versionsDisabledHint: "Versioning belum aktif untuk bucket ini, jadi hanya versi terkini yang disimpan. Aktifkan di pengaturan akses bucket untuk menyimpan versi lama.",
     versionCurrent: "Terkini",
     versionDeleteMarker: "Delete marker",
+    versionRestore: "Pulihkan objek",
     versionDelete: "Hapus versi",
     versionDeleteLabel: (id: string) => `Hapus versi ${id}`,
     loadingVersions: "Memuat riwayat versi",
