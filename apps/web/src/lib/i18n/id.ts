@@ -220,6 +220,7 @@ export const id = {
     loadingTraffic: "Memuat traffic",
     compatibilityTitle: "Kompatibilitas S3",
     compatibilityDescription: "Status dukungan yang diverifikasi terhadap gateway saat ini.",
+    compatibilitySupportedCount: (supported: number, total: number) => `${supported} dari ${total} didukung`,
     tableFeature: "Fitur S3",
     tableStatus: "Status",
     tableVerifiedBy: "Diverifikasi oleh",
