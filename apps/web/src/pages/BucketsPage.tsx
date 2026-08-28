@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { HardDrive, PackageOpen, Plus, Share2, Trash2, Users } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -15,16 +16,66 @@ import {
   addBucketMember,
   createBucket,
   deleteBucket,
+  getBucketAccess,
   listBucketMembers,
   listBuckets,
   listSharedDrives,
   removeBucketMember,
+  updateBucketAccess,
   updateBucketMember,
   type Bucket,
+  type BucketAccessConfig,
+  type BucketAcl,
   type BucketMember,
   type SharedDriveSummary,
   type StorageKind,
 } from "../api/client.ts";
+
+/** Re-indent a stored policy so the editor shows something readable. */
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+const POLICY_TEMPLATES = {
+  publicRead: (bucket: string) =>
+    JSON.stringify(
+      {
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Sid: "PublicRead",
+            Effect: "Allow",
+            Principal: "*",
+            Action: "s3:GetObject",
+            Resource: `arn:aws:s3:::${bucket}/*`,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  grantUser: (bucket: string) =>
+    JSON.stringify(
+      {
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Sid: "GrantOneUser",
+            Effect: "Allow",
+            Principal: { AWS: "arn:aws:iam:::user/someone@example.com" },
+            Action: ["s3:GetObject", "s3:PutObject"],
+            Resource: `arn:aws:s3:::${bucket}/*`,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+};
 
 export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const { t } = useLocale();
@@ -53,6 +104,12 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState<"viewer" | "editor">("viewer");
   const [memberBusy, setMemberBusy] = useState(false);
+  const [accessTab, setAccessTab] = useState<"members" | "policy">("members");
+  const [access, setAccess] = useState<BucketAccessConfig | null>(null);
+  const [aclDraft, setAclDraft] = useState<BucketAcl>("private");
+  const [policyDraft, setPolicyDraft] = useState("");
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [accessBusy, setAccessBusy] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -126,9 +183,50 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const openAccess = async (bucket: Bucket) => {
     setAccessBucket(bucket);
     setMemberEmail("");
+    setAccessTab("members");
+    setPolicyError(null);
     setError(null);
-    try { setMembers(await listBucketMembers(bucket.id)); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try {
+      const [memberRows, accessConfig] = await Promise.all([
+        listBucketMembers(bucket.id),
+        getBucketAccess(bucket.id),
+      ]);
+      setMembers(memberRows);
+      setAccess(accessConfig);
+      setAclDraft(accessConfig.acl);
+      setPolicyDraft(accessConfig.policy ? prettyJson(accessConfig.policy) : "");
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const saveAccess = async () => {
+    if (!accessBucket) return;
+    const trimmed = policyDraft.trim();
+    // Fail here rather than at the server so the operator sees which line is
+    // wrong while the text is still in front of them.
+    if (trimmed) {
+      try { JSON.parse(trimmed); }
+      catch (e) {
+        setPolicyError(e instanceof Error ? e.message : String(e));
+        return;
+      }
+    }
+    setAccessBusy(true);
+    setPolicyError(null);
+    try {
+      const updated = await updateBucketAccess(accessBucket.id, {
+        acl: aclDraft,
+        policy: trimmed === "" ? null : trimmed,
+      });
+      setAccess(updated);
+      setAclDraft(updated.acl);
+      setPolicyDraft(updated.policy ? prettyJson(updated.policy) : "");
+      toast.success(t.toast.accessSaved);
+    } catch (e) {
+      setPolicyError(e instanceof Error ? e.message : String(e));
+      toast.fromError(t.toast.accessFailed, e);
+    } finally {
+      setAccessBusy(false);
+    }
   };
 
   const addMember = async (event: FormEvent) => {
@@ -167,7 +265,7 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
             <TableHeader><TableRow><TableHead>{t.buckets.tableName}</TableHead><TableHead>{t.buckets.tableLocation}</TableHead><TableHead>{t.buckets.tableAccess}</TableHead><TableHead>{t.buckets.tableObjects}</TableHead><TableHead>{t.buckets.tableMultipart}</TableHead><TableHead>{t.buckets.tableStatus}</TableHead><TableHead>{t.buckets.tableCreated}</TableHead><TableHead className="text-right">{t.buckets.tableAction}</TableHead></TableRow></TableHeader>
             <TableBody>{buckets.map((bucket) => (
               <TableRow key={bucket.id}>
-                <TableRowHeader><Button variant="link" className="h-auto p-0" onClick={() => onOpen(bucket)}>{bucket.name}</Button></TableRowHeader>
+                <TableRowHeader><div className="flex flex-wrap items-center gap-2"><Button variant="link" className="h-auto p-0" onClick={() => onOpen(bucket)}>{bucket.name}</Button>{bucket.isPublic ? <Badge variant="warning">{t.buckets.publicBadge}</Badge> : null}</div></TableRowHeader>
                 <TableCell><div className="flex min-w-40 items-center gap-2">{bucket.storageKind === "shared_drive" ? <Share2 className="size-4 text-muted-foreground" /> : <HardDrive className="size-4 text-muted-foreground" />}<span>{bucket.storageDisplayName}</span></div></TableCell>
                 <TableCell><Badge variant={bucket.effectiveRole === "owner" ? "default" : "secondary"}>{roleLabel(bucket.effectiveRole)}</Badge></TableCell>
                 <TableCell>{bucket.objectCount ?? 0}</TableCell><TableCell>{bucket.multipartOpen ?? 0}</TableCell><TableCell><Badge variant={bucket.storageStatus === "active" ? "success" : "destructive"}>{bucket.storageStatus === "active" ? t.buckets.statusActive : t.buckets.statusIssue}</Badge></TableCell><TableCell className="whitespace-nowrap">{new Date(bucket.createdAt).toLocaleString()}</TableCell>
@@ -191,7 +289,58 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       </Dialog>
 
       <Dialog open={Boolean(accessBucket)} onOpenChange={(open) => { if (!open && !memberBusy) setAccessBucket(null); }}>
-        <DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{t.buckets.manageAccessDialogDescription}</DialogDescription></DialogHeader><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></DialogContent>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{t.buckets.manageAccessDialogDescription}</DialogDescription></DialogHeader>
+        <div className="grid w-fit grid-cols-2 gap-2">
+          <Button type="button" size="sm" variant={accessTab === "members" ? "default" : "outline"} onClick={() => setAccessTab("members")}>{t.buckets.accessTabMembers}</Button>
+          <Button type="button" size="sm" variant={accessTab === "policy" ? "default" : "outline"} onClick={() => setAccessTab("policy")}>{t.buckets.accessTabPolicy}</Button>
+        </div>
+        {accessTab === "policy" ? (
+          <div className="space-y-4">
+            {aclDraft === "public-read-write" ? (
+              <Alert variant="destructive"><AlertTitle>{t.buckets.publicBadge}</AlertTitle><AlertDescription>{t.buckets.aclPublicWriteWarning}</AlertDescription></Alert>
+            ) : aclDraft === "public-read" ? (
+              <Alert><AlertTitle>{t.buckets.publicBadge}</AlertTitle><AlertDescription>{t.buckets.aclPublicWarning}</AlertDescription></Alert>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="bucket-acl">{t.buckets.aclLabel}</Label>
+              <Select
+                value={aclDraft}
+                onValueChange={(value) => setAclDraft(value as BucketAcl)}
+                ariaLabel={t.buckets.aclLabel}
+                options={[
+                  { value: "private", label: t.buckets.aclPrivate },
+                  { value: "public-read", label: t.buckets.aclPublicRead },
+                  { value: "public-read-write", label: t.buckets.aclPublicReadWrite },
+                  { value: "authenticated-read", label: t.buckets.aclAuthenticatedRead },
+                ]}
+              />
+              <p className="text-xs text-muted-foreground">{t.buckets.aclHelp}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bucket-policy">{t.buckets.policyLabel}</Label>
+              <textarea
+                id="bucket-policy"
+                className="min-h-56 w-full rounded-md border bg-background p-3 font-mono text-xs"
+                spellCheck={false}
+                value={policyDraft}
+                placeholder={t.buckets.policyPlaceholder}
+                onChange={(event) => { setPolicyDraft(event.target.value); setPolicyError(null); }}
+              />
+              <p className="text-xs text-muted-foreground">{t.buckets.policyHelp}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t.buckets.policyTemplateLabel}</span>
+                <Button type="button" size="sm" variant="outline" onClick={() => { setPolicyDraft(POLICY_TEMPLATES.publicRead(accessBucket?.name ?? "bucket")); setPolicyError(null); }}>{t.buckets.policyTemplatePublicRead}</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => { setPolicyDraft(POLICY_TEMPLATES.grantUser(accessBucket?.name ?? "bucket")); setPolicyError(null); }}>{t.buckets.policyTemplateGrantUser}</Button>
+              </div>
+              {policyError ? <Alert variant="destructive"><AlertTitle>{t.buckets.policyInvalid}</AlertTitle><AlertDescription className="break-all">{policyError}</AlertDescription></Alert> : null}
+              {access?.policyUpdatedAt ? <p className="text-xs text-muted-foreground">{t.buckets.policySavedAt(new Date(access.policyUpdatedAt).toLocaleString())}</p> : null}
+            </div>
+            <DialogFooter>
+              <Button disabled={accessBusy} onClick={() => void saveAccess()}>{accessBusy ? t.buckets.savingAccess : t.buckets.saveAccess}</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+        <><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></>)}</DialogContent>
       </Dialog>
 
       <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.buckets.deleteBucketConfirmTitle(pendingDelete?.name ?? "")}</AlertDialogTitle><AlertDialogDescription>{t.buckets.deleteBucketConfirmDescription(pendingDelete?.storageDisplayName ?? "")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={(event) => { event.preventDefault(); void doDelete(); }}>{deleting ? t.buckets.deleting : t.buckets.delete}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>

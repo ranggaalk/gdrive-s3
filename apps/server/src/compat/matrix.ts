@@ -70,7 +70,18 @@ export const COMPAT_MATRIX: readonly CompatRow[] = [
   },
   { feature: "Object versioning", status: "unsupported" },
   { feature: "Object Lock / Legal Hold", status: "unsupported" },
-  { feature: "ACL & Bucket Policy", status: "unsupported" },
+  {
+    feature: "ACL & Bucket Policy",
+    status: "supported",
+    verifiedBy: ["unit"],
+    notes:
+      "Canned ACL bucket/objek (x-amz-acl, GET/PUT ?acl) dan bucket policy " +
+      "(GET/PUT/DELETE ?policy, GET ?policyStatus) dengan Principal/Action/" +
+      "Resource/Condition. Explicit Deny mengalahkan Allow dan kepemilikan. " +
+      "Request tanpa SigV4 dilayani bila ACL/policy mengizinkan publik; " +
+      "matikan lewat S3_ALLOW_ANONYMOUS=false. Administrasi policy tetap " +
+      "owner-only sehingga policy tidak bisa menulis ulang dirinya sendiri.",
+  },
   {
     feature: "Virtual-hosted style bucket endpoint",
     status: "supported",

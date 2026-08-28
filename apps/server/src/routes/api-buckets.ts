@@ -22,6 +22,9 @@ import {
   PresignExpiryError,
   PresignPostInputError,
 } from "../services/presigned-url-service.ts";
+import { isBucketAcl } from "../s3/acl.ts";
+import { parseBucketPolicy } from "../s3/policy.ts";
+import { S3Error } from "../s3/errors.ts";
 import { handleObjects } from "./api-objects.ts";
 import { handleBucketImports } from "./api-drive-imports.ts";
 import { handleBucketBackups } from "./api-backup.ts";
@@ -69,6 +72,9 @@ export async function handleBuckets(
         ...bucketView(b),
         objectCount: ctx.repos.objects.countActive(b.id),
         multipartOpen: ctx.repos.multipartUploads.countOpenByBucket(b.id),
+        // Surfaced in the list so an accidentally public bucket is visible
+        // without opening anything.
+        isPublic: ctx.authorization.isPublic(b),
       }));
       return ok(withCounts, requestId);
     }
@@ -281,6 +287,110 @@ export async function handleBuckets(
       }
       throw error;
     }
+  }
+
+  // Access configuration is owner-only, matching the S3 data plane: a policy
+  // must never be able to grant away control of the policy itself.
+  if (segments[1] === "access" && segments.length === 2) {
+    const bucket = ctx.bucketAccess.findById(userId, bucketId, "owner");
+    if (!bucket) return apiError("NOT_FOUND", "Bucket tidak ditemukan.", 404, requestId);
+
+    if (req.method === "GET") {
+      const policyRow = ctx.repos.bucketPolicies.find(bucket.id);
+      return ok(
+        {
+          acl: bucket.acl,
+          policy: policyRow?.policy_json ?? null,
+          policyUpdatedAt: policyRow?.updated_at ?? null,
+          isPublic: ctx.authorization.isPublic(bucket),
+        },
+        requestId,
+      );
+    }
+
+    if (req.method === "PUT") {
+      let body;
+      try {
+        body = await readJson<{ acl?: unknown; policy?: unknown }>(ctx, req);
+      } catch (error) {
+        const mapped = mapBodyReadError(error, requestId);
+        if (mapped) return mapped;
+        throw error;
+      }
+
+      if (body?.acl !== undefined) {
+        if (typeof body.acl !== "string" || !isBucketAcl(body.acl)) {
+          return apiError("INVALID", "Canned ACL tidak valid.", 400, requestId);
+        }
+        ctx.repos.buckets.setAcl(bucket.id, body.acl);
+        ctx.repos.audit.record({
+          userId,
+          action: "bucket.acl.update",
+          bucketName: bucket.name,
+          bucketId: bucket.id,
+          statusCode: 200,
+          requestId,
+          detail: { acl: body.acl },
+        });
+      }
+
+      // null clears the policy; a string replaces it. Absent leaves it alone,
+      // so the ACL can be changed without touching the policy.
+      if (body?.policy !== undefined) {
+        if (body.policy === null) {
+          ctx.repos.bucketPolicies.delete(bucket.id);
+          ctx.repos.audit.record({
+            userId,
+            action: "bucket.policy.delete",
+            bucketName: bucket.name,
+            bucketId: bucket.id,
+            statusCode: 200,
+            requestId,
+          });
+        } else if (typeof body.policy === "string") {
+          try {
+            // Validate before storing: an unparseable document would behave as
+            // "no policy" and silently protect nothing.
+            const parsed = parseBucketPolicy(body.policy);
+            ctx.repos.bucketPolicies.put({
+              bucketId: bucket.id,
+              policyJson: body.policy,
+              updatedBy: userId,
+            });
+            ctx.repos.audit.record({
+              userId,
+              action: "bucket.policy.update",
+              bucketName: bucket.name,
+              bucketId: bucket.id,
+              statusCode: 200,
+              requestId,
+              detail: { statements: parsed.statements.length },
+            });
+          } catch (error) {
+            if (error instanceof S3Error) {
+              return apiError("INVALID", error.details["Reason"] ?? error.message, 400, requestId);
+            }
+            throw error;
+          }
+        } else {
+          return apiError("INVALID", "Policy harus berupa string JSON atau null.", 400, requestId);
+        }
+      }
+
+      const updated = ctx.bucketAccess.findById(userId, bucketId, "owner")!;
+      const policyRow = ctx.repos.bucketPolicies.find(bucket.id);
+      return ok(
+        {
+          acl: updated.acl,
+          policy: policyRow?.policy_json ?? null,
+          policyUpdatedAt: policyRow?.updated_at ?? null,
+          isPublic: ctx.authorization.isPublic(updated),
+        },
+        requestId,
+      );
+    }
+
+    return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
   }
 
   if (segments[1] === "traffic") {

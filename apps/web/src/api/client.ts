@@ -35,6 +35,8 @@ export interface Bucket {
   ownedByMe: boolean;
   objectCount?: number;
   multipartOpen?: number;
+  /** Whether an ACL or policy exposes this bucket to the anonymous public. */
+  isPublic?: boolean;
 }
 
 export interface DriveFolderSummary {
@@ -313,6 +315,20 @@ export interface PresignedLink {
   credentialId: string;
 }
 
+export type BucketAcl =
+  | "private"
+  | "public-read"
+  | "public-read-write"
+  | "authenticated-read";
+
+export interface BucketAccessConfig {
+  acl: BucketAcl;
+  /** The raw policy JSON, or null when the bucket has none. */
+  policy: string | null;
+  policyUpdatedAt: string | null;
+  isPublic: boolean;
+}
+
 export interface PresignedPostForm {
   url: string;
   /** Hidden inputs the form must submit, in order, before the file input. */
@@ -365,6 +381,19 @@ export const createPresignedLink = async (
 ) => unwrap<PresignedLink>(await fetch(
   `/api/buckets/${encodeURIComponent(bucketId)}/objects/${encodeURIComponent(objectId)}/presigned-links`,
   mutate("POST", { credentialId, expiresSeconds }),
+));
+
+export const getBucketAccess = async (bucketId: string) =>
+  unwrap<BucketAccessConfig>(
+    await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/access`),
+  );
+
+export const updateBucketAccess = async (
+  bucketId: string,
+  changes: { acl?: BucketAcl; policy?: string | null },
+) => unwrap<BucketAccessConfig>(await fetch(
+  `/api/buckets/${encodeURIComponent(bucketId)}/access`,
+  mutate("PUT", changes),
 ));
 
 export const createPresignedPost = async (
