@@ -45,6 +45,14 @@ const CODES = {
   },
   MalformedPolicy: { status: 400, message: "The policy you provided was not well formed." },
   NoSuchBucketPolicy: { status: 404, message: "The bucket policy does not exist." },
+  MalformedXML: {
+    status: 400,
+    message: "The XML you provided was not well formed or did not validate against the schema.",
+  },
+  ServerSideEncryptionConfigurationNotFoundError: {
+    status: 404,
+    message: "The server side encryption configuration was not found.",
+  },
   InvalidArgument: { status: 400, message: "Invalid argument." },
   EntityTooLarge: { status: 400, message: "Your proposed upload exceeds the maximum allowed size." },
   EntityTooSmall: { status: 400, message: "Your proposed upload is smaller than the minimum allowed size." },

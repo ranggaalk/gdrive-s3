@@ -264,6 +264,12 @@ export class ObjectsRepository {
           content_language: string | null;
           expires_at: string | null;
           acl: string;
+          sse_algorithm: string | null;
+          sse_kms_key_id: string | null;
+          sse_kms_key_version: number | null;
+          sse_wrapped_data_key: string | null;
+          sse_iv: string | null;
+          sse_customer_key_md5: string | null;
           status: string;
           drive_target_id: string | null;
         }, [string]>("SELECT * FROM object_staging WHERE id = ?")
@@ -329,6 +335,40 @@ export class ObjectsRepository {
           previous?.created_at ?? now,
           now,
         );
+      // Encryption metadata rides the same transaction, keyed by the object id
+      // the upsert just settled on. Clearing it on a plaintext overwrite
+      // matters: a stale row would make the next read try to decrypt bytes
+      // that were never encrypted.
+      const committedId = previous?.id ?? staging.object_id;
+      if (staging.sse_algorithm && staging.sse_iv) {
+        this.db
+          .query(
+            `INSERT INTO object_encryption
+               (object_id, sse_algorithm, kms_key_id, kms_key_version,
+                wrapped_data_key, iv, customer_key_md5, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(object_id) DO UPDATE SET
+               sse_algorithm = excluded.sse_algorithm,
+               kms_key_id = excluded.kms_key_id,
+               kms_key_version = excluded.kms_key_version,
+               wrapped_data_key = excluded.wrapped_data_key,
+               iv = excluded.iv,
+               customer_key_md5 = excluded.customer_key_md5`,
+          )
+          .run(
+            committedId,
+            staging.sse_algorithm,
+            staging.sse_kms_key_id,
+            staging.sse_kms_key_version,
+            staging.sse_wrapped_data_key,
+            staging.sse_iv,
+            staging.sse_customer_key_md5,
+            now,
+          );
+      } else {
+        this.db.query("DELETE FROM object_encryption WHERE object_id = ?").run(committedId);
+      }
+
       if (previous && previous.drive_file_id !== staging.new_drive_file_id) {
         this.db
           .query(

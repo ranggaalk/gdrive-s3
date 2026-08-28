@@ -10,6 +10,7 @@ import { handleTraffic } from "./api-traffic.ts";
 import { handleSettings } from "./api-settings.ts";
 import { handleBackupAccounts } from "./api-backup.ts";
 import { handleSecurityTotp } from "./api-security.ts";
+import { handleSecurityKms } from "./api-kms.ts";
 import { TokenRevokedError } from "../drive/oauth-token.ts";
 import { compatMatrix } from "../compat/matrix.ts";
 import { hasRequiredScopes } from "../auth/google-oauth.ts";
@@ -158,6 +159,10 @@ export async function handleApi(
 
   if (path === "/api/backup-accounts" || path.startsWith("/api/backup-accounts/")) {
     return handleBackupAccounts(ctx, req, session, requestId, path.slice("/api/backup-accounts".length));
+  }
+
+  if (path === "/api/security/kms" || path.startsWith("/api/security/kms/")) {
+    return handleSecurityKms(ctx, req, session, requestId, path.slice("/api/security/kms".length));
   }
 
   if (path === "/api/security/totp" || path.startsWith("/api/security/totp/")) {

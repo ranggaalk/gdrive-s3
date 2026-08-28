@@ -303,6 +303,8 @@ export async function handleBuckets(
           policy: policyRow?.policy_json ?? null,
           policyUpdatedAt: policyRow?.updated_at ?? null,
           isPublic: ctx.authorization.isPublic(bucket),
+          defaultSseAlgorithm: bucket.default_sse_algorithm,
+          defaultKmsKeyId: bucket.default_kms_key_id,
         },
         requestId,
       );
@@ -311,7 +313,12 @@ export async function handleBuckets(
     if (req.method === "PUT") {
       let body;
       try {
-        body = await readJson<{ acl?: unknown; policy?: unknown }>(ctx, req);
+        body = await readJson<{
+          acl?: unknown;
+          policy?: unknown;
+          defaultSseAlgorithm?: unknown;
+          defaultKmsKeyId?: unknown;
+        }>(ctx, req);
       } catch (error) {
         const mapped = mapBodyReadError(error, requestId);
         if (mapped) return mapped;
@@ -377,6 +384,39 @@ export async function handleBuckets(
         }
       }
 
+      // Default encryption. null clears it; absent leaves it alone.
+      if (body?.defaultSseAlgorithm !== undefined) {
+        const algorithm = body.defaultSseAlgorithm;
+        if (algorithm === null) {
+          ctx.repos.buckets.setDefaultEncryption(bucket.id, null, null);
+        } else if (algorithm === "AES256" || algorithm === "aws:kms") {
+          let kmsKeyId: string | null = null;
+          if (algorithm === "aws:kms") {
+            const keyRef = body.defaultKmsKeyId;
+            if (typeof keyRef !== "string" || !keyRef) {
+              return apiError("INVALID", "aws:kms memerlukan KMS key.", 400, requestId);
+            }
+            // Resolved now so a broken default fails here rather than on every
+            // later upload.
+            const found = ctx.repos.kmsKeys.findOwned(bucket.user_id, keyRef);
+            if (!found) return apiError("NOT_FOUND", "KMS key tidak ditemukan.", 404, requestId);
+            kmsKeyId = found.id;
+          }
+          ctx.repos.buckets.setDefaultEncryption(bucket.id, algorithm, kmsKeyId);
+        } else {
+          return apiError("INVALID", "Algoritma enkripsi tidak valid.", 400, requestId);
+        }
+        ctx.repos.audit.record({
+          userId,
+          action: "bucket.encryption.update",
+          bucketName: bucket.name,
+          bucketId: bucket.id,
+          statusCode: 200,
+          requestId,
+          detail: { algorithm: algorithm ?? null },
+        });
+      }
+
       const updated = ctx.bucketAccess.findById(userId, bucketId, "owner")!;
       const policyRow = ctx.repos.bucketPolicies.find(bucket.id);
       return ok(
@@ -385,6 +425,8 @@ export async function handleBuckets(
           policy: policyRow?.policy_json ?? null,
           policyUpdatedAt: policyRow?.updated_at ?? null,
           isPublic: ctx.authorization.isPublic(updated),
+          defaultSseAlgorithm: updated.default_sse_algorithm,
+          defaultKmsKeyId: updated.default_kms_key_id,
         },
         requestId,
       );

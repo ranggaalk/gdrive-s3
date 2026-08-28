@@ -27,6 +27,12 @@ export interface StagingRow {
   content_language: string | null;
   expires_at: string | null;
   acl: string;
+  sse_algorithm: string | null;
+  sse_kms_key_id: string | null;
+  sse_kms_key_version: number | null;
+  sse_wrapped_data_key: string | null;
+  sse_iv: string | null;
+  sse_customer_key_md5: string | null;
   status: StagingStatus;
   last_error: string | null;
   created_at: string;
@@ -48,6 +54,15 @@ export interface StartStagingInput {
   expiresAt: string | null;
   /** Canned ACL for the object. Defaults to private, matching S3. */
   acl?: string;
+  /** Server-side encryption metadata, absent for a plaintext write. */
+  sse?: {
+    algorithm: string;
+    kmsKeyId: string | null;
+    kmsKeyVersion: number | null;
+    wrappedDataKey: string | null;
+    iv: string;
+    customerKeyMd5: string | null;
+  } | null;
   oldDriveFileId: string | null;
   driveTargetId?: string;
 }
@@ -73,8 +88,10 @@ export class ObjectStagingRepository {
            (id, request_id, user_id, bucket_id, object_key, object_id,
             old_drive_file_id, content_type, metadata_json, cache_control,
             content_disposition, content_encoding, content_language, expires_at,
-            acl, drive_target_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploading', ?, ?)`,
+            acl, sse_algorithm, sse_kms_key_id, sse_kms_key_version,
+            sse_wrapped_data_key, sse_iv, sse_customer_key_md5,
+            drive_target_id, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploading', ?, ?)`,
       )
       .run(
         id,
@@ -92,6 +109,12 @@ export class ObjectStagingRepository {
         input.contentLanguage,
         input.expiresAt,
         input.acl ?? "private",
+        input.sse?.algorithm ?? null,
+        input.sse?.kmsKeyId ?? null,
+        input.sse?.kmsKeyVersion ?? null,
+        input.sse?.wrappedDataKey ?? null,
+        input.sse?.iv ?? null,
+        input.sse?.customerKeyMd5 ?? null,
         input.driveTargetId ?? null,
         now,
         now,

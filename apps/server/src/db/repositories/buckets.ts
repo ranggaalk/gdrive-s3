@@ -21,6 +21,8 @@ export interface BucketRow {
   drive_target_id: string;
   status: BucketStatus;
   acl: BucketAclName;
+  default_sse_algorithm: "AES256" | "aws:kms" | null;
+  default_kms_key_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -169,6 +171,22 @@ export class BucketsRepository {
           ORDER BY b.created_at ASC`,
       )
       .all(name);
+  }
+
+  setDefaultEncryption(
+    bucketId: string,
+    algorithm: "AES256" | "aws:kms" | null,
+    kmsKeyId: string | null,
+  ): boolean {
+    return (
+      this.db
+        .query(
+          `UPDATE buckets
+              SET default_sse_algorithm = ?, default_kms_key_id = ?, updated_at = ?
+            WHERE id = ?`,
+        )
+        .run(algorithm, kmsKeyId, nowIso(), bucketId).changes > 0
+    );
   }
 
   setAcl(bucketId: string, acl: BucketAclName): boolean {

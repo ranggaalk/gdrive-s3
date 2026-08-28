@@ -60,6 +60,8 @@ describe("control-plane bucket access configuration", () => {
       policy: null,
       policyUpdatedAt: null,
       isPublic: false,
+      defaultSseAlgorithm: null,
+      defaultKmsKeyId: null,
     });
   });
 

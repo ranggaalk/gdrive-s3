@@ -111,7 +111,17 @@ export const COMPAT_MATRIX: readonly CompatRow[] = [
       "tidak pernah dibuffer penuh.",
   },
   { feature: "CopyObject with byte range / cross-user", status: "unsupported" },
-  { feature: "SSE-KMS / Server-side encryption", status: "unsupported" },
+  {
+    feature: "SSE-KMS / Server-side encryption",
+    status: "supported",
+    verifiedBy: ["unit"],
+    notes:
+      "SSE-S3 (AES256), SSE-KMS (aws:kms, CMK lokal, alias didukung), dan SSE-C. " +
+      "Envelope encryption AES-256-CTR dengan data key per objek; CTR dipilih " +
+      "agar Range GET tetap seekable. ETag tetap MD5 plaintext. Rotasi CMK " +
+      "menyimpan material lama sehingga objek lama tetap terbaca. Default " +
+      "per-bucket via ?encryption. Multipart SSE-C belum didukung.",
+  },
 ];
 
 export function compatMatrix(): CompatRow[] {

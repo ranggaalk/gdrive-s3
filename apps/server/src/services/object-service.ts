@@ -8,6 +8,7 @@ import { streamingUpload, type StreamingUploadResult } from "../drive/upload-str
 import type { ObjectMetadataHeaders } from "../s3/metadata.ts";
 import { parseRange } from "../s3/range.ts";
 import type { AppContext } from "../context.ts";
+import { EncryptionService, type EncryptionPlan } from "./encryption-service.ts";
 
 export class ObjectAccessError extends Error {}
 export class ObjectNotFoundError extends Error {}
@@ -24,6 +25,8 @@ export interface ObjectUploadInput {
   /** Canned ACL for the object, carried through staging so it commits in the
    *  same transaction that publishes the object. */
   acl?: string;
+  /** Server-side encryption to apply, or null/undefined for plaintext. */
+  encryption?: EncryptionPlan | null;
   signal?: AbortSignal;
   verify?: (result: StreamingUploadResult) => void;
   ifAbsent?: boolean;
@@ -39,6 +42,8 @@ export interface ObjectDownloadInput {
   object: ObjectRow;
   range: string | null;
   signal?: AbortSignal;
+  /** SSE-C key supplied by the caller, required for objects written with one. */
+  customerKey?: { key: Buffer; keyMd5: string } | null;
 }
 
 export interface ObjectDownloadResult {
@@ -81,6 +86,16 @@ export class ObjectService {
         contentLanguage: input.metadata.contentLanguage,
         expiresAt: input.metadata.expiresAt,
         acl: input.acl,
+        sse: input.encryption
+          ? {
+              algorithm: input.encryption.algorithm,
+              kmsKeyId: input.encryption.kmsKeyId,
+              kmsKeyVersion: input.encryption.kmsKeyVersion,
+              wrappedDataKey: input.encryption.wrappedDataKey,
+              iv: input.encryption.iv.toString("base64"),
+              customerKeyMd5: input.encryption.customerKeyMd5,
+            }
+          : null,
         oldDriveFileId: previous?.drive_file_id ?? null,
       });
 
@@ -105,6 +120,9 @@ export class ObjectService {
           chunkSize: this.app.config.driveUploadChunkBytes,
           target,
           signal: input.signal,
+          ...(input.encryption
+            ? { cipher: new EncryptionService(this.app).cipherFor(input.encryption) }
+            : {}),
         });
         uploadedDriveFileId = result.uploaded.driveFileId;
         input.verify?.(result);
@@ -205,8 +223,22 @@ export class ObjectService {
       slot.release();
       throw new Error("Drive returned an invalid content length");
     }
+    // Decrypt on the way out. CTR is seekable, so a ranged read only needs the
+    // counter advanced to the range start — the object is never fetched whole
+    // just to serve a slice of it.
+    const encryption = this.app.repos.objectEncryption.find(object.id);
+    let body = wrapBody(upstream, slot);
+    if (encryption && body) {
+      const decrypt = new EncryptionService(this.app).decryptorFor({
+        encryption,
+        customerKey: input.customerKey ?? null,
+        byteOffset: parsedRange?.start ?? 0,
+      });
+      body = decrypt(body);
+    }
+
     return {
-      body: wrapBody(upstream, slot),
+      body,
       status: parsedRange ? 206 : upstream.status,
       contentLength,
       contentRange: parsedRange

@@ -220,6 +220,12 @@ async function dispatch(
       if (ctx.method === "DELETE") return aclPolicy.deleteBucketPolicy(ctx, bucket);
       throw new S3Error("MethodNotAllowed");
     }
+    if (q.has("encryption")) {
+      if (ctx.method === "GET") return aclPolicy.getBucketEncryption(ctx, bucket);
+      if (ctx.method === "PUT") return aclPolicy.putBucketEncryption(ctx, bucket);
+      if (ctx.method === "DELETE") return aclPolicy.deleteBucketEncryption(ctx, bucket);
+      throw new S3Error("MethodNotAllowed");
+    }
     if (q.has("location")) {
       if (ctx.method === "GET") return aclPolicy.getBucketLocation(ctx, bucket);
       throw new S3Error("MethodNotAllowed");

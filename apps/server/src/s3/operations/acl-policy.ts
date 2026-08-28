@@ -207,6 +207,93 @@ export async function getBucketPolicyStatus(
   return xmlResponse(body, 200, { "x-amz-request-id": ctx.requestId });
 }
 
+export async function getBucketEncryption(
+  ctx: S3RequestContext,
+  bucketName: string,
+): Promise<Response> {
+  requireUser(ctx);
+  const { bucket } = authorizeBucket(ctx, bucketName, "s3:GetBucketAcl");
+  if (!bucket.default_sse_algorithm) {
+    throw new S3Error("ServerSideEncryptionConfigurationNotFoundError", {
+      BucketName: bucketName,
+    });
+  }
+  const rule =
+    `<Rule><ApplyServerSideEncryptionByDefault>` +
+    tag("SSEAlgorithm", bucket.default_sse_algorithm) +
+    (bucket.default_kms_key_id ? tag("KMSMasterKeyID", bucket.default_kms_key_id) : "") +
+    `</ApplyServerSideEncryptionByDefault></Rule>`;
+  return xmlResponse(
+    xmlDocument("ServerSideEncryptionConfiguration", rule),
+    200,
+    { "x-amz-request-id": ctx.requestId },
+  );
+}
+
+export async function putBucketEncryption(
+  ctx: S3RequestContext,
+  bucketName: string,
+): Promise<Response> {
+  const userId = requireUser(ctx);
+  const { bucket } = authorizeBucket(ctx, bucketName, "s3:PutBucketAcl");
+  const body = await readBody(ctx);
+
+  const algorithm = /<SSEAlgorithm>\s*([^<]*?)\s*<\/SSEAlgorithm>/.exec(body)?.[1];
+  if (algorithm !== "AES256" && algorithm !== "aws:kms") {
+    throw new S3Error("MalformedXML", { Reason: "SSEAlgorithm must be AES256 or aws:kms." });
+  }
+  const keyRef = /<KMSMasterKeyID>\s*([^<]*?)\s*<\/KMSMasterKeyID>/.exec(body)?.[1] ?? null;
+
+  let kmsKeyId: string | null = null;
+  if (algorithm === "aws:kms") {
+    if (!keyRef) {
+      throw new S3Error("MalformedXML", {
+        Reason: "aws:kms default encryption requires a KMSMasterKeyID.",
+      });
+    }
+    // Resolve now so a broken default is rejected here rather than surfacing
+    // on every later PUT.
+    const alias = keyRef.startsWith("alias/") ? keyRef.slice("alias/".length) : null;
+    const found = alias
+      ? ctx.app.repos.kmsKeys.findByAlias(bucket.user_id, alias)
+      : ctx.app.repos.kmsKeys.findOwned(bucket.user_id, keyRef);
+    if (!found) throw new S3Error("InvalidArgument", { ArgumentName: "KMSMasterKeyID" });
+    kmsKeyId = found.id;
+  }
+
+  ctx.app.repos.buckets.setDefaultEncryption(bucket.id, algorithm, kmsKeyId);
+  ctx.app.repos.audit.record({
+    userId,
+    credentialId: ctx.credentialId,
+    action: "s3.PutBucketEncryption",
+    bucketName,
+    bucketId: bucket.id,
+    statusCode: 200,
+    requestId: ctx.requestId,
+    detail: { algorithm, kmsKeyId },
+  });
+  return new Response(null, { status: 200, headers: { "x-amz-request-id": ctx.requestId } });
+}
+
+export async function deleteBucketEncryption(
+  ctx: S3RequestContext,
+  bucketName: string,
+): Promise<Response> {
+  const userId = requireUser(ctx);
+  const { bucket } = authorizeBucket(ctx, bucketName, "s3:PutBucketAcl");
+  ctx.app.repos.buckets.setDefaultEncryption(bucket.id, null, null);
+  ctx.app.repos.audit.record({
+    userId,
+    credentialId: ctx.credentialId,
+    action: "s3.DeleteBucketEncryption",
+    bucketName,
+    bucketId: bucket.id,
+    statusCode: 204,
+    requestId: ctx.requestId,
+  });
+  return new Response(null, { status: 204, headers: { "x-amz-request-id": ctx.requestId } });
+}
+
 /** GetBucketLocation — every bucket reports the gateway's configured region. */
 export async function getBucketLocation(
   ctx: S3RequestContext,

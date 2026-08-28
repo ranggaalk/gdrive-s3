@@ -76,6 +76,17 @@ export class InMemoryDriveStorage implements DriveStorage {
     { name: string; members: Map<string, { canWrite: boolean; canDelete: boolean }> }
   >();
 
+  /**
+   * The raw bytes as they sit "in Drive", for tests that need to prove what
+   * was actually stored — encrypted-at-rest claims are worth nothing if only
+   * the response headers are checked.
+   */
+  contentOf(driveFileId: string): Uint8Array {
+    const blob = this.blobs.get(driveFileId);
+    if (!blob) throw new Error(`no blob for ${driveFileId}`);
+    return blob.bytes;
+  }
+
   seedSource(input: {
     id?: string;
     parentId?: string | null;

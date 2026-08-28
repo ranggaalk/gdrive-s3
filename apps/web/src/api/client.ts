@@ -321,12 +321,27 @@ export type BucketAcl =
   | "public-read-write"
   | "authenticated-read";
 
+export type SseAlgorithm = "AES256" | "aws:kms";
+
 export interface BucketAccessConfig {
   acl: BucketAcl;
   /** The raw policy JSON, or null when the bucket has none. */
   policy: string | null;
   policyUpdatedAt: string | null;
   isPublic: boolean;
+  defaultSseAlgorithm: SseAlgorithm | null;
+  defaultKmsKeyId: string | null;
+}
+
+export interface KmsKey {
+  id: string;
+  alias: string;
+  version: number;
+  status: "active" | "disabled";
+  rotatedAt: string | null;
+  createdAt: string;
+  /** How many objects still reference this key. */
+  objectCount: number;
 }
 
 export interface PresignedPostForm {
@@ -390,11 +405,32 @@ export const getBucketAccess = async (bucketId: string) =>
 
 export const updateBucketAccess = async (
   bucketId: string,
-  changes: { acl?: BucketAcl; policy?: string | null },
+  changes: {
+    acl?: BucketAcl;
+    policy?: string | null;
+    defaultSseAlgorithm?: SseAlgorithm | null;
+    defaultKmsKeyId?: string | null;
+  },
 ) => unwrap<BucketAccessConfig>(await fetch(
   `/api/buckets/${encodeURIComponent(bucketId)}/access`,
   mutate("PUT", changes),
 ));
+
+export const listKmsKeys = async () =>
+  unwrap<KmsKey[]>(await fetch("/api/security/kms"));
+
+export const createKmsKey = async (alias: string) =>
+  unwrap<KmsKey>(await fetch("/api/security/kms", mutate("POST", { alias })));
+
+export const rotateKmsKey = async (id: string) =>
+  unwrap<KmsKey>(
+    await fetch(`/api/security/kms/${encodeURIComponent(id)}/rotate`, mutate("POST")),
+  );
+
+export const setKmsKeyStatus = async (id: string, status: "active" | "disabled") =>
+  unwrap<KmsKey>(
+    await fetch(`/api/security/kms/${encodeURIComponent(id)}`, mutate("PATCH", { status })),
+  );
 
 export const createPresignedPost = async (
   bucketId: string,

@@ -1,6 +1,7 @@
 // CompleteMultipartUpload: validate requested parts, stream-concatenate temp
 // files to Drive resumable upload, then atomically promote through M5 staging.
 
+import { createCipheriv } from "node:crypto";
 import { rm, rmdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { requireUser, type S3RequestContext } from "../context.ts";
@@ -16,6 +17,37 @@ import { BodyTooLargeError, readBoundedText } from "../../util/body-size.ts";
 interface RequestedPart {
   number: number;
   etag: string;
+}
+
+/**
+ * Rebuild the cipher for an upload that asked for encryption. SSE-C uploads
+ * cannot be completed this way: the customer key is never stored, and
+ * CompleteMultipartUpload carries no key headers to supply it.
+ */
+function multipartCipher(
+  ctx: S3RequestContext,
+  upload: { sse_algorithm: string | null; sse_iv: string | null; sse_customer_key_md5: string | null; sse_kms_key_id: string | null; sse_kms_key_version: number | null; sse_wrapped_data_key: string | null },
+) {
+  if (!upload.sse_algorithm || !upload.sse_iv) return null;
+  if (upload.sse_customer_key_md5) {
+    throw new S3Error("NotImplemented", {
+      Feature: "SSE-C multipart upload",
+    });
+  }
+  if (!upload.sse_kms_key_id || !upload.sse_wrapped_data_key) {
+    throw new S3Error("InternalError");
+  }
+  const dataKey = ctx.app.kms.decryptDataKey({
+    kmsKeyId: upload.sse_kms_key_id,
+    version: upload.sse_kms_key_version ?? 1,
+    wrapped: upload.sse_wrapped_data_key,
+  });
+  const cipher = createCipheriv("aes-256-ctr", dataKey, Buffer.from(upload.sse_iv, "base64"));
+  dataKey.fill(0);
+  return {
+    update: (chunk: Uint8Array) => cipher.update(Buffer.from(chunk)),
+    final: () => cipher.final(),
+  };
 }
 
 export async function completeMultipartUpload(
@@ -103,11 +135,24 @@ async function completeLocked(
     contentEncoding: null,
     contentLanguage: null,
     expiresAt: null,
+    // Carried from the upload record so the object commits with the same key
+    // the parts were assembled under.
+    sse: upload.sse_algorithm && upload.sse_iv
+      ? {
+          algorithm: upload.sse_algorithm,
+          kmsKeyId: upload.sse_kms_key_id,
+          kmsKeyVersion: upload.sse_kms_key_version,
+          wrappedDataKey: upload.sse_wrapped_data_key,
+          iv: upload.sse_iv,
+          customerKeyMd5: upload.sse_customer_key_md5,
+        }
+      : null,
     oldDriveFileId: previous?.drive_file_id ?? null,
     driveTargetId: bucket.drive_target_id,
   });
 
   const multiEtag = multipartEtag(selected);
+  const uploadCipher = multipartCipher(ctx, upload);
   let uploadedFileId: string | null = null;
   const slot = await ctx.app.driveLimits.upload(requireUser(ctx), ctx.signal ?? undefined);
   try {
@@ -126,6 +171,11 @@ async function completeLocked(
       chunkSize: ctx.app.config.driveUploadChunkBytes,
       target: ctx.app.bucketAccess.operationTarget(bucket),
       signal: ctx.signal ?? undefined,
+      // Parts are stored as plaintext temp files; the whole object is
+      // encrypted once here, at the point it becomes a single stream. That
+      // keeps one contiguous CTR keystream over the assembled object, which
+      // is what makes a later ranged read seekable.
+      ...(uploadCipher ? { cipher: uploadCipher } : {}),
     });
     uploadedFileId = streamed.uploaded.driveFileId;
     ctx.app.repos.objectStaging.markUploaded({
