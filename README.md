@@ -106,9 +106,10 @@ passing test, so nothing is marked supported on faith.
 | Path-style (default) and virtual-hosted (opt-in) endpoints | Object versioning |
 | Core object CRUD, `ListObjectsV2`, byte-range and conditional GET | Object Lock and Legal Hold |
 | Multipart upload, `CopyObject` (same actor) | ACL and bucket policy |
-| SigV4 header and presigned-query auth | SigV4A, PresignedPost (form) |
-| AWS CLI, rclone, and MinIO `mc` smoke suites | SSE-KMS and server-side encryption |
-| | Cross-user `CopyObject` between unrelated My Drive accounts |
+| SigV4 header and presigned-query auth | SSE-KMS and server-side encryption |
+| SigV4A (`AWS4-ECDSA-P256-SHA256`), header and presigned-query | Cross-user `CopyObject` between unrelated My Drive accounts |
+| PresignedPost browser form uploads | |
+| AWS CLI, rclone, and MinIO `mc` smoke suites | |
 
 Open the dashboard Overview page for the live matrix with test evidence behind
 each row.

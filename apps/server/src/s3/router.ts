@@ -10,12 +10,15 @@ import { driveErrorToS3Error, S3Error, s3ErrorResponse } from "./errors.ts";
 import { DriveError } from "../drive/errors.ts";
 import { SigV4Verifier, type SigV4Failure } from "../auth/s3-sigv4.ts";
 import { SigV4PresignedVerifier } from "../auth/s3-sigv4-presigned.ts";
+import { SigV4aVerifier } from "../auth/s3-sigv4a.ts";
 import { resolveS3Path } from "./key.ts";
 import * as buckets from "./operations/buckets.ts";
 import * as objects from "./operations/objects.ts";
 import * as multipart from "./operations/multipart.ts";
 import { completeMultipartUpload } from "./operations/multipart-complete.ts";
 import { copyObject } from "./operations/copy-object.ts";
+import { postObject } from "./operations/post-object.ts";
+import { parseBoundary } from "./multipart-form.ts";
 import { clientIpFrom, type HasRequestIp } from "../util/client-ip.ts";
 import { retryAfterSeconds } from "../security/rate-limits.ts";
 
@@ -36,6 +39,18 @@ function failureToError(failure: SigV4Failure): S3Error {
   }
 }
 
+/**
+ * A PresignedPost is a multipart form POST at the bucket root. The `?delete`
+ * bulk-delete route is also a bucket-root POST, so the query is checked too —
+ * that one stays on the SigV4 path.
+ */
+function isPresignedPost(req: Request, url: URL): boolean {
+  if (req.method !== "POST") return false;
+  if (url.searchParams.has("delete") || url.searchParams.has("uploads")) return false;
+  if (url.searchParams.has("uploadId")) return false;
+  return parseBoundary(req.headers.get("content-type")) !== null;
+}
+
 export async function handleS3(
   app: AppContext,
   req: Request,
@@ -52,23 +67,36 @@ export async function handleS3(
     return res;
   }
   try {
-    const presigned = new SigV4PresignedVerifier(app.config, app.repos.credentials).verify({
+    // PresignedPost authenticates from the signed policy inside the form body,
+    // not from SigV4, so it has to branch before the verifiers run.
+    if (isPresignedPost(req, url)) {
+      const { bucket } = resolveS3Path(
+        url.pathname,
+        req.headers.get("host"),
+        app.config.s3VirtualHostedDomain,
+      );
+      if (!bucket) throw new S3Error("MethodNotAllowed");
+      const res = await postObject(app, req, bucket, requestId);
+      res.headers.set("x-amz-request-id", requestId);
+      return res;
+    }
+
+    const verifierInput = {
       method: req.method,
       pathname: url.pathname,
       query: url.searchParams,
       headers: req.headers,
-    });
-    let auth = presigned;
+    };
+    // SigV4A first: it owns its own algorithm label in both the header and the
+    // query form, and returns null for anything that is not SigV4A.
+    let auth =
+      new SigV4aVerifier(app.config, app.repos.credentials).verify(verifierInput) ??
+      new SigV4PresignedVerifier(app.config, app.repos.credentials).verify(verifierInput);
     if (!auth) {
       if (url.searchParams.has("X-Amz-Signature")) {
         throw new S3Error("AuthorizationQueryParametersError");
       }
-      auth = new SigV4Verifier(app.config, app.repos.credentials).verify({
-        method: req.method,
-        pathname: url.pathname,
-        query: url.searchParams,
-        headers: req.headers,
-      });
+      auth = new SigV4Verifier(app.config, app.repos.credentials).verify(verifierInput);
     }
     if (!auth.ok) {
       const failureDecision = app.rateLimits.take("signatureFailure", ipKey);

@@ -79,7 +79,26 @@ export const COMPAT_MATRIX: readonly CompatRow[] = [
       "Opt-in via S3_VIRTUAL_HOSTED_DOMAIN; disabled (path-style only) unless set. " +
       "{bucket}.{domain} resolves the bucket from Host, path-style keeps working unchanged.",
   },
-  { feature: "SigV4A / PresignedPost (form)", status: "unsupported" },
+  {
+    feature: "SigV4A (AWS4-ECDSA-P256-SHA256)",
+    status: "supported",
+    verifiedBy: ["unit"],
+    notes:
+      "Header dan presigned-query. Signing key diturunkan dari access key id + secret " +
+      "yang sama dengan SigV4, jadi tidak ada material kredensial baru. Region set " +
+      "wajib ditandatangani dan harus cocok dengan region gateway atau '*'. " +
+      "Chunked upload signing SigV4A belum didukung.",
+  },
+  {
+    feature: "PresignedPost (browser form POST)",
+    status: "supported",
+    verifiedBy: ["unit"],
+    notes:
+      "POST /{bucket} multipart/form-data dengan policy bertanda tangan. Setiap kondisi " +
+      "policy ditegakkan dan setiap field yang dikirim wajib tercakup kondisi. " +
+      "success_action_status dan success_action_redirect didukung; body di-stream, " +
+      "tidak pernah dibuffer penuh.",
+  },
   { feature: "CopyObject with byte range / cross-user", status: "unsupported" },
   { feature: "SSE-KMS / Server-side encryption", status: "unsupported" },
 ];

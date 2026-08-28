@@ -72,4 +72,18 @@ describe("S3 compatibility matrix", () => {
       verifiedBy: ["unit"],
     });
   });
+
+  test("SigV4A and PresignedPost are tracked as separate supported rows", () => {
+    const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row]));
+    expect(byFeature.get("SigV4A (AWS4-ECDSA-P256-SHA256)")).toMatchObject({
+      status: "supported",
+      verifiedBy: ["unit"],
+    });
+    expect(byFeature.get("PresignedPost (browser form POST)")).toMatchObject({
+      status: "supported",
+      verifiedBy: ["unit"],
+    });
+    // The combined row they replaced must not linger.
+    expect(byFeature.has("SigV4A / PresignedPost (form)")).toBe(false);
+  });
 });

@@ -125,10 +125,18 @@ export interface StringToSignInput {
   amzDate: string; // YYYYMMDDTHHMMSSZ
   scope: string; // date/region/service/aws4_request
   canonicalRequest: string;
+  /** Defaults to SigV4. SigV4A passes its own AWS4-ECDSA-P256-SHA256 label;
+   *  everything else about the string-to-sign is identical. */
+  algorithm?: string;
 }
 
 export function buildStringToSign(input: StringToSignInput): string {
-  return [ALGORITHM, input.amzDate, input.scope, sha256Hex(input.canonicalRequest)].join("\n");
+  return [
+    input.algorithm ?? ALGORITHM,
+    input.amzDate,
+    input.scope,
+    sha256Hex(input.canonicalRequest),
+  ].join("\n");
 }
 
 export function deriveSigningKey(

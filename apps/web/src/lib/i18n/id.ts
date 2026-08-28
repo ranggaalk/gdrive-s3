@@ -57,6 +57,8 @@ export const id = {
     publicLinkFailed: "Aksi public link gagal",
     presignedCreated: "Presigned link dibuat",
     presignedFailed: "Gagal membuat presigned link",
+    presignedPostCreated: "Form upload dibuat",
+    presignedPostFailed: "Gagal membuat form upload",
     importStarted: "Import dari Drive dimulai",
     importFailed: "Gagal memulai import",
     importCancelled: "Import dibatalkan",
@@ -569,6 +571,28 @@ export const id = {
     permanentLinksTitle: "Link permanen",
     activeUntil: (date: string) => `Aktif sampai ${date}`,
     activeNoExpiry: "Aktif tanpa expiry",
+
+    uploadFormTitle: "Form upload browser",
+    uploadFormAction: "Buat form upload",
+    uploadFormDialogTitle: "Form upload browser (PresignedPost)",
+    uploadFormDialogDescription:
+      "Hasilkan policy bertanda tangan agar browser bisa mengunggah langsung ke bucket ini tanpa pernah memegang secret key. Tempel field di bawah ke dalam <form> milikmu.",
+    uploadFormDescription:
+      "Policy membatasi bucket, prefix key, dan ukuran maksimum. Field apa pun di luar itu akan ditolak gateway.",
+    uploadFormPrefixLabel: "Prefix key",
+    uploadFormPrefixPlaceholder: "inbox/",
+    uploadFormPrefixHint: "Nama file yang diunggah ditambahkan di belakang prefix ini.",
+    uploadFormMaxSizeLabel: "Ukuran maksimum",
+    uploadFormCredentialAriaLabel: "Credential untuk form upload",
+    uploadFormExpiryAriaLabel: "Masa berlaku form upload",
+    uploadFormGenerate: "Buat form",
+    uploadFormResultTitle: "Field form — berlaku sampai",
+    uploadFormEndpointLabel: "endpoint form",
+    uploadFormHtmlLabel: "cuplikan HTML",
+    uploadFormCurlLabel: "perintah curl",
+    uploadFormKeyTemplate: "Template key",
+    uploadFormFileLast: "Input file wajib berada paling akhir di dalam form.",
+
     revoked: "Dicabut",
     revoke: "Cabut",
 

@@ -17,6 +17,11 @@ import {
   deriveSigningKey,
   sha256Hex,
 } from "../../apps/server/src/auth/sigv4-canonical.ts";
+import {
+  ALGORITHM_V4A,
+  deriveSigV4aPrivateKey,
+} from "../../apps/server/src/auth/sigv4a.ts";
+import { createECDH, createPrivateKey, createSign } from "node:crypto";
 
 export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -84,20 +89,67 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   } as AppConfig;
 }
 
+export interface SignInput {
+  method: string;
+  path: string;
+  query?: Record<string, string>;
+  headers?: Record<string, string>;
+  body?: Uint8Array | string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
+export interface SignV4aInput extends SignInput {
+  /** Defaults to "*". Set to a concrete region, or a bogus one, to exercise
+   *  the region-set check. */
+  regionSet?: string;
+  /** Presign into the query string instead of signing the Authorization
+   *  header. The value is X-Amz-Expires in seconds. */
+  presignExpiresSeconds?: number;
+  /** Test hook for skew/expiry cases. */
+  signingDate?: Date;
+}
+
 export interface Harness {
   ctx: AppContext;
   storage: InMemoryDriveStorage;
   seedUser(email: string): { id: string };
   seedCredential(userId: string): { accessKeyId: string; secretAccessKey: string };
-  signAndSend(input: {
-    method: string;
-    path: string;
-    query?: Record<string, string>;
-    headers?: Record<string, string>;
-    body?: Uint8Array | string;
-    accessKeyId: string;
-    secretAccessKey: string;
-  }): Promise<Response>;
+  signAndSend(input: SignInput): Promise<Response>;
+  /** Sign with SigV4A (AWS4-ECDSA-P256-SHA256) instead of SigV4. */
+  signAndSendV4a(input: SignV4aInput): Promise<Response>;
+}
+
+function formatAmzDate(now: Date): string {
+  return (
+    now.getUTCFullYear().toString().padStart(4, "0") +
+    String(now.getUTCMonth() + 1).padStart(2, "0") +
+    String(now.getUTCDate()).padStart(2, "0") +
+    "T" +
+    String(now.getUTCHours()).padStart(2, "0") +
+    String(now.getUTCMinutes()).padStart(2, "0") +
+    String(now.getUTCSeconds()).padStart(2, "0") +
+    "Z"
+  );
+}
+
+/** Reference SigV4A signer. The gateway only ever verifies, so the signing
+ *  half lives here in the tests. */
+function signV4a(scalar: Buffer, stringToSign: string): string {
+  const ecdh = createECDH("prime256v1");
+  ecdh.setPrivateKey(scalar);
+  const point = ecdh.getPublicKey();
+  const key = createPrivateKey({
+    key: {
+      kty: "EC",
+      crv: "P-256",
+      d: scalar.toString("base64url"),
+      x: point.subarray(1, 33).toString("base64url"),
+      y: point.subarray(33, 65).toString("base64url"),
+    },
+    format: "jwk",
+  });
+  return createSign("SHA256").update(stringToSign, "utf8").sign(key).toString("hex");
 }
 
 export function makeHarness(
@@ -197,5 +249,86 @@ export function makeHarness(
     return handleS3(ctx, req, `req_${crypto.randomUUID()}`);
   }
 
-  return { ctx, storage, seedUser, seedCredential, signAndSend };
+  async function signAndSendV4a(input: SignV4aInput): Promise<Response> {
+    const bodyBytes =
+      input.body === undefined
+        ? new Uint8Array()
+        : typeof input.body === "string"
+          ? new TextEncoder().encode(input.body)
+          : input.body;
+    const presigned = input.presignExpiresSeconds !== undefined;
+    const payloadHash = presigned ? "UNSIGNED-PAYLOAD" : sha256Hex(bodyBytes);
+    const amzDate = formatAmzDate(input.signingDate ?? new Date());
+    const dateStamp = amzDate.slice(0, 8);
+    // No region in a SigV4A scope.
+    const scope = `${dateStamp}/s3/aws4_request`;
+    const regionSet = input.regionSet ?? "*";
+
+    const url = new URL(`http://localhost${input.path}`);
+    for (const [k, v] of Object.entries(input.query ?? {})) url.searchParams.set(k, v);
+
+    const headers = new Headers({ host: "localhost", ...(input.headers ?? {}) });
+    let signedHeaderNames: string[];
+
+    if (presigned) {
+      signedHeaderNames = ["host"];
+      url.searchParams.set("X-Amz-Algorithm", ALGORITHM_V4A);
+      url.searchParams.set("X-Amz-Credential", `${input.accessKeyId}/${scope}`);
+      url.searchParams.set("X-Amz-Date", amzDate);
+      url.searchParams.set("X-Amz-Expires", String(input.presignExpiresSeconds));
+      url.searchParams.set("X-Amz-Region-Set", regionSet);
+      url.searchParams.set("X-Amz-SignedHeaders", "host");
+    } else {
+      headers.set("x-amz-date", amzDate);
+      headers.set("x-amz-content-sha256", payloadHash);
+      headers.set("x-amz-region-set", regionSet);
+      signedHeaderNames = ["host", "x-amz-content-sha256", "x-amz-date", "x-amz-region-set"];
+      for (const name of Object.keys(input.headers ?? {})) {
+        const lower = name.toLowerCase();
+        if (
+          (lower === "content-type" || lower.startsWith("x-amz-")) &&
+          !signedHeaderNames.includes(lower)
+        ) {
+          signedHeaderNames.push(lower);
+        }
+      }
+    }
+
+    const { canonicalRequest, signedHeaders } = buildCanonicalRequest({
+      method: input.method,
+      path: url.pathname,
+      query: url.searchParams,
+      headers,
+      signedHeaderNames,
+      payloadHash,
+    });
+    const stringToSign = buildStringToSign({
+      amzDate,
+      scope,
+      canonicalRequest,
+      algorithm: ALGORITHM_V4A,
+    });
+    const scalar = deriveSigV4aPrivateKey(input.accessKeyId, input.secretAccessKey);
+    const signature = signV4a(scalar, stringToSign);
+    scalar.fill(0);
+
+    if (presigned) {
+      url.searchParams.set("X-Amz-Signature", signature);
+    } else {
+      headers.set(
+        "authorization",
+        `${ALGORITHM_V4A} Credential=${input.accessKeyId}/${scope}, ` +
+          `SignedHeaders=${signedHeaders}, Signature=${signature}`,
+      );
+    }
+
+    const req = new Request(url.toString(), {
+      method: input.method,
+      headers,
+      body: input.method === "GET" || input.method === "HEAD" ? undefined : bodyBytes,
+    });
+    return handleS3(ctx, req, `req_${crypto.randomUUID()}`);
+  }
+
+  return { ctx, storage, seedUser, seedCredential, signAndSend, signAndSendV4a };
 }
