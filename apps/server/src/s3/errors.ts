@@ -45,6 +45,14 @@ const CODES = {
   },
   MalformedPolicy: { status: 400, message: "The policy you provided was not well formed." },
   NoSuchBucketPolicy: { status: 404, message: "The bucket policy does not exist." },
+  NoSuchObjectLockConfiguration: {
+    status: 404,
+    message: "The specified object does not have an object lock configuration.",
+  },
+  ObjectLockConfigurationNotFoundError: {
+    status: 404,
+    message: "Object Lock configuration does not exist for this bucket.",
+  },
   NoSuchVersion: {
     status: 404,
     message: "The specified version does not exist.",

@@ -64,6 +64,7 @@ export const en: Dictionary = {
     kmsFailed: "The encryption key action failed",
     versionsPruned: "Old versions deleted",
     versionsFailed: "Couldn't delete the versions",
+    objectLockEnabled: "Object Lock enabled",
     accessSaved: "Access settings saved",
     accessFailed: "Couldn't save the access settings",
     presignedPostCreated: "Upload form created",
@@ -253,6 +254,20 @@ export const en: Dictionary = {
     policyTemplateLabel: "Insert an example",
     policyTemplatePublicRead: "Public object read",
     policyTemplateGrantUser: "Grant one user access",
+    lockLabel: "Object Lock",
+    lockHelp:
+      "Protects object versions from deletion. Once enabled it cannot be turned off, and it enables versioning too.",
+    lockEnable: "Enable Object Lock",
+    lockEnabled: "Enabled",
+    lockIrreversible: "This cannot be undone.",
+    lockDefaultLabel: "Default retention",
+    lockDefaultNone: "None — set per object",
+    lockModeGovernance: "GOVERNANCE — the bucket owner can bypass it",
+    lockModeCompliance: "COMPLIANCE — nobody can bypass it",
+    lockDefaultDaysLabel: "Retention period (days)",
+    lockConfirmTitle: "Enable Object Lock?",
+    lockConfirmDescription:
+      "Object Lock cannot be switched off once enabled, and versioning is turned on permanently with it. Versions under COMPLIANCE retention cannot be deleted by anyone until their retention expires.",
     versioningLabel: "Object versioning",
     versioningHelp:
       "Keeps previous versions when an object is overwritten or deleted. Once enabled it can only be suspended, not switched off.",

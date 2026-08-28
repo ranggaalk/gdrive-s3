@@ -78,7 +78,17 @@ export const COMPAT_MATRIX: readonly CompatRow[] = [
       "Suspended menulis version id 'null' tanpa menghapus versi lama. " +
       "Bucket Disabled berperilaku persis seperti sebelumnya.",
   },
-  { feature: "Object Lock / Legal Hold", status: "unsupported" },
+  {
+    feature: "Object Lock / Legal Hold",
+    status: "supported",
+    verifiedBy: ["unit"],
+    notes:
+      "GET/PUT ?object-lock, ?retention, dan ?legal-hold; header lock saat PUT; " +
+      "x-amz-bucket-object-lock-enabled saat CreateBucket. GOVERNANCE bisa " +
+      "di-bypass hanya oleh pemilik bucket, COMPLIANCE tidak pernah bisa. " +
+      "Retention hanya boleh diperpanjang. Versi terkunci dikecualikan dari " +
+      "prune massal. Mengaktifkan Object Lock ikut menyalakan versioning.",
+  },
   {
     feature: "ACL & Bucket Policy",
     status: "supported",

@@ -35,6 +35,9 @@ export interface ObjectVersionRow {
   sse_wrapped_data_key: string | null;
   sse_iv: string | null;
   sse_customer_key_md5: string | null;
+  lock_mode: "GOVERNANCE" | "COMPLIANCE" | null;
+  retain_until: string | null;
+  legal_hold: number;
   last_modified_at: string;
   created_at: string;
 }
@@ -128,8 +131,9 @@ export class ObjectVersionsRepository {
             expires_at, acl, is_delete_marker, is_latest,
             sse_algorithm, sse_kms_key_id, sse_kms_key_version,
             sse_wrapped_data_key, sse_iv, sse_customer_key_md5,
+            lock_mode, retain_until, legal_hold,
             last_modified_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(bucket_id, object_key, version_id) DO NOTHING`,
       )
       .run(
@@ -156,6 +160,10 @@ export class ObjectVersionsRepository {
         input.encryption?.wrapped_data_key ?? null,
         input.encryption?.iv ?? null,
         input.encryption?.customer_key_md5 ?? null,
+        // The lock travels with the version — that is what retention protects.
+        object.lock_mode,
+        object.retain_until,
+        object.legal_hold,
         object.last_modified_at,
         nowIso(),
       );
@@ -214,15 +222,54 @@ export class ObjectVersionsRepository {
     );
   }
 
-  /** Every non-current version in a bucket, for the bulk-prune action. */
+  /**
+   * Every non-current version in a bucket that may actually be pruned.
+   *
+   * Locked versions are excluded at the query level rather than filtered by
+   * the caller: a bulk prune must never be the way a retention guarantee gets
+   * bypassed, so the rows are simply not offered.
+   */
   listNonCurrent(bucketId: string, limit = 1000): ObjectVersionRow[] {
     return this.db
-      .query<ObjectVersionRow, [string, number]>(
+      .query<ObjectVersionRow, [string, string, number]>(
         `SELECT * FROM object_versions
-          WHERE bucket_id = ? AND is_delete_marker = 0
+          WHERE bucket_id = ?
+            AND is_delete_marker = 0
+            AND legal_hold = 0
+            AND (lock_mode IS NULL OR retain_until IS NULL OR retain_until <= ?)
           ORDER BY created_at ASC LIMIT ?`,
       )
-      .all(bucketId, limit);
+      .all(bucketId, new Date().toISOString(), limit);
+  }
+
+  setLock(input: {
+    bucketId: string;
+    objectKey: string;
+    versionId: string;
+    lockMode?: "GOVERNANCE" | "COMPLIANCE" | null;
+    retainUntil?: string | null;
+    legalHold?: boolean;
+  }): boolean {
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    if (input.lockMode !== undefined) {
+      sets.push("lock_mode = ?", "retain_until = ?");
+      values.push(input.lockMode, input.retainUntil ?? null);
+    }
+    if (input.legalHold !== undefined) {
+      sets.push("legal_hold = ?");
+      values.push(input.legalHold ? 1 : 0);
+    }
+    if (sets.length === 0) return false;
+    values.push(input.bucketId, input.objectKey, input.versionId);
+    return (
+      this.db
+        .query(
+          `UPDATE object_versions SET ${sets.join(", ")}
+            WHERE bucket_id = ? AND object_key = ? AND version_id = ?`,
+        )
+        .run(...(values as never[])).changes > 0
+    );
   }
 
   countForBucket(bucketId: string): number {

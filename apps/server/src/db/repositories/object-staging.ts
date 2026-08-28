@@ -33,6 +33,9 @@ export interface StagingRow {
   sse_wrapped_data_key: string | null;
   sse_iv: string | null;
   sse_customer_key_md5: string | null;
+  lock_mode: string | null;
+  retain_until: string | null;
+  legal_hold: number;
   status: StagingStatus;
   last_error: string | null;
   created_at: string;
@@ -63,6 +66,12 @@ export interface StartStagingInput {
     iv: string;
     customerKeyMd5: string | null;
   } | null;
+  /** Object Lock state to publish with the object. */
+  lock?: {
+    mode: string | null;
+    retainUntil: string | null;
+    legalHold: boolean;
+  } | null;
   oldDriveFileId: string | null;
   driveTargetId?: string;
 }
@@ -90,8 +99,9 @@ export class ObjectStagingRepository {
             content_disposition, content_encoding, content_language, expires_at,
             acl, sse_algorithm, sse_kms_key_id, sse_kms_key_version,
             sse_wrapped_data_key, sse_iv, sse_customer_key_md5,
+            lock_mode, retain_until, legal_hold,
             drive_target_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploading', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploading', ?, ?)`,
       )
       .run(
         id,
@@ -115,6 +125,9 @@ export class ObjectStagingRepository {
         input.sse?.wrappedDataKey ?? null,
         input.sse?.iv ?? null,
         input.sse?.customerKeyMd5 ?? null,
+        input.lock?.mode ?? null,
+        input.lock?.retainUntil ?? null,
+        input.lock?.legalHold ? 1 : 0,
         input.driveTargetId ?? null,
         now,
         now,

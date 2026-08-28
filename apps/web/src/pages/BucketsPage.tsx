@@ -30,6 +30,7 @@ import {
   type BucketAcl,
   type BucketMember,
   type BucketVersioning,
+  type LockMode,
   type KmsKey,
   type SseAlgorithm,
   type SharedDriveSummary,
@@ -121,6 +122,9 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const [versioningDraft, setVersioningDraft] = useState<BucketVersioning>("Disabled");
   const [confirmPrune, setConfirmPrune] = useState(false);
   const [pruning, setPruning] = useState(false);
+  const [confirmLock, setConfirmLock] = useState(false);
+  const [lockDefaultMode, setLockDefaultMode] = useState<LockMode | "none">("none");
+  const [lockDefaultDays, setLockDefaultDays] = useState(30);
 
   const load = useCallback(async () => {
     setError(null);
@@ -209,9 +213,27 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       setPolicyDraft(accessConfig.policy ? prettyJson(accessConfig.policy) : "");
       setKmsKeys(keys);
       setVersioningDraft(accessConfig.versioning);
+      setLockDefaultMode(accessConfig.objectLockDefault?.mode ?? "none");
+      setLockDefaultDays(accessConfig.objectLockDefault?.days ?? 30);
       setSseDraft(accessConfig.defaultSseAlgorithm ?? "none");
       setSseKeyDraft(accessConfig.defaultKmsKeyId ?? keys.find((k) => k.status === "active")?.id ?? "");
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const doEnableObjectLock = async () => {
+    if (!accessBucket) return;
+    setAccessBusy(true);
+    try {
+      const updated = await updateBucketAccess(accessBucket.id, { objectLockEnabled: true });
+      setAccess(updated);
+      setVersioningDraft(updated.versioning);
+      toast.success(t.toast.objectLockEnabled);
+    } catch (cause) {
+      toast.fromError(t.toast.accessFailed, cause);
+    } finally {
+      setAccessBusy(false);
+      setConfirmLock(false);
+    }
   };
 
   const doPruneVersions = async () => {
@@ -252,6 +274,16 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
         // Disabled is not a value S3 accepts once versioning has been turned
         // on, so it is only ever sent as Enabled or Suspended.
         ...(versioningDraft === "Disabled" ? {} : { versioning: versioningDraft }),
+        // Only meaningful once Object Lock is on, and only sent when the
+        // operator actually changed it.
+        ...(access?.objectLockEnabled
+          ? {
+              objectLockDefault:
+                lockDefaultMode === "none"
+                  ? null
+                  : { mode: lockDefaultMode, days: lockDefaultDays },
+            }
+          : {}),
       });
       setAccess(updated);
       setAclDraft(updated.acl);
@@ -259,6 +291,8 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       setSseDraft(updated.defaultSseAlgorithm ?? "none");
       setSseKeyDraft(updated.defaultKmsKeyId ?? "");
       setVersioningDraft(updated.versioning);
+      setLockDefaultMode(updated.objectLockDefault?.mode ?? "none");
+      setLockDefaultDays(updated.objectLockDefault?.days ?? 30);
       toast.success(t.toast.accessSaved);
     } catch (e) {
       setPolicyError(e instanceof Error ? e.message : String(e));
@@ -356,6 +390,43 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
               <p className="text-xs text-muted-foreground">{t.buckets.aclHelp}</p>
             </div>
             <div className="space-y-2">
+              <Label>{t.buckets.lockLabel}</Label>
+              {access?.objectLockEnabled ? (
+                <>
+                  <Badge variant="success">{t.buckets.lockEnabled}</Badge>
+                  <Select
+                    value={lockDefaultMode}
+                    onValueChange={(value) => setLockDefaultMode(value as LockMode | "none")}
+                    ariaLabel={t.buckets.lockDefaultLabel}
+                    options={[
+                      { value: "none", label: t.buckets.lockDefaultNone },
+                      { value: "GOVERNANCE", label: t.buckets.lockModeGovernance },
+                      { value: "COMPLIANCE", label: t.buckets.lockModeCompliance },
+                    ]}
+                  />
+                  {lockDefaultMode === "none" ? null : (
+                    <div className="space-y-1">
+                      <Label htmlFor="lock-days">{t.buckets.lockDefaultDaysLabel}</Label>
+                      <Input
+                        id="lock-days"
+                        type="number"
+                        min={1}
+                        max={36500}
+                        value={lockDefaultDays}
+                        onChange={(event) => setLockDefaultDays(Math.max(1, Number(event.target.value) || 1))}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Button variant="outline" size="sm" disabled={accessBusy} onClick={() => setConfirmLock(true)}>
+                  {t.buckets.lockEnable}
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">{t.buckets.lockHelp}</p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="bucket-versioning">{t.buckets.versioningLabel}</Label>
               <Select
                 value={versioningDraft}
@@ -442,6 +513,26 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
         ) : (
         <><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></>)}</DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmLock} onOpenChange={(open) => { if (!accessBusy) setConfirmLock(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.buckets.lockConfirmTitle}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t.buckets.lockConfirmDescription} {t.buckets.lockIrreversible}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={accessBusy}>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={accessBusy}
+              onClick={(event) => { event.preventDefault(); void doEnableObjectLock(); }}
+            >
+              {t.buckets.lockEnable}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmPrune} onOpenChange={(open) => { if (!pruning) setConfirmPrune(open); }}>
         <AlertDialogContent>
