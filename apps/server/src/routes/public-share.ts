@@ -134,6 +134,9 @@ function resolvedBucket(
     drive_folder_id: row.drive_folder_id,
     drive_target_id: row.drive_target_id,
     status: row.bucket_status as AccessibleBucketRow["status"],
+    // The signed link is the authorization here, not the ACL, so the
+    // non-widening default is what belongs on this synthetic row.
+    acl: "private",
     created_at: "",
     updated_at: "",
     effective_role: "owner",
@@ -164,6 +167,7 @@ function resolvedObject(
     content_encoding: row.content_encoding,
     content_language: row.content_language,
     expires_at: row.object_expires_at,
+    acl: "private",
     last_modified_at: row.last_modified_at,
     created_at: row.object_created_at,
     updated_at: row.object_updated_at,

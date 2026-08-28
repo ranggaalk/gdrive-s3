@@ -4,7 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
-import type { S3RequestContext } from "../context.ts";
+import { requireUser, type S3RequestContext } from "../context.ts";
 import { S3Error } from "../errors.ts";
 import { parseObjectMetadata } from "../metadata.ts";
 import { validateObjectKey } from "../key.ts";
@@ -24,7 +24,7 @@ function requireBucket(
   operation: "read" | "write" = "read",
 ) {
   try {
-    const bucket = ctx.app.bucketAccess.findByName(ctx.userId, bucketName, operation);
+    const bucket = ctx.app.bucketAccess.findByName(requireUser(ctx), bucketName, operation);
     if (!bucket) throw new S3Error("NoSuchBucket", { BucketName: bucketName });
     return bucket;
   } catch (error) {
@@ -48,7 +48,7 @@ export async function createMultipartUpload(
   const bucket = requireBucket(ctx, bucketName, "write");
   try {
     await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
+      requireUser(ctx),
       bucket,
       true,
       ctx.signal ?? undefined,
@@ -73,7 +73,7 @@ export async function createMultipartUpload(
     driveTargetId: bucket.drive_target_id,
   });
   ctx.app.repos.audit.record({
-    userId: ctx.userId,
+    userId: requireUser(ctx),
     credentialId: ctx.credentialId,
     action: "s3.CreateMultipartUpload",
     bucketName,
@@ -146,14 +146,14 @@ export async function uploadPart(
     });
     if (previous && previous.temp_path !== row.temp_path) {
       ctx.app.repos.pendingCleanup.enqueue({
-        userId: ctx.userId,
+        userId: requireUser(ctx),
         resourceType: "temp_file",
         resourceId: previous.temp_path,
         reason: "multipart_part_replaced",
       });
     }
     ctx.app.repos.audit.record({
-      userId: ctx.userId,
+      userId: requireUser(ctx),
       credentialId: ctx.credentialId,
       action: "s3.UploadPart",
       bucketName,
@@ -226,7 +226,7 @@ export async function abortMultipartUpload(
     }
     for (const part of ctx.app.repos.multipartParts.deleteAll(uploadId)) {
       ctx.app.repos.pendingCleanup.enqueue({
-        userId: ctx.userId,
+        userId: requireUser(ctx),
         resourceType: "temp_file",
         resourceId: part.temp_path,
         reason: "multipart_abort",
@@ -234,7 +234,7 @@ export async function abortMultipartUpload(
     }
   });
   ctx.app.repos.audit.record({
-    userId: ctx.userId,
+    userId: requireUser(ctx),
     credentialId: ctx.credentialId,
     action: "s3.AbortMultipartUpload",
     bucketName,

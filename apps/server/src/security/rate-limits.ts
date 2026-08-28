@@ -10,6 +10,7 @@ export type RateLimitScope =
   | "credentialCreate"
   | "signatureFailure"
   | "s3Public"
+  | "s3Anonymous"
   | "publicShare"
   | "mfaVerify";
 
@@ -37,6 +38,14 @@ export class RateLimits {
       s3Public: new KeyedRateLimiter({
         capacity: config.rateLimit.s3PublicRpsPerIp,
         refillPerSecond: config.rateLimit.s3PublicRpsPerIp,
+        maxKeys,
+      }),
+      // Anonymous traffic needs no credential, so it is the cheapest surface
+      // to abuse. Its own bucket keeps a flood of unauthenticated reads from
+      // consuming the budget that signed requests share.
+      s3Anonymous: new KeyedRateLimiter({
+        capacity: config.rateLimit.s3AnonymousRpsPerIp,
+        refillPerSecond: config.rateLimit.s3AnonymousRpsPerIp,
         maxKeys,
       }),
       publicShare: new KeyedRateLimiter({

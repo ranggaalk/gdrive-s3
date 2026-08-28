@@ -2,6 +2,8 @@
 // DeleteObject, DeleteObjects (POST ?delete).
 
 import type { S3RequestContext } from "../context.ts";
+import { authorizeBucket, verifyDriveAccess } from "../authorize.ts";
+import { isObjectAcl } from "../acl.ts";
 import { S3Error } from "../errors.ts";
 import { quoteEtag } from "../etag.ts";
 import { parseObjectMetadata, applyObjectMetadataHeaders } from "../metadata.ts";
@@ -16,19 +18,12 @@ import {
   ObjectService,
 } from "../../services/object-service.ts";
 
-function requireBucket(
-  ctx: S3RequestContext,
-  bucketName: string,
-  operation: "read" | "write" = "read",
-) {
-  try {
-    const bucket = ctx.app.bucketAccess.findByName(ctx.userId, bucketName, operation);
-    if (!bucket) throw new S3Error("NoSuchBucket", { BucketName: bucketName });
-    return bucket;
-  } catch (error) {
-    if (error instanceof S3Error) throw error;
-    throw new S3Error("AccessDenied");
-  }
+/** The canned ACL a PUT asked for, defaulting to private as S3 does. */
+function requestedAcl(ctx: S3RequestContext): string {
+  const raw = ctx.headers.get("x-amz-acl");
+  if (raw === null) return "private";
+  if (!isObjectAcl(raw)) throw new S3Error("InvalidArgument", { ArgumentName: "x-amz-acl" });
+  return raw;
 }
 
 export async function putObject(
@@ -39,25 +34,19 @@ export async function putObject(
   validateObjectKey(key, true);
   if (ctx.headers.has("x-amz-copy-source")) throw new S3Error("NotImplemented");
 
-  const bucket = requireBucket(ctx, bucketName, "write");
-  try {
-    await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
-      bucket,
-      true,
-      ctx.signal ?? undefined,
-    );
-  } catch {
-    throw new S3Error("AccessDenied");
-  }
+  const acl = requestedAcl(ctx);
+  const authorized = authorizeBucket(ctx, bucketName, "s3:PutObject", key);
+  const { bucket } = authorized;
+  await verifyDriveAccess(ctx, authorized, true);
   const payload = preparePayload(ctx);
   const meta = parseObjectMetadata(ctx.headers);
   let uploaded;
   try {
     uploaded = await new ObjectService(ctx.app).upload({
-      actorUserId: ctx.userId,
+      actorUserId: authorized.actorUserId,
       bucket,
       key,
+      acl,
       requestId: `${ctx.requestId}:put:${crypto.randomUUID()}`,
       body: payload.body,
       contentLength: payload.contentLength,
@@ -96,18 +85,9 @@ export async function headObject(
   bucketName: string,
   key: string,
 ): Promise<Response> {
-  const bucket = requireBucket(ctx, bucketName);
-  try {
-    await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
-      bucket,
-      false,
-      ctx.signal ?? undefined,
-    );
-  } catch {
-    throw new S3Error("AccessDenied");
-  }
-  const obj = ctx.app.repos.objects.findByKey(bucket.id, key);
+  const authorized = authorizeBucket(ctx, bucketName, "s3:GetObject", key);
+  await verifyDriveAccess(ctx, authorized, false);
+  const obj = authorized.object;
   if (!obj) throw new S3Error("NoSuchKey", { Key: key });
   if (evaluateConditions(ctx.headers, obj) === "not-modified") {
     return new Response(null, {
@@ -132,8 +112,9 @@ export async function getObject(
   bucketName: string,
   key: string,
 ): Promise<Response> {
-  const bucket = requireBucket(ctx, bucketName);
-  const obj = ctx.app.repos.objects.findByKey(bucket.id, key);
+  const authorized = authorizeBucket(ctx, bucketName, "s3:GetObject", key);
+  const { bucket } = authorized;
+  const obj = authorized.object;
   if (!obj) throw new S3Error("NoSuchKey", { Key: key });
   if (obj.status !== "active") throw new S3Error("NoSuchKey", { Key: key });
   if (evaluateConditions(ctx.headers, obj) === "not-modified") {
@@ -146,7 +127,7 @@ export async function getObject(
   let download;
   try {
     download = await new ObjectService(ctx.app).download({
-      actorUserId: ctx.userId,
+      actorUserId: authorized.actorUserId,
       bucket,
       object: obj,
       range: ctx.headers.get("range"),
@@ -190,23 +171,15 @@ export async function deleteObject(
   bucketName: string,
   key: string,
 ): Promise<Response> {
-  const bucket = requireBucket(ctx, bucketName, "write");
-  try {
-    await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
-      bucket,
-      true,
-      ctx.signal ?? undefined,
-    );
-  } catch {
-    throw new S3Error("AccessDenied");
-  }
-  const existing = ctx.app.repos.objects.findByKey(bucket.id, key);
+  const authorized = authorizeBucket(ctx, bucketName, "s3:DeleteObject", key);
+  const { bucket } = authorized;
+  await verifyDriveAccess(ctx, authorized, true);
+  const existing = authorized.object;
   // Deleting a non-existent object is idempotent success in S3.
   if (existing) {
     try {
       await new ObjectService(ctx.app).delete({
-        actorUserId: ctx.userId,
+        actorUserId: authorized.actorUserId,
         bucket,
         object: existing,
         reason: "object_delete",
@@ -234,17 +207,9 @@ export async function deleteObjects(
   ctx: S3RequestContext,
   bucketName: string,
 ): Promise<Response> {
-  const bucket = requireBucket(ctx, bucketName, "write");
-  try {
-    await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
-      bucket,
-      true,
-      ctx.signal ?? undefined,
-    );
-  } catch {
-    throw new S3Error("AccessDenied");
-  }
+  const authorized = authorizeBucket(ctx, bucketName, "s3:DeleteObject");
+  const { bucket } = authorized;
+  await verifyDriveAccess(ctx, authorized, true);
   let rawBody: string;
   try {
     rawBody = await readBoundedText(ctx.body, ctx.app.config.maxS3XmlBytes);
@@ -273,7 +238,7 @@ export async function deleteObjects(
     if (existing) {
       try {
         await new ObjectService(ctx.app).delete({
-          actorUserId: ctx.userId,
+          actorUserId: authorized.actorUserId,
           bucket,
           object: existing,
           reason: "multi_object_delete",

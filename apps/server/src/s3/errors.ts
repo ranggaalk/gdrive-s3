@@ -39,6 +39,12 @@ const CODES = {
     message: "Presigned request has invalid or expired authorization parameters.",
   },
   InvalidRequest: { status: 400, message: "Invalid request." },
+  MalformedACLError: {
+    status: 400,
+    message: "The ACL you provided was not well formed or did not validate against the schema.",
+  },
+  MalformedPolicy: { status: 400, message: "The policy you provided was not well formed." },
+  NoSuchBucketPolicy: { status: 404, message: "The bucket policy does not exist." },
   InvalidArgument: { status: 400, message: "Invalid argument." },
   EntityTooLarge: { status: 400, message: "Your proposed upload exceeds the maximum allowed size." },
   EntityTooSmall: { status: 400, message: "Your proposed upload is smaller than the minimum allowed size." },

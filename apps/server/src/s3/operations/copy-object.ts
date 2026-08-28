@@ -1,7 +1,7 @@
 // S3 CopyObject. Streams source bytes through DriveStorage into a new staging
 // file, then atomically promotes the target mapping (AGENTS.md M6).
 
-import type { S3RequestContext } from "../context.ts";
+import { requireUser, type S3RequestContext } from "../context.ts";
 import { S3Error } from "../errors.ts";
 import { decodeS3Path, validateObjectKey } from "../key.ts";
 import { parseObjectMetadata } from "../metadata.ts";
@@ -9,6 +9,11 @@ import { streamingUpload } from "../../drive/upload-streaming.ts";
 import { quoteEtag } from "../etag.ts";
 import { tag, xmlDocument, xmlResponse } from "../xml.ts";
 
+// CopyObject stays authenticated for now: it needs read authorization on the
+// source and write on the target, plus a decision about whose Drive token
+// moves the bytes when the two buckets have different owners. That
+// cross-actor work is its own milestone; until then a copy always acts as a
+// real caller.
 export async function copyObject(
   ctx: S3RequestContext,
   targetBucketName: string,
@@ -27,8 +32,8 @@ export async function copyObject(
   let sourceBucket;
   let targetBucket;
   try {
-    sourceBucket = ctx.app.bucketAccess.findByName(ctx.userId, sourceBucketName, "read");
-    targetBucket = ctx.app.bucketAccess.findByName(ctx.userId, targetBucketName, "write");
+    sourceBucket = ctx.app.bucketAccess.findByName(requireUser(ctx), sourceBucketName, "read");
+    targetBucket = ctx.app.bucketAccess.findByName(requireUser(ctx), targetBucketName, "write");
   } catch {
     throw new S3Error("AccessDenied");
   }
@@ -38,13 +43,13 @@ export async function copyObject(
   if (!targetBucket) throw new S3Error("NoSuchBucket", { BucketName: targetBucketName });
   try {
     await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
+      requireUser(ctx),
       sourceBucket,
       false,
       ctx.signal ?? undefined,
     );
     await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
+      requireUser(ctx),
       targetBucket,
       true,
       ctx.signal ?? undefined,
@@ -78,10 +83,10 @@ export async function copyObject(
   });
 
   let uploadedId: string | null = null;
-  const slot = await ctx.app.driveLimits.upload(ctx.userId, ctx.signal ?? undefined);
+  const slot = await ctx.app.driveLimits.upload(requireUser(ctx), ctx.signal ?? undefined);
   try {
     const sourceResponse = await ctx.app.driveStorage.downloadObject({
-      userId: ctx.userId,
+      userId: requireUser(ctx),
       driveFileId: source.drive_file_id,
       target: ctx.app.bucketAccess.operationTarget(sourceBucket),
       signal: ctx.signal ?? undefined,
@@ -89,7 +94,7 @@ export async function copyObject(
     if (!sourceResponse.ok || !sourceResponse.body) throw new S3Error("NoSuchKey", { Key: sourceKey });
     const result = await streamingUpload({
       storage: ctx.app.driveStorage,
-      userId: ctx.userId,
+      userId: requireUser(ctx),
       bucketId: targetBucket.id,
       bucketFolderId: targetBucket.drive_folder_id,
       objectId: staging.object_id,
@@ -121,7 +126,7 @@ export async function copyObject(
       );
     }
     ctx.app.repos.audit.record({
-      userId: ctx.userId,
+      userId: requireUser(ctx),
       credentialId: ctx.credentialId,
       action: "s3.CopyObject",
       bucketName: targetBucketName,
@@ -177,7 +182,7 @@ async function deleteOldTarget(
 ): Promise<void> {
   try {
     await ctx.app.driveStorage.deleteFile({
-      userId: ctx.userId,
+      userId: requireUser(ctx),
       driveFileId,
       mode: ctx.app.config.s3DeleteMode,
       target,
