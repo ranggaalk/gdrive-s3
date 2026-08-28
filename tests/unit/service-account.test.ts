@@ -91,7 +91,15 @@ describe("buildAssertion", () => {
   });
 
   test("asks only for read-only cloud access", () => {
-    expect(QUOTA_PROBE_SCOPE).toBe("https://www.googleapis.com/auth/cloud-platform.read-only");
+    // Both are needed and both are read-only: Cloud Monitoring rejects
+    // cloud-platform.read-only, and Service Usage does not take monitoring.read.
+    expect(QUOTA_PROBE_SCOPE.split(" ")).toEqual([
+      "https://www.googleapis.com/auth/monitoring.read",
+      "https://www.googleapis.com/auth/cloud-platform.read-only",
+    ]);
+    for (const scope of QUOTA_PROBE_SCOPE.split(" ")) {
+      expect(scope).toMatch(/(\.read-only|\.read)$/);
+    }
   });
 });
 

@@ -67,7 +67,9 @@ export class BackupAccountsRepository {
     return this.findById(id)!;
   }
 
-  setRootFolder(id: string, rootFolderId: string): void {
+  /** null clears the cache, so the next ensure re-resolves or recreates the
+   *  folder rather than uploading into an id that no longer exists. */
+  setRootFolder(id: string, rootFolderId: string | null): void {
     this.db
       .query("UPDATE backup_accounts SET root_folder_id = ?, updated_at = ? WHERE id = ?")
       .run(rootFolderId, nowIso(), id);

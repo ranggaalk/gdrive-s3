@@ -227,7 +227,10 @@ describe("DriveQuotaProbe", () => {
     expect(calls.length).toBe(firstCallCount);
   });
 
-  test("reports an upstream failure instead of throwing", async () => {
+  test("still reports the limits when Monitoring is unavailable", async () => {
+    // Cloud Monitoring needs billing enabled on the project, so a project
+    // without it can read limits but never consumption. Losing the limits too
+    // would leave the page with nothing when it could show half the answer.
     const probe = new DriveQuotaProbe({
       projectId: "proj",
       key: testKey(),
@@ -236,9 +239,42 @@ describe("DriveQuotaProbe", () => {
     });
 
     const result = await probe.read();
+    expect("rows" in result).toBe(true);
+    if (!("rows" in result)) return;
+    expect(result.rows.length).toBeGreaterThan(0);
+    expect(result.rows[0]!.limit).toBe(12000);
+    // Consumption stays unknown rather than being inferred from the limit.
+    expect(result.rows.every((row) => row.consumed === null)).toBe(true);
+    expect(result.rows.every((row) => row.remaining === null)).toBe(true);
+    expect(result.sampledAt).toBeNull();
+    expect(result.usageError).toContain("Cloud Monitoring");
+    expect(result.usageError).toContain("403");
+  });
+
+  test("fails outright when the limits themselves cannot be read", async () => {
+    const fetcher = (async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("oauth2")) return Response.json({ access_token: "at", expires_in: 3600 });
+      return new Response("nope", { status: 403 });
+    });
+    const probe = new DriveQuotaProbe({ projectId: "proj", key: testKey(), cacheMs: 60_000, fetcher });
+
+    const result = await probe.read();
     expect("rows" in result).toBe(false);
-    expect((result as { error: string }).error).toContain("Cloud Monitoring");
-    expect((result as { error: string }).error).toContain("403");
+    expect((result as { error: string }).error).toContain("Service Usage");
+  });
+
+  test("leaves usageError null when Monitoring answers", async () => {
+    const probe = new DriveQuotaProbe({
+      projectId: "proj",
+      key: testKey(),
+      cacheMs: 60_000,
+      fetcher: fakeGoogle([]),
+    });
+    const result = await probe.read();
+    expect("rows" in result).toBe(true);
+    if (!("rows" in result)) return;
+    expect(result.usageError).toBeNull();
   });
 
   test("collapses concurrent reads onto one upstream fetch", async () => {

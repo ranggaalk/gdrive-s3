@@ -295,6 +295,23 @@ export class DriveClient {
     });
   }
 
+  /** Rename a file/folder. Used to bring an existing folder onto the current
+   *  naming scheme without recreating it (and orphaning its contents). */
+  async renameFile(
+    fileId: string,
+    name: string,
+    signal?: AbortSignal,
+    context?: SharedDriveContext,
+  ): Promise<void> {
+    await this.request<DriveFile>({
+      method: "PATCH",
+      path: `/${encodeURIComponent(fileId)}`,
+      query: { fields: "id,name", ...this.sharedQuery(context) },
+      body: { name },
+      signal,
+    });
+  }
+
   /** Permanently delete a file/folder. */
   async deleteFile(
     fileId: string,

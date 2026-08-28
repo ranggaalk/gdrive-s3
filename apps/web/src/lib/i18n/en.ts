@@ -795,6 +795,9 @@ export const en: Dictionary = {
       "Create a service account with the Monitoring Viewer and Service Usage Consumer roles.",
       "Set GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON (or _FILE) and restart the gateway.",
     ],
+    usageUnavailableTitle: "Limits only — Google reported no consumption",
+    usageUnavailableBody:
+      "The configured limits above came from Google, but Cloud Monitoring did not return usage, so what is consumed and remaining is unknown rather than estimated. Cloud Monitoring requires billing to be enabled on the project; the observed counters below still cover this gateway's own traffic.",
     liveFailedTitle: "Live quota couldn't be read",
 
     observedTitle: "Observed on this gateway",
@@ -803,14 +806,17 @@ export const en: Dictionary = {
     observedSince: (time: string) => `Counting since ${time}`,
     observedScopeNote:
       "If anything else uses the same Google Cloud project, these numbers run lower than Google's own count.",
-    windowLabel: (seconds: number) =>
-      seconds < 60
-        ? `Last ${seconds} seconds`
-        : seconds < 3600
-          ? `Last ${Math.round(seconds / 60)} minutes`
-          : seconds < 86_400
-            ? `Last ${Math.round(seconds / 3600)} hours`
-            : `Last ${Math.round(seconds / 86_400)} days`,
+    windowLabel: (seconds: number) => {
+      // The 60s and 100s windows are named in seconds on purpose: those are the
+      // exact periods Google expresses Drive quotas in, and calling 100s
+      // "2 minutes" both rounds wrong and hides the connection.
+      if (seconds < 120) return `Last ${seconds} seconds`;
+      if (seconds % 3600 === 0) {
+        const hours = seconds / 3600;
+        return hours === 1 ? "Last hour" : `Last ${hours} hours`;
+      }
+      return `Last ${Math.round(seconds / 60)} minutes`;
+    },
     windowRequests: "Requests",
     windowRate: "Rate",
     windowThrottled: "Quota rejections",

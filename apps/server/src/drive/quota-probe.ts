@@ -63,6 +63,13 @@ export interface LiveQuota {
   rows: QuotaRow[];
   /** Newest sample timestamp across all rows; null when Monitoring was empty. */
   sampledAt: string | null;
+  /**
+   * Why consumption is missing, when the limits were readable but Monitoring
+   * was not. Cloud Monitoring requires billing on the project, so this is the
+   * normal state for a project without it; the limits are still worth showing,
+   * with consumption reported as unknown.
+   */
+  usageError: string | null;
   fetchedAt: string;
 }
 
@@ -270,12 +277,22 @@ export class DriveQuotaProbe {
 
   private async load(signal?: AbortSignal): Promise<LiveQuota> {
     const accessToken = await this.accessToken(signal);
-    const [limits, samples] = await Promise.all([
+    // The limits are the half that always works; Monitoring needs billing on
+    // the project, so let it fail on its own without taking the limits down
+    // with it. Rows then carry consumed=null, which the UI already renders as
+    // unknown rather than as a guess.
+    const [limits, usage] = await Promise.all([
       this.readLimits(accessToken, signal),
-      this.readUsage(accessToken, signal),
+      this.readUsage(accessToken, signal).then(
+        (samples) => ({ samples, error: null as string | null }),
+        (error: unknown) => ({
+          samples: [] as QuotaUsageSample[],
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      ),
     ]);
 
-    const rows = mergeQuotaRows(limits, samples);
+    const rows = mergeQuotaRows(limits, usage.samples);
     const sampledAt = rows.reduce<string | null>(
       (newest, row) =>
         row.consumedAt !== null && (newest === null || row.consumedAt > newest)
@@ -289,6 +306,7 @@ export class DriveQuotaProbe {
       projectId: this.options.projectId,
       rows,
       sampledAt,
+      usageError: usage.error,
       fetchedAt: new Date((this.options.now ?? Date.now)()).toISOString(),
     };
   }
