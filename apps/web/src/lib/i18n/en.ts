@@ -271,6 +271,8 @@ export const en: Dictionary = {
     sharedDriveHelp: "Only writable Shared Drives are shown. S3 members are managed after the bucket is created.",
     creating: "Creating…",
     create: "Create",
+    bucketSettingsTitle: (name: string) => `${name} settings`,
+    bucketSettingsDescription: "Access, encryption, versioning, and retention for this bucket.",
     manageAccessDialogTitle: (name: string) => `Manage access to ${name}`,
     manageAccessDialogDescription: "Users must already be signed into DriveS3 and be a member of the same Google Shared Drive.",
     memberEmailPlaceholder: "name@domain.com",

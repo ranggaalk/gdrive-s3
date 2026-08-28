@@ -198,7 +198,9 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const openAccess = async (bucket: Bucket) => {
     setAccessBucket(bucket);
     setMemberEmail("");
-    setAccessTab("members");
+    // Members are a Shared Drive concept; a My Drive bucket has only the ACL,
+    // policy, versioning, encryption, and lock settings.
+    setAccessTab(bucket.storageKind === "shared_drive" ? "members" : "policy");
     setPolicyError(null);
     setError(null);
     try {
@@ -362,11 +364,15 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       </Dialog>
 
       <Dialog open={Boolean(accessBucket)} onOpenChange={(open) => { if (!open && !memberBusy) setAccessBucket(null); }}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{t.buckets.manageAccessDialogDescription}</DialogDescription></DialogHeader>
-        <div className="grid w-fit grid-cols-2 gap-2">
-          <Button type="button" size="sm" variant={accessTab === "members" ? "default" : "outline"} onClick={() => setAccessTab("members")}>{t.buckets.accessTabMembers}</Button>
-          <Button type="button" size="sm" variant={accessTab === "policy" ? "default" : "outline"} onClick={() => setAccessTab("policy")}>{t.buckets.accessTabPolicy}</Button>
-        </div>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "") : t.buckets.bucketSettingsTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogDescription : t.buckets.bucketSettingsDescription}</DialogDescription></DialogHeader>
+        {/* Members are a Shared Drive concept, so a My Drive bucket has only
+            one panel and needs no tabs. */}
+        {accessBucket?.storageKind === "shared_drive" ? (
+          <div className="grid w-fit grid-cols-2 gap-2">
+            <Button type="button" size="sm" variant={accessTab === "members" ? "default" : "outline"} onClick={() => setAccessTab("members")}>{t.buckets.accessTabMembers}</Button>
+            <Button type="button" size="sm" variant={accessTab === "policy" ? "default" : "outline"} onClick={() => setAccessTab("policy")}>{t.buckets.accessTabPolicy}</Button>
+          </div>
+        ) : null}
         {accessTab === "policy" ? (
           <div className="space-y-4">
             {aclDraft === "public-read-write" ? (

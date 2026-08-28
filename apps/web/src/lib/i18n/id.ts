@@ -294,6 +294,8 @@ export const id = {
     sharedDriveHelp: "Hanya Shared Drive yang dapat ditulisi ditampilkan. Anggota S3 dikelola setelah bucket dibuat.",
     creating: "Membuat…",
     create: "Buat",
+    bucketSettingsTitle: (name: string) => `Pengaturan ${name}`,
+    bucketSettingsDescription: "Akses, enkripsi, versioning, dan retensi untuk bucket ini.",
     manageAccessDialogTitle: (name: string) => `Kelola akses ${name}`,
     manageAccessDialogDescription: "Pengguna harus sudah login ke DriveS3 dan menjadi anggota Google Shared Drive yang sama.",
     memberEmailPlaceholder: "nama@domain.com",
