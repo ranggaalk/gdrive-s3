@@ -21,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRow
 import { CopyableCode } from "@/components/copyable-code";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
+import { useToast } from "@/components/toast-provider";
 import { humanBytes } from "@/lib/format";
 
 // Lazy: apexcharts/react-apexcharts are heavy and only needed when the
@@ -80,6 +81,7 @@ export function ObjectsPage({
   onOpenBackupAccounts?: () => void;
 }) {
   const { t } = useLocale();
+  const toast = useToast();
   const BACKUP_STATUS_LABEL: Record<BackupTransfer["status"], string> = {
     queued: t.backup.statusQueued,
     running: t.backup.statusRunning,
@@ -173,6 +175,9 @@ export function ObjectsPage({
       void getDriveImport(bucket.id, jobId).then((job) => {
         setImportJob(job);
         if (["completed", "cancelled", "failed"].includes(job.status)) {
+          if (job.status === "completed") toast.success(t.toast.importFinished(job.imported));
+          else if (job.status === "cancelled") toast.info(t.toast.importCancelled);
+          else toast.error(t.toast.importFailed, job.lastError ?? undefined);
           void listDriveImportIssues(bucket.id, job.id).then((page) => setImportIssues(page.items));
           void load(prefix.trim());
         }
@@ -219,6 +224,15 @@ export function ObjectsPage({
     finally { setImportBusy(false); }
   };
 
+  const doCancelImport = async (jobId: string) => {
+    try {
+      await cancelDriveImport(bucket.id, jobId);
+      toast.info(t.toast.importCancelled);
+    } catch (cause) {
+      toast.fromError(t.toast.importFailed, cause);
+    }
+  };
+
   const startImport = async () => {
     if (!selectedFolder || importBusy) return;
     setImportBusy(true); setError(null);
@@ -229,7 +243,11 @@ export function ObjectsPage({
         sourceFolderId: selectedFolder.id,
       });
       setImportJob(job); setImportIssues([]); setShowImport(false);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      toast.success(t.toast.importStarted, selectedFolder.name);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.importFailed, cause);
+    }
     finally { setImportBusy(false); }
   };
 
@@ -242,7 +260,12 @@ export function ObjectsPage({
     const transferId = activeBackupTransfer.id;
     const timer = window.setInterval(() => {
       void getBucketBackup(bucket.id, transferId)
-        .then((updated) => setBackupTransfers((list) => list.map((t) => (t.id === updated.id ? updated : t))))
+        .then((updated) => {
+          setBackupTransfers((list) => list.map((item) => (item.id === updated.id ? updated : item)));
+          if (updated.status === "completed") toast.success(t.toast.backupFinished(updated.copied));
+          else if (updated.status === "cancelled") toast.info(t.toast.backupCancelled);
+          else if (updated.status === "failed") toast.error(t.toast.backupFailed, updated.lastError ?? undefined);
+        })
         .catch(() => {});
     }, 2000);
     return () => window.clearInterval(timer);
@@ -265,15 +288,23 @@ export function ObjectsPage({
     try {
       const transfer = await startBucketBackup(bucket.id, backupAccountId);
       setBackupTransfers((list) => [transfer, ...list]);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      toast.success(t.toast.backupStarted);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.backupFailed, cause);
+    }
     finally { setBackupBusy(false); }
   };
 
   const doCancelBackup = async (transferId: string) => {
     try {
       await cancelBucketBackup(bucket.id, transferId);
-      setBackupTransfers((list) => list.map((t) => (t.id === transferId ? { ...t, status: "cancel_requested" } : t)));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      setBackupTransfers((list) => list.map((item) => (item.id === transferId ? { ...item, status: "cancel_requested" } : item)));
+      toast.info(t.toast.backupCancelled);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.backupFailed, cause);
+    }
   };
 
   const more = async () => {
@@ -288,16 +319,35 @@ export function ObjectsPage({
     event.preventDefault();
     if (!file || !key.trim() || uploading) return;
     setUploading(true); setError(null);
-    try { await uploadObject(bucket.id, key, file); setShowUpload(false); setFile(null); setKey(""); if (fileInput.current) fileInput.current.value = ""; await load(prefix.trim()); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    const uploadedKey = key;
+    try {
+      await uploadObject(bucket.id, key, file);
+      setShowUpload(false); setFile(null); setKey("");
+      if (fileInput.current) fileInput.current.value = "";
+      toast.success(t.toast.objectUploaded(uploadedKey));
+      await load(prefix.trim());
+    }
+    catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.objectUploadFailed, cause);
+    }
     finally { setUploading(false); }
   };
 
   const doDelete = async () => {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
-    try { await deleteObject(bucket.id, deleteTarget.id); setDeleteTarget(null); await load(prefix.trim()); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    const deletedKey = deleteTarget.key;
+    try {
+      await deleteObject(bucket.id, deleteTarget.id);
+      setDeleteTarget(null);
+      toast.success(t.toast.objectDeleted(deletedKey));
+      await load(prefix.trim());
+    }
+    catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.objectDeleteFailed, cause);
+    }
     finally { setDeleting(false); }
   };
 
@@ -314,8 +364,14 @@ export function ObjectsPage({
   const temporaryLink = async () => {
     if (!linkTarget || !credentialId) return;
     setLinkBusy(true);
-    try { setGenerated(await createPresignedLink(bucket.id, linkTarget.id, credentialId, expiresSeconds)); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    try {
+      setGenerated(await createPresignedLink(bucket.id, linkTarget.id, credentialId, expiresSeconds));
+      toast.success(t.toast.presignedCreated);
+    }
+    catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.presignedFailed, cause);
+    }
     finally { setLinkBusy(false); }
   };
 
@@ -333,8 +389,12 @@ export function ObjectsPage({
       );
       setGenerated(created);
       setPublicLinks(await listPublicLinks(bucket.id, linkTarget.id));
+      toast.success(t.toast.publicLinkCreated);
     }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.publicLinkFailed, cause);
+    }
     finally { setLinkBusy(false); }
   };
 
@@ -347,8 +407,10 @@ export function ObjectsPage({
       await revokePublicLink(bucket.id, linkTarget.id, linkId);
       setPublicLinks(await listPublicLinks(bucket.id, linkTarget.id));
       succeeded = true;
+      toast.success(t.toast.publicLinkRevoked);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.publicLinkFailed, cause);
     } finally {
       setLinkBusy(false);
       setRevokingLink(false);
@@ -366,7 +428,7 @@ export function ObjectsPage({
       <div className="grid w-fit grid-cols-2 gap-2"><Button type="button" variant={view === "objects" ? "default" : "outline"} onClick={() => setView("objects")}><Files /> {t.objects.viewObjects}</Button><Button type="button" variant={view === "traffic" ? "default" : "outline"} onClick={() => setView("traffic")}><Activity /> {t.objects.viewTraffic}</Button></div>
 
       {view === "traffic" ? <Suspense fallback={<LoadingState label={t.objects.loadingTraffic} />}><BucketTraffic bucketId={bucket.id} /></Suspense> : <>
-      {importJob ? <Alert variant={importJob.status === "failed" ? "destructive" : "default"}><CloudDownload /><AlertTitle>{t.objects.importAlertTitle(importJob.status)}</AlertTitle><AlertDescription><p>{t.objects.importAlertDescription({ sourceFolderName: importJob.sourceFolderName, discovered: importJob.discovered, imported: importJob.imported, conflicts: importJob.conflicts, unsupported: importJob.unsupported, failed: importJob.failed })}</p>{importJob.lastError ? <p>{importJob.lastError}</p> : null}<div className="mt-3 flex gap-2">{!["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void cancelDriveImport(bucket.id, importJob.id)}>{t.objects.cancelImport}</Button> : null}{["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void listDriveImportIssues(bucket.id, importJob.id).then((page) => setImportIssues(page.items))}>{t.objects.viewReport}</Button> : null}</div></AlertDescription></Alert> : null}
+      {importJob ? <Alert variant={importJob.status === "failed" ? "destructive" : "default"}><CloudDownload /><AlertTitle>{t.objects.importAlertTitle(importJob.status)}</AlertTitle><AlertDescription><p>{t.objects.importAlertDescription({ sourceFolderName: importJob.sourceFolderName, discovered: importJob.discovered, imported: importJob.imported, conflicts: importJob.conflicts, unsupported: importJob.unsupported, failed: importJob.failed })}</p>{importJob.lastError ? <p>{importJob.lastError}</p> : null}<div className="mt-3 flex gap-2">{!["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void doCancelImport(importJob.id)}>{t.objects.cancelImport}</Button> : null}{["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void listDriveImportIssues(bucket.id, importJob.id).then((page) => setImportIssues(page.items))}>{t.objects.viewReport}</Button> : null}</div></AlertDescription></Alert> : null}
       {importIssues.length ? <Table><TableHeader><TableRow><TableHead>{t.objects.issueKey}</TableHead><TableHead>{t.objects.issueStatus}</TableHead><TableHead>{t.objects.issueReason}</TableHead></TableRow></TableHeader><TableBody>{importIssues.map((issue) => <TableRow key={issue.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{issue.key}</TableRowHeader><TableCell>{issue.status}</TableCell><TableCell>{issue.reason ?? "-"}</TableCell></TableRow>)}</TableBody></Table> : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><form onSubmit={search} role="search" className="flex flex-1 gap-2"><Input placeholder={t.objects.filterPlaceholder} value={prefix} onChange={(event) => setPrefix(event.target.value)} aria-label={t.objects.filterAriaLabel} /><Button type="submit" variant="outline" disabled={loading}><Search /> <span className="hidden sm:inline">{t.objects.search}</span></Button></form><div className="flex gap-2">{owner ? <Button variant="outline" onClick={() => void openImport()}><CloudDownload /> {t.objects.importFromDrive}</Button> : null}{owner ? <Button variant="outline" onClick={() => void openBackup()}><HardDriveDownload /> {t.backup.button}</Button> : null}{writable ? <Button onClick={() => setShowUpload(true)}><Plus /> {t.objects.upload}</Button> : null}</div></div>
 

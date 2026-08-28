@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
+import { useToast } from "@/components/toast-provider";
 import {
   getSettingsStatus,
   resetGoogleOAuthSettings,
@@ -30,6 +31,7 @@ import {
 
 export function SettingsPage() {
   const { t } = useLocale();
+  const toast = useToast();
   const SOURCE_LABEL: Record<GoogleOAuthSettingsStatus["clientIdSource"], string> = {
     database: t.settings.sourceDatabase,
     env: t.settings.sourceEnv,
@@ -87,8 +89,10 @@ export function SettingsPage() {
       setStatus(googleOAuth);
       setClientSecret("");
       setSavedMessage(t.settings.oauthSavedMessage);
+      toast.success(t.toast.settingsSaved, t.settings.oauthSavedMessage);
     } catch (cause) {
       setFormError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.settingsFailed, cause);
     } finally {
       setSaving(false);
     }
@@ -105,8 +109,10 @@ export function SettingsPage() {
       setClientSecret("");
       setConfirmReset(false);
       setSavedMessage(t.settings.oauthResetMessage);
+      toast.success(t.toast.settingsReset, t.settings.oauthResetMessage);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.settingsFailed, cause);
     } finally {
       setResetting(false);
     }
@@ -123,8 +129,10 @@ export function SettingsPage() {
       setFolderStatus(rootFolderName);
       setFolderName(rootFolderName.name);
       setFolderSavedMessage(t.settings.folderSavedMessage);
+      toast.success(t.toast.settingsSaved, t.settings.folderSavedMessage);
     } catch (cause) {
       setFolderFormError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.settingsFailed, cause);
     } finally {
       setSavingFolder(false);
     }
@@ -140,8 +148,10 @@ export function SettingsPage() {
       setFolderName(rootFolderName.name);
       setConfirmFolderReset(false);
       setFolderSavedMessage(t.settings.folderResetMessage);
+      toast.success(t.toast.settingsReset, t.settings.folderResetMessage);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.settingsFailed, cause);
     } finally {
       setResettingFolder(false);
     }

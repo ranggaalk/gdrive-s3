@@ -29,6 +29,64 @@ export const id = {
     loading: "Memuat",
   },
 
+  // Notifikasi toast yang muncul setelah aksi di dashboard selesai.
+  toast: {
+    bucketCreated: (name: string) => `Bucket "${name}" dibuat`,
+    bucketCreateFailed: "Gagal membuat bucket",
+    bucketDeleted: (name: string) => `Bucket "${name}" dihapus`,
+    bucketDeleteFailed: "Gagal menghapus bucket",
+    memberAdded: (email: string) => `${email} ditambahkan`,
+    memberAddFailed: "Gagal menambahkan anggota",
+    memberRoleUpdated: (email: string) => `Peran ${email} diperbarui`,
+    memberRemoved: (email: string) => `Akses ${email} dicabut`,
+    memberUpdateFailed: "Gagal memperbarui anggota",
+
+    credentialCreated: (label: string) => `Access key "${label}" dibuat`,
+    credentialRotated: (label: string) => `Access key "${label}" di-rotate`,
+    credentialRevoked: (label: string) => `Access key "${label}" dicabut`,
+    credentialDeleted: (label: string) => `Access key "${label}" dihapus permanen`,
+    credentialFailed: "Aksi credential gagal",
+    credentialDownloaded: "File credential diunduh",
+
+    objectUploaded: (key: string) => `"${key}" diunggah`,
+    objectUploadFailed: "Upload gagal",
+    objectDeleted: (key: string) => `"${key}" dihapus`,
+    objectDeleteFailed: "Gagal menghapus objek",
+    publicLinkCreated: "Public link dibuat",
+    publicLinkRevoked: "Public link dicabut",
+    publicLinkFailed: "Aksi public link gagal",
+    presignedCreated: "Presigned link dibuat",
+    presignedFailed: "Gagal membuat presigned link",
+    importStarted: "Import dari Drive dimulai",
+    importFailed: "Gagal memulai import",
+    importCancelled: "Import dibatalkan",
+    importFinished: (imported: number) => `Import selesai, ${imported} objek masuk`,
+
+    backupStarted: "Backup dimulai",
+    backupFailed: "Gagal memulai backup",
+    backupCancelled: "Backup dibatalkan",
+    backupFinished: (copied: number) => `Backup selesai, ${copied} objek disalin`,
+    backupAccountRemoved: (email: string) => `Akun ${email} diputuskan`,
+    backupAccountRemoveFailed: "Gagal memutuskan akun backup",
+    backupAccountLinked: "Akun Drive terhubung",
+
+    settingsSaved: "Pengaturan disimpan",
+    settingsReset: "Pengaturan dikembalikan ke default",
+    settingsFailed: "Gagal menyimpan pengaturan",
+
+    totpEnabled: "2FA diaktifkan",
+    totpDisabled: "2FA dinonaktifkan",
+    totpFailed: "Aksi 2FA gagal",
+    recoveryCodesRegenerated: "Recovery codes dibuat ulang",
+
+    driveReconnected: "Google Drive terhubung kembali",
+    driveReconnectFailed: "Gagal menghubungkan Google Drive",
+    reconcileDone: "Rekonsiliasi selesai",
+    reconcileFailed: "Rekonsiliasi gagal",
+
+    copyFailed: (label: string) => `Gagal menyalin ${label}`,
+  },
+
   copy: {
     copy: "Salin",
     copied: "Disalin",

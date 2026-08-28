@@ -31,6 +31,64 @@ export const en: Dictionary = {
     loading: "Loading",
   },
 
+  // Toast notifications shown after a dashboard action completes.
+  toast: {
+    bucketCreated: (name: string) => `Bucket "${name}" created`,
+    bucketCreateFailed: "Couldn't create the bucket",
+    bucketDeleted: (name: string) => `Bucket "${name}" deleted`,
+    bucketDeleteFailed: "Couldn't delete the bucket",
+    memberAdded: (email: string) => `${email} added`,
+    memberAddFailed: "Couldn't add the member",
+    memberRoleUpdated: (email: string) => `Role updated for ${email}`,
+    memberRemoved: (email: string) => `Access revoked for ${email}`,
+    memberUpdateFailed: "Couldn't update the member",
+
+    credentialCreated: (label: string) => `Access key "${label}" created`,
+    credentialRotated: (label: string) => `Access key "${label}" rotated`,
+    credentialRevoked: (label: string) => `Access key "${label}" revoked`,
+    credentialDeleted: (label: string) => `Access key "${label}" permanently deleted`,
+    credentialFailed: "The credential action failed",
+    credentialDownloaded: "Credential file downloaded",
+
+    objectUploaded: (key: string) => `"${key}" uploaded`,
+    objectUploadFailed: "Upload failed",
+    objectDeleted: (key: string) => `"${key}" deleted`,
+    objectDeleteFailed: "Couldn't delete the object",
+    publicLinkCreated: "Public link created",
+    publicLinkRevoked: "Public link revoked",
+    publicLinkFailed: "The public link action failed",
+    presignedCreated: "Presigned link created",
+    presignedFailed: "Couldn't create the presigned link",
+    importStarted: "Drive import started",
+    importFailed: "Couldn't start the import",
+    importCancelled: "Import cancelled",
+    importFinished: (imported: number) => `Import finished, ${imported} objects added`,
+
+    backupStarted: "Backup started",
+    backupFailed: "Couldn't start the backup",
+    backupCancelled: "Backup cancelled",
+    backupFinished: (copied: number) => `Backup finished, ${copied} objects copied`,
+    backupAccountRemoved: (email: string) => `Disconnected ${email}`,
+    backupAccountRemoveFailed: "Couldn't disconnect the backup account",
+    backupAccountLinked: "Drive account connected",
+
+    settingsSaved: "Settings saved",
+    settingsReset: "Settings restored to the default",
+    settingsFailed: "Couldn't save the settings",
+
+    totpEnabled: "2FA enabled",
+    totpDisabled: "2FA disabled",
+    totpFailed: "The 2FA action failed",
+    recoveryCodesRegenerated: "Recovery codes regenerated",
+
+    driveReconnected: "Google Drive reconnected",
+    driveReconnectFailed: "Couldn't reconnect Google Drive",
+    reconcileDone: "Reconciliation finished",
+    reconcileFailed: "Reconciliation failed",
+
+    copyFailed: (label: string) => `Couldn't copy ${label}`,
+  },
+
   copy: {
     copy: "Copy",
     copied: "Copied",

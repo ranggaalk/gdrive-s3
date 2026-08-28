@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/components/locale-provider";
+import { useToast } from "@/components/toast-provider";
 import { cn } from "@/lib/utils";
 
 export function CopyableCode({
@@ -14,6 +15,7 @@ export function CopyableCode({
   className?: string;
 }) {
   const { t } = useLocale();
+  const toast = useToast();
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
 
   const copy = async () => {
@@ -21,8 +23,9 @@ export function CopyableCode({
       await navigator.clipboard.writeText(value);
       setStatus("copied");
       window.setTimeout(() => setStatus("idle"), 2000);
-    } catch {
+    } catch (cause) {
       setStatus("error");
+      toast.fromError(t.toast.copyFailed(label), cause);
     }
   };
 

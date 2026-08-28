@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { CopyableCode } from "@/components/copyable-code";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
+import { useToast } from "@/components/toast-provider";
 import {
   confirmTotpSetup,
   disableTotp,
@@ -24,6 +25,7 @@ type ConfirmAction = "disable" | "regenerate";
 
 export function SecurityPage() {
   const { t } = useLocale();
+  const toast = useToast();
   const [status, setStatus] = useState<TotpStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +82,7 @@ export function SecurityPage() {
       setSetupCode("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.totpFailed, cause);
     } finally {
       setSettingUp(false);
     }
@@ -102,9 +105,11 @@ export function SecurityPage() {
       setSetupInfo(null);
       setSetupCode("");
       setRecoveryCodes(codes);
+      toast.success(t.toast.totpEnabled);
       await load();
     } catch (cause) {
       setSetupError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.totpFailed, cause);
     } finally {
       setConfirming(false);
     }
@@ -121,16 +126,19 @@ export function SecurityPage() {
         await disableTotp(value);
         setConfirmAction(null);
         setConfirmCode("");
+        toast.success(t.toast.totpDisabled);
         await load();
       } else {
         const { recoveryCodes: codes } = await regenerateRecoveryCodes(value);
         setConfirmAction(null);
         setConfirmCode("");
         setRecoveryCodes(codes);
+        toast.success(t.toast.recoveryCodesRegenerated);
         await load();
       }
     } catch (cause) {
       setConfirmError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.totpFailed, cause);
     } finally {
       setConfirmBusy(false);
     }

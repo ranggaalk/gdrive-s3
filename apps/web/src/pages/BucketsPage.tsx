@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
+import { useToast } from "@/components/toast-provider";
 import {
   addBucketMember,
   createBucket,
@@ -27,6 +28,7 @@ import {
 
 export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const { t } = useLocale();
+  const toast = useToast();
   const ROLE_OPTIONS: Array<{ value: "viewer" | "editor"; label: string }> = [
     { value: "viewer", label: t.common.role.viewer },
     { value: "editor", label: t.common.role.editor },
@@ -93,9 +95,11 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       setName("");
       setStorageKind("my_drive");
       setSharedDriveId("");
+      toast.success(t.toast.bucketCreated(value));
       await load();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
+      toast.fromError(t.toast.bucketCreateFailed, e);
     } finally {
       setCreating(false);
     }
@@ -105,12 +109,15 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
     if (!pendingDelete || deleting) return;
     setDeleting(true);
     try {
+      const deletedName = pendingDelete.name;
       await deleteBucket(pendingDelete.id);
       setPendingDelete(null);
+      toast.success(t.toast.bucketDeleted(deletedName));
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setPendingDelete(null);
+      toast.fromError(t.toast.bucketDeleteFailed, e);
     } finally {
       setDeleting(false);
     }
@@ -130,11 +137,14 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
     setMemberBusy(true);
     setError(null);
     try {
-      await addBucketMember(accessBucket.id, memberEmail.trim(), memberRole);
+      const added = memberEmail.trim();
+      await addBucketMember(accessBucket.id, added, memberRole);
       setMembers(await listBucketMembers(accessBucket.id));
       setMemberEmail("");
+      toast.success(t.toast.memberAdded(added));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      toast.fromError(t.toast.memberAddFailed, e);
     } finally {
       setMemberBusy(false);
     }
@@ -181,7 +191,7 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       </Dialog>
 
       <Dialog open={Boolean(accessBucket)} onOpenChange={(open) => { if (!open && !memberBusy) setAccessBucket(null); }}>
-        <DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{t.buckets.manageAccessDialogDescription}</DialogDescription></DialogHeader><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></DialogContent>
+        <DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{t.buckets.manageAccessDialogDescription}</DialogDescription></DialogHeader><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></DialogContent>
       </Dialog>
 
       <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.buckets.deleteBucketConfirmTitle(pendingDelete?.name ?? "")}</AlertDialogTitle><AlertDialogDescription>{t.buckets.deleteBucketConfirmDescription(pendingDelete?.storageDisplayName ?? "")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={(event) => { event.preventDefault(); void doDelete(); }}>{deleting ? t.buckets.deleting : t.buckets.delete}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
+import { useToast } from "@/components/toast-provider";
 import {
   deleteBackupAccount,
   listBackupAccounts,
@@ -35,6 +36,7 @@ function readAndClearLinkFeedback(): { linked: boolean; error: string | null } {
 
 export function BackupAccountsPage() {
   const { t } = useLocale();
+  const toast = useToast();
   const STATUS_LABEL: Record<BackupAccount["status"], string> = {
     active: t.backup.statusActive,
     reauthorization_required: t.backup.statusReauthRequired,
@@ -69,6 +71,8 @@ export function BackupAccountsPage() {
     const feedback = readAndClearLinkFeedback();
     setLinkedMessage(feedback.linked);
     setLinkError(feedback.error);
+    if (feedback.linked) toast.success(t.toast.backupAccountLinked, t.backup.linkedDescription);
+    if (feedback.error) toast.error(t.backup.linkErrorTitle, feedback.error);
     void load();
   }, [load]);
 
@@ -77,11 +81,14 @@ export function BackupAccountsPage() {
     setDeleting(true);
     setError(null);
     try {
+      const removed = deleteTarget.email;
       await deleteBackupAccount(deleteTarget.id);
       setDeleteTarget(null);
+      toast.success(t.toast.backupAccountRemoved(removed));
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.backupAccountRemoveFailed, cause);
     } finally {
       setDeleting(false);
     }

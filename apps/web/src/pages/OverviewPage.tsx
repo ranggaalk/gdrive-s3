@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
+import { useToast } from "@/components/toast-provider";
 import { cn } from "@/lib/utils";
 import {
   getDriveStatus,
@@ -28,6 +29,7 @@ const OverviewTraffic = lazy(() =>
 
 export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: () => void }) {
   const { t } = useLocale();
+  const toast = useToast();
   const statusVariant: Record<CompatibilityItem["status"], "success" | "destructive" | "warning"> = {
     supported: "success",
     unsupported: "destructive",
@@ -80,9 +82,11 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
     setError(null);
     try {
       await reconnectDrive();
+      toast.success(t.toast.driveReconnected);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      toast.fromError(t.toast.driveReconnectFailed, e);
     } finally {
       setReconnecting(false);
     }
@@ -95,18 +99,19 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
     setReconcileMessage(null);
     try {
       const result = await reconcileDrive();
-      setReconcileMessage(
-        t.overview.reconcileMessage({
-          examined: result.examined,
-          active: result.active,
-          missing: result.missing,
-          externallyModified: result.externallyModified,
-          errors: result.errors,
-        }),
-      );
+      const summary = t.overview.reconcileMessage({
+        examined: result.examined,
+        active: result.active,
+        missing: result.missing,
+        externallyModified: result.externallyModified,
+        errors: result.errors,
+      });
+      setReconcileMessage(summary);
+      toast.success(t.toast.reconcileDone, summary);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      toast.fromError(t.toast.reconcileFailed, e);
     } finally {
       setReconciling(false);
     }

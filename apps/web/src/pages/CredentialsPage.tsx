@@ -20,6 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRow
 import { CopyableCode } from "@/components/copyable-code";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
+import { useToast } from "@/components/toast-provider";
 import { credentialFileContent, credentialSetupExample } from "@/lib/s3-cli";
 import {
   createCredential,
@@ -35,6 +36,7 @@ type PendingAction = { kind: "rotate" | "revoke" | "delete"; credential: Credent
 
 export function CredentialsPage() {
   const { t } = useLocale();
+  const toast = useToast();
   const [creds, setCreds] = useState<CredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,9 +70,13 @@ export function CredentialsPage() {
       setCreated(credential);
       setShowCreate(false);
       setLabel("");
+      toast.success(t.toast.credentialCreated(credential.label));
       await load();
     } catch (cause) {
+      // Errors stay inline here too: the dialog is still open and the field
+      // that caused it is right there.
       setFormError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.credentialFailed, cause);
     } finally {
       setCreating(false);
     }
@@ -81,19 +87,24 @@ export function CredentialsPage() {
     setActing(true);
     setError(null);
     try {
+      const { label: credentialLabel } = pending.credential;
       if (pending.kind === "rotate") {
         const credential = await rotateCredential(pending.credential.id);
         setSecretTitle(t.credentials.rotatedTitle);
         setCreated(credential);
+        toast.success(t.toast.credentialRotated(credentialLabel));
       } else if (pending.kind === "revoke") {
         await revokeCredential(pending.credential.id);
+        toast.success(t.toast.credentialRevoked(credentialLabel));
       } else {
         await deleteCredential(pending.credential.id);
+        toast.success(t.toast.credentialDeleted(credentialLabel));
       }
       setPending(null);
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.credentialFailed, cause);
     } finally {
       setActing(false);
     }
@@ -111,6 +122,7 @@ export function CredentialsPage() {
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+    toast.success(t.toast.credentialDownloaded);
   };
 
   if (loading) return <LoadingState label={t.credentials.loading} />;

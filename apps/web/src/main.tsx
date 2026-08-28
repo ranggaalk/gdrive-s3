@@ -4,6 +4,7 @@ import "@fontsource-variable/plus-jakarta-sans/wght.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ColorThemeProvider } from "@/components/color-theme-provider";
 import { LocaleProvider } from "@/components/locale-provider";
+import { ToastProvider } from "@/components/toast-provider";
 import { App } from "./App.tsx";
 import "./index.css";
 
@@ -15,7 +16,9 @@ createRoot(container).render(
   <ThemeProvider>
     <ColorThemeProvider>
       <LocaleProvider>
-        <App />
+        <ToastProvider>
+          <App />
+        </ToastProvider>
       </LocaleProvider>
     </ColorThemeProvider>
   </ThemeProvider>,
