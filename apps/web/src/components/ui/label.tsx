@@ -8,7 +8,12 @@ const Label = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <LabelPrimitive.Root
     ref={ref}
-    className={cn("text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70", className)}
+    // block, because a <label> is inline by default and every field here
+    // stacks its control underneath. An inline label shares a line with an
+    // inline-level sibling -- a Button or a Badge -- and the wrapper's
+    // space-y-* margin-top then separates nothing, which is how the Object
+    // Lock button ended up touching its own label.
+    className={cn("block text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70", className)}
     {...props}
   />
 ));

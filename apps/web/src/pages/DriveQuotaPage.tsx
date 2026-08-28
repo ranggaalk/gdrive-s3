@@ -90,7 +90,7 @@ export function DriveQuotaPage() {
         <CardContent className="space-y-4">
           {live.rows ? (
             <>
-              <Table containerClassName="p-0">
+              <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t.quota.liveTableMetric}</TableHead>
@@ -265,11 +265,11 @@ export function DriveQuotaPage() {
             <CardTitle className="flex items-center gap-2"><Users className="size-5 text-primary" aria-hidden="true" />{t.quota.usersTitle}</CardTitle>
             <CardDescription>{t.quota.usersDescription}</CardDescription>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent>
             {observed.users.length === 0 ? (
-              <p className="px-6 pb-6 text-sm text-muted-foreground">{t.quota.usersEmpty}</p>
+              <p className="text-sm text-muted-foreground">{t.quota.usersEmpty}</p>
             ) : (
-              <Table containerClassName="rounded-none bg-transparent p-0">
+              <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t.quota.usersTableUser}</TableHead>

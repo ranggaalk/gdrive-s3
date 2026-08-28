@@ -40,9 +40,10 @@ const AlertDialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDiv
   <div className={cn("flex shrink-0 flex-col space-y-2 text-left", className)} {...props} />
 );
 
-/** The scrolling middle of an alert dialog; see DialogBody in ui/dialog.tsx. */
+/** The scrolling middle of an alert dialog; see DialogBody in ui/dialog.tsx,
+ *  including why the vertical padding is load-bearing. */
 const AlertDialogBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("-mx-6 min-h-0 flex-1 overflow-y-auto px-6", className)} {...props} />
+  <div className={cn("-mx-6 -my-1 min-h-0 flex-1 overflow-y-auto px-6 py-1", className)} {...props} />
 );
 
 const AlertDialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

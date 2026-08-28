@@ -56,9 +56,16 @@ const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
  * The scrolling middle of a dialog. `min-h-0` is what lets it shrink below its
  * content so the footer stays on screen; the negative margin puts the
  * scrollbar against the panel edge while keeping the text padded.
+ *
+ * `overflow-y-auto` makes this a scroll container, and a scroll container clips
+ * at its padding box -- so the vertical padding is not decoration. A focused
+ * input draws `ring-2 ring-offset-2`, 4px beyond its own box, and the first and
+ * last children have nothing between them and that clip edge. `py-1` is exactly
+ * that 4px; the matching negative margin gives it back to the flex gap, so
+ * spacing stays as it was and only the ring gains room.
  */
 const DialogBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("-mx-6 min-h-0 flex-1 overflow-y-auto px-6", className)} {...props} />
+  <div className={cn("-mx-6 -my-1 min-h-0 flex-1 overflow-y-auto px-6 py-1", className)} {...props} />
 );
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

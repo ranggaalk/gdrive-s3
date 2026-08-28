@@ -222,6 +222,7 @@ export const en: Dictionary = {
     loadingTraffic: "Loading traffic",
     compatibilityTitle: "S3 compatibility",
     compatibilityDescription: "Verified support status against this gateway.",
+    compatibilitySupportedCount: (supported: number, total: number) => `${supported} of ${total} supported`,
     tableFeature: "S3 feature",
     tableStatus: "Status",
     tableVerifiedBy: "Verified by",

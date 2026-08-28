@@ -132,6 +132,12 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
     { label: t.overview.statAccessIssues, value: bucketAccessErrors, icon: ShieldAlert, tone: bucketAccessErrors > 0 ? "destructive" : "success" },
   ];
 
+  const compatibility = gateway?.compatibility ?? [];
+  const compatCounts = {
+    supported: compatibility.filter((item) => item.status === "supported").length,
+    total: compatibility.length,
+  };
+
   return (
     <div className="space-y-6">
       {error ? <ErrorAlert message={error} /> : null}
@@ -193,19 +199,61 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
       </section>
 
       <Card>
-        <CardHeader><CardTitle>{t.overview.compatibilityTitle}</CardTitle><CardDescription>{t.overview.compatibilityDescription}</CardDescription></CardHeader>
-        <CardContent className="p-0">
-          <Table containerClassName="rounded-none bg-transparent p-0">
-            <TableHeader><TableRow><TableHead>{t.overview.tableFeature}</TableHead><TableHead>{t.overview.tableStatus}</TableHead><TableHead>{t.overview.tableVerifiedBy}</TableHead><TableHead>{t.overview.tableNotes}</TableHead></TableRow></TableHeader>
+        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle>{t.overview.compatibilityTitle}</CardTitle>
+            <CardDescription>{t.overview.compatibilityDescription}</CardDescription>
+          </div>
+          {compatCounts.total > 0 ? (
+            <Badge variant="secondary" className="shrink-0">
+              {t.overview.compatibilitySupportedCount(compatCounts.supported, compatCounts.total)}
+            </Badge>
+          ) : null}
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t.overview.tableFeature}</TableHead>
+                <TableHead>{t.overview.tableStatus}</TableHead>
+                <TableHead>{t.overview.tableVerifiedBy}</TableHead>
+                <TableHead>{t.overview.tableNotes}</TableHead>
+              </TableRow>
+            </TableHeader>
             <TableBody>
-              {(gateway?.compatibility ?? []).map((item) => (
-                <TableRow key={item.feature}>
-                  <TableRowHeader>{item.feature}</TableRowHeader>
-                  <TableCell><Badge variant={statusVariant[item.status]}>{statusLabel[item.status]}</Badge></TableCell>
-                  <TableCell>{item.verifiedBy && item.verifiedBy.length > 0 ? item.verifiedBy.join(", ") : "-"}</TableCell>
-                  <TableCell className="min-w-52 text-muted-foreground">{t.compatNotes[item.feature] ?? item.notes ?? ""}</TableCell>
-                </TableRow>
-              ))}
+              {(gateway?.compatibility ?? []).map((item) => {
+                const notes = t.compatNotes[item.feature] ?? item.notes ?? "";
+                return (
+                  <TableRow key={item.feature} className="align-top">
+                    {/* The longest feature name is ~60 characters; without a
+                        floor it wraps to one or two words per line and the
+                        rows stop lining up with each other. */}
+                    <TableRowHeader className="min-w-56 align-top">{item.feature}</TableRowHeader>
+                    <TableCell className="align-top">
+                      <Badge variant={statusVariant[item.status]}>{statusLabel[item.status]}</Badge>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      {item.verifiedBy && item.verifiedBy.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {item.verifiedBy.map((source) => (
+                            <Badge key={source} variant="outline" className="font-mono text-[0.7rem] font-normal">
+                              {source}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    {/* Several notes run to a full paragraph. Capping the
+                        column keeps them from swallowing the row and pushing
+                        the other three columns into a sliver. */}
+                    <TableCell className="max-w-md min-w-64 align-top text-xs leading-relaxed text-muted-foreground">
+                      {notes || "-"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

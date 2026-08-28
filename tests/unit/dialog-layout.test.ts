@@ -71,6 +71,18 @@ describe("dialog components", () => {
     expect(body).toContain("overflow-y-auto");
   });
 
+  test.each(COMPONENTS)("%s leaves the scrolling body room for a focus ring", (file) => {
+    const source = readSource(file);
+    const body = /const \w*DialogBody = [\s\S]*?\/>\s*\);/.exec(source)?.[0] ?? "";
+    // overflow-y-auto makes the body a scroll container, and a scroll container
+    // clips at its padding box. Inputs draw ring-2 ring-offset-2 -- 4px past
+    // their own box -- so a focused first or last field loses part of its ring
+    // unless the body reserves that 4px. The negative margin hands the space
+    // back to the flex gap so nothing else moves.
+    expect(body).toContain("py-1");
+    expect(body).toContain("-my-1");
+  });
+
   test.each(COMPONENTS)("%s lets children shrink below their content width", (file) => {
     // Replaces the grid-cols-[minmax(0,1fr)] the flex rewrite removed; without
     // it one long unbreakable string widens the whole panel.
