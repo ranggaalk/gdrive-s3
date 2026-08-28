@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { setApiErrorMessages } from "@/api/client";
 import { id } from "@/lib/i18n/id";
 import { en } from "@/lib/i18n/en";
 import type { Dictionary, Locale } from "@/lib/i18n/types";
@@ -23,14 +24,21 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(getStoredLocale);
 
   const value = useMemo<LocaleContextValue>(
-    () => ({
+    () => {
+      // The API client is a plain module with no access to React context, so
+      // the active error table is pushed to it whenever the locale changes.
+      // Done during render rather than in an effect so the very first request
+      // cannot report an error in the wrong language.
+      setApiErrorMessages(DICTIONARIES[locale].apiErrors);
+      return {
       locale,
       t: DICTIONARIES[locale],
       setLocale: (next) => {
         window.localStorage.setItem(STORAGE_KEY, next);
         setLocaleState(next);
       },
-    }),
+      };
+    },
     [locale],
   );
 

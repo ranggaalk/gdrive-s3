@@ -147,6 +147,31 @@ export interface AuditItem {
 
 let csrfToken: string | null = null;
 
+/**
+ * Localized text for the server's error codes.
+ *
+ * The server answers in one language, so its `message` is a developer-facing
+ * fallback rather than something a user should read. LocaleProvider registers
+ * the active dictionary here, and `unwrap` resolves the code through it — one
+ * place, so every call site gets localized errors without changing.
+ */
+let apiErrorMessages: Record<string, string> = {};
+
+export function setApiErrorMessages(messages: Record<string, string>): void {
+  apiErrorMessages = messages;
+}
+
+/** An error response from the control plane, carrying its stable code. */
+export class ApiError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export class MfaRequiredError extends Error {
   constructor() {
     super("MFA_REQUIRED");
@@ -156,7 +181,12 @@ export class MfaRequiredError extends Error {
 async function unwrap<T>(res: Response): Promise<T> {
   const json = (await res.json()) as { data?: T; error?: { code: string; message: string } };
   if (!res.ok || json.error) {
-    throw new Error(json.error?.message ?? `request failed: ${res.status}`);
+    const code = json.error?.code ?? "";
+    // Prefer the localized text; fall back to the server's message so an
+    // unmapped code still says something specific rather than nothing.
+    const message =
+      apiErrorMessages[code] ?? json.error?.message ?? `request failed: ${res.status}`;
+    throw new ApiError(code, message);
   }
   return json.data as T;
 }

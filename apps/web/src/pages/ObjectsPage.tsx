@@ -816,11 +816,21 @@ export function ObjectsPage({
             <p className="text-sm text-muted-foreground">{t.objects.versionsEmpty}</p>
           ) : (
             <div className="space-y-2">
+              {versions.every((version) => version.versionId === "null") ? (
+                <p className="text-xs text-muted-foreground">{t.objects.versionsDisabledHint}</p>
+              ) : null}
               {versions.map((version) => (
                 <div key={version.versionId} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate font-mono text-xs">{version.versionId}</span>
+                      {/* S3 reports 'null' as the version id for objects written
+                          while versioning was off; showing that literally reads
+                          as a bug rather than as "this object has no versions". */}
+                      {version.versionId === "null" ? (
+                        <span className="text-xs text-muted-foreground">{t.objects.versionUnversioned}</span>
+                      ) : (
+                        <span className="truncate font-mono text-xs">{version.versionId}</span>
+                      )}
                       {version.isLatest ? <Badge variant="success">{t.objects.versionCurrent}</Badge> : null}
                       {version.isDeleteMarker ? <Badge variant="warning">{t.objects.versionDeleteMarker}</Badge> : null}
                     </div>

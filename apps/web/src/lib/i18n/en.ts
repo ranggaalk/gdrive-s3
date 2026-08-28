@@ -101,6 +101,48 @@ export const en: Dictionary = {
     copyFailed: (label: string) => `Couldn't copy ${label}`,
   },
 
+  // Server responses carry a stable error code; the message the server sends is
+  // a developer-facing fallback. These are what the user actually reads, so a
+  // code missing here degrades to the server text rather than to nothing.
+  apiErrors: {
+    ACCESS_DENIED: "Access denied.",
+    BACKUP_ACTIVE: "A backup is still running.",
+    BACKUP_TERMINAL: "That backup has already finished.",
+    BUCKET_ALREADY_OWNED: "That bucket name is already taken.",
+    BUCKET_NOT_EMPTY: "The bucket still contains objects.",
+    BUCKET_NAMESPACE_CONFLICT: "That bucket name clashes with another bucket the user can already reach.",
+    DRIVE_TOKEN_REVOKED: "The Google Drive connection was revoked. Reconnect your Google account.",
+    SHARED_DRIVE_NOT_WRITABLE: "That account cannot write to this Shared Drive.",
+    CONFLICT: "The request conflicts with existing data.",
+    CSRF_FAILED: "Your session is no longer valid. Reload the page and try again.",
+    DRIVE_ERROR: "Google Drive rejected the request.",
+    DRIVE_QUOTA: "Google Drive is out of storage.",
+    DRIVE_RATE_LIMIT: "Google Drive is rate limiting requests. Try again shortly.",
+    DRIVE_REAUTHORIZATION_REQUIRED: "The Google Drive connection expired. Reconnect your Google account.",
+    FORBIDDEN: "You do not have permission for this action.",
+    IMPORT_ACTIVE: "An import is still running.",
+    IMPORT_TERMINAL: "That import has already finished.",
+    INVALID: "The request is not valid.",
+    INVALID_BACKUP_TARGET: "That backup account is not valid.",
+    INVALID_BUCKET_NAME: "That bucket name is not valid.",
+    INVALID_CODE: "That code is not valid.",
+    INVALID_RANGE: "The requested range is not valid.",
+    INVALID_SOURCE: "That source is not valid.",
+    INVALID_STATE: "That action is not possible in the current state.",
+    METHOD_NOT_ALLOWED: "Method not allowed.",
+    MFA_REQUIRED: "Two-factor verification is required.",
+    NOT_FOUND: "Not found.",
+    NOT_PENDING: "There is nothing pending.",
+    PAYLOAD_TOO_LARGE: "The file exceeds the size limit.",
+    PREVIEW_UNSUPPORTED: "This file type cannot be previewed.",
+    RATE_LIMITED: "Too many requests. Try again shortly.",
+    TOTP_ALREADY_ENABLED: "2FA is already enabled.",
+    TOTP_INVALID_CODE: "That 2FA code is incorrect.",
+    TOTP_NOT_ENABLED: "2FA is not enabled.",
+    TOTP_NOT_PENDING: "There is no pending 2FA setup to confirm.",
+    UNAUTHENTICATED: "Your session ended. Please sign in again.",
+  },
+
   copy: {
     copy: "Copy",
     copied: "Copied",
@@ -186,6 +228,10 @@ export const en: Dictionary = {
     reconcileMessage: (input: { examined: number; active: number; missing: number; externallyModified: number; errors: number }) =>
       `Reconciliation complete: ${input.examined} examined, ${input.active} active, ${input.missing} missing, ${input.externallyModified} changed outside the system, ${input.errors} failed.`,
   },
+
+  // Empty on purpose: the server's compatibility notes are already English, so
+  // there is nothing to override and no second copy to keep in sync.
+  compatNotes: {} as Record<string, string>,
 
   compat: {
     supported: "Supported",
@@ -654,6 +700,8 @@ export const en: Dictionary = {
     versionsLabel: (key: string) => `Version history for ${key}`,
     versionsDialogDescription: "Previous versions still retained for this object.",
     versionsEmpty: "No previous versions yet.",
+    versionUnversioned: "Unversioned",
+    versionsDisabledHint: "Versioning is off for this bucket, so only the current version is kept. Turn it on in the bucket access settings to retain previous versions.",
     versionCurrent: "Current",
     versionDeleteMarker: "Delete marker",
     versionDelete: "Delete version",

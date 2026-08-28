@@ -99,6 +99,48 @@ export const id = {
     copyFailed: (label: string) => `Gagal menyalin ${label}`,
   },
 
+  // Server responses carry a stable error code; the message the server sends is
+  // a developer-facing fallback. These are what the user actually reads, so a
+  // code missing here degrades to the server text rather than to nothing.
+  apiErrors: {
+    ACCESS_DENIED: "Akses ditolak.",
+    BACKUP_ACTIVE: "Masih ada backup yang berjalan.",
+    BACKUP_TERMINAL: "Backup ini sudah selesai.",
+    BUCKET_ALREADY_OWNED: "Nama bucket sudah dipakai.",
+    BUCKET_NOT_EMPTY: "Bucket masih berisi objek.",
+    BUCKET_NAMESPACE_CONFLICT: "Nama bucket bentrok dengan bucket lain yang bisa diakses pengguna itu.",
+    DRIVE_TOKEN_REVOKED: "Koneksi Google Drive dicabut. Hubungkan ulang akun Google Anda.",
+    SHARED_DRIVE_NOT_WRITABLE: "Shared Drive ini tidak bisa ditulisi oleh akun tersebut.",
+    CONFLICT: "Permintaan bentrok dengan data yang ada.",
+    CSRF_FAILED: "Sesi tidak valid. Muat ulang halaman lalu coba lagi.",
+    DRIVE_ERROR: "Google Drive menolak permintaan.",
+    DRIVE_QUOTA: "Kuota Google Drive habis.",
+    DRIVE_RATE_LIMIT: "Google Drive membatasi laju permintaan. Coba lagi sebentar.",
+    DRIVE_REAUTHORIZATION_REQUIRED: "Koneksi Google Drive kedaluwarsa. Hubungkan ulang akun Google Anda.",
+    FORBIDDEN: "Anda tidak punya izin untuk tindakan ini.",
+    IMPORT_ACTIVE: "Masih ada import yang berjalan.",
+    IMPORT_TERMINAL: "Import ini sudah selesai.",
+    INVALID: "Permintaan tidak valid.",
+    INVALID_BACKUP_TARGET: "Akun backup tidak valid.",
+    INVALID_BUCKET_NAME: "Nama bucket tidak valid.",
+    INVALID_CODE: "Kode tidak valid.",
+    INVALID_RANGE: "Range yang diminta tidak valid.",
+    INVALID_SOURCE: "Sumber tidak valid.",
+    INVALID_STATE: "Tindakan tidak bisa dilakukan pada kondisi saat ini.",
+    METHOD_NOT_ALLOWED: "Metode tidak diizinkan.",
+    MFA_REQUIRED: "Verifikasi dua faktor diperlukan.",
+    NOT_FOUND: "Data tidak ditemukan.",
+    NOT_PENDING: "Tidak ada proses yang menunggu.",
+    PAYLOAD_TOO_LARGE: "File melebihi batas ukuran.",
+    PREVIEW_UNSUPPORTED: "Tipe file ini tidak bisa dipratinjau.",
+    RATE_LIMITED: "Terlalu banyak permintaan. Coba lagi sebentar.",
+    TOTP_ALREADY_ENABLED: "2FA sudah aktif.",
+    TOTP_INVALID_CODE: "Kode 2FA salah.",
+    TOTP_NOT_ENABLED: "2FA belum aktif.",
+    TOTP_NOT_PENDING: "Tidak ada pengaturan 2FA yang menunggu konfirmasi.",
+    UNAUTHENTICATED: "Sesi berakhir. Silakan masuk lagi.",
+  },
+
   copy: {
     copy: "Salin",
     copied: "Disalin",
@@ -184,6 +226,35 @@ export const id = {
     reconcileMessage: (input: { examined: number; active: number; missing: number; externallyModified: number; errors: number }) =>
       `Rekonsiliasi selesai: ${input.examined} diperiksa, ${input.active} aktif, ${input.missing} hilang, ${input.externallyModified} berubah di luar sistem, ${input.errors} gagal.`,
   },
+
+  // Indonesian wording for the compatibility matrix notes, keyed by the
+  // feature label the server sends. The server's own notes are English and
+  // stay the canonical technical description; anything not overridden here
+  // falls back to them.
+  compatNotes: {
+    "AWS CLI compatibility smoke":
+      "Diverifikasi lewat scripts/compat-aws-cli.sh (create-bucket, cp, ls, rm, delete-bucket).",
+    "rclone compatibility smoke":
+      "Diverifikasi lewat scripts/compat-rclone.sh (create, upload, ListObjects v1, list bersarang dan rekursif, download, delete).",
+    "MinIO mc compatibility smoke":
+      "Diverifikasi lewat scripts/compat-mc.sh (create, signed streaming upload, list, download, delete) dengan RELEASE.2025-08-13T08-35-41Z.",
+    "Object versioning":
+      "GET/PUT ?versioning, ListObjectVersions (?versions) dengan key dan version-id marker, ?versionId pada GET/HEAD/DELETE, delete marker, dan undelete. Suspended menulis version id 'null' tanpa membuang versi yang sudah ada. Bucket Disabled berperilaku persis seperti sebelumnya.",
+    "Object Lock / Legal Hold":
+      "GET/PUT ?object-lock, ?retention, dan ?legal-hold; header lock saat PUT; x-amz-bucket-object-lock-enabled saat CreateBucket. GOVERNANCE hanya bisa di-bypass pemilik bucket, COMPLIANCE tidak pernah. Retention hanya boleh diperpanjang. Versi terkunci dikecualikan dari prune massal. Mengaktifkan Object Lock ikut menyalakan versioning.",
+    "ACL & Bucket Policy":
+      "Canned ACL bucket dan objek (x-amz-acl, GET/PUT ?acl) serta bucket policy (GET/PUT/DELETE ?policy, GET ?policyStatus) dengan Principal/Action/Resource/Condition. Explicit Deny mengalahkan Allow dan kepemilikan. Request tanpa tanda tangan dilayani bila ACL atau policy mengizinkan publik; matikan lewat S3_ALLOW_ANONYMOUS=false. Administrasi policy tetap owner-only sehingga policy tidak bisa menulis ulang dirinya sendiri.",
+    "Virtual-hosted style bucket endpoint":
+      "Opsional lewat S3_VIRTUAL_HOSTED_DOMAIN; nonaktif (hanya path-style) bila tidak diisi. {bucket}.{domain} menentukan bucket dari Host, path-style tetap jalan seperti biasa.",
+    "SigV4A (AWS4-ECDSA-P256-SHA256)":
+      "Bentuk header dan presigned-query. Signing key diturunkan dari access key id dan secret yang sama dengan SigV4, jadi tidak ada material kredensial baru yang disimpan. Region set wajib ditandatangani dan harus cocok dengan region gateway atau '*'. Chunked upload signing SigV4A belum didukung.",
+    "PresignedPost (browser form POST)":
+      "POST /{bucket} multipart/form-data dengan policy bertanda tangan. Setiap kondisi policy ditegakkan dan setiap field yang dikirim wajib tercakup salah satu kondisi. success_action_status dan success_action_redirect didukung; body di-stream, tidak pernah dibuffer penuh.",
+    "CopyObject with byte range / cross-user":
+      "UploadPartCopy dengan x-amz-copy-source-range, salin antar pemilik bila bucket policy atau ACL mengizinkan, kondisi x-amz-copy-source-if-*, dan ?versionId pada sumber. Byte dibaca dengan token pemilik bucket sumber dan ditulis dengan token pemilik bucket tujuan. Enkripsi tujuan mengikuti aturan bucket tujuan, bukan sumber.",
+    "SSE-KMS / Server-side encryption":
+      "SSE-S3 (AES256), SSE-KMS (aws:kms, CMK lokal, alias didukung), dan SSE-C. Envelope encryption dengan AES-256-CTR dan data key per objek; CTR dipilih agar Range GET tetap bisa di-seek. ETag tetap MD5 plaintext. Rotasi CMK menyimpan material kunci lama sehingga objek lama tetap terbaca. Default per-bucket lewat ?encryption. Multipart SSE-C belum didukung.",
+  } as Record<string, string>,
 
   compat: {
     supported: "Didukung",
@@ -653,6 +724,8 @@ export const id = {
     versionsLabel: (key: string) => `Riwayat versi ${key}`,
     versionsDialogDescription: "Versi lama yang masih disimpan untuk objek ini.",
     versionsEmpty: "Belum ada versi lama.",
+    versionUnversioned: "Tanpa versi",
+    versionsDisabledHint: "Versioning belum aktif untuk bucket ini, jadi hanya versi terkini yang disimpan. Aktifkan di pengaturan akses bucket untuk menyimpan versi lama.",
     versionCurrent: "Terkini",
     versionDeleteMarker: "Delete marker",
     versionDelete: "Hapus versi",
