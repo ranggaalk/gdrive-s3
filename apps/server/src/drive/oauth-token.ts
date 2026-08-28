@@ -13,6 +13,13 @@ interface CachedToken {
   expiresAtMs: number;
 }
 
+export class TokenUndecryptableError extends Error {
+  constructor() {
+    super("Stored Google refresh token cannot be decrypted with the current master key");
+    this.name = "TokenUndecryptableError";
+  }
+}
+
 export class TokenRevokedError extends Error {
   constructor() {
     super("google refresh token revoked");
@@ -49,7 +56,11 @@ export class TokenProvider {
         aad.oauthRefreshToken(userId),
       );
     } catch {
-      throw new Error("failed to decrypt refresh token");
+      // The stored token cannot be opened with the configured master key,
+      // which in practice means MASTER_ENCRYPTION_KEY was changed or the row
+      // was copied between environments. Reconnecting Google re-encrypts a
+      // fresh token under the current key.
+      throw new TokenUndecryptableError();
     }
 
     try {

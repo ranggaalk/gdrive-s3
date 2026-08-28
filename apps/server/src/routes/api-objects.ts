@@ -8,6 +8,7 @@ import {
 import { S3Error } from "../s3/errors.ts";
 import { validateObjectKey } from "../s3/key.ts";
 import { DriveError } from "../drive/errors.ts";
+import { TokenRevokedError, TokenUndecryptableError } from "../drive/oauth-token.ts";
 import { resolveWriteOptions } from "../services/write-options.ts";
 import { parseObjectMetadata } from "../s3/metadata.ts";
 import { apiError, mapBodyReadError, ok, readJson } from "./api-helpers.ts";
@@ -553,6 +554,17 @@ function mapObjectError(error: unknown, requestId: string, ctx?: AppContext): Re
       return response;
     }
     return apiError("INVALID", error.message, error.status, requestId);
+  }
+  // Google no longer accepts the stored grant. This is the single most likely
+  // cause of an upload failing on a previously working deployment, since
+  // unverified apps get refresh tokens that expire after seven days.
+  if (error instanceof TokenRevokedError || error instanceof TokenUndecryptableError) {
+    return apiError(
+      "DRIVE_REAUTHORIZATION_REQUIRED",
+      "Koneksi Google Drive kedaluwarsa. Hubungkan ulang akun Google Anda dari halaman Overview.",
+      409,
+      requestId,
+    );
   }
   if (error instanceof DriveError) {
     // Tell the operator which Drive condition they actually hit; "operation
