@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { HardDrive, PackageOpen, Plus, Share2, Trash2, Users } from "lucide-react";
+import { HardDrive, PackageOpen, Plus, Settings2, Share2, Trash2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -344,7 +344,7 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
                 <TableCell><div className="flex min-w-40 items-center gap-2">{bucket.storageKind === "shared_drive" ? <Share2 className="size-4 text-muted-foreground" /> : <HardDrive className="size-4 text-muted-foreground" />}<span>{bucket.storageDisplayName}</span></div></TableCell>
                 <TableCell><Badge variant={bucket.effectiveRole === "owner" ? "default" : "secondary"}>{roleLabel(bucket.effectiveRole)}</Badge></TableCell>
                 <TableCell>{bucket.objectCount ?? 0}</TableCell><TableCell>{bucket.multipartOpen ?? 0}</TableCell><TableCell><Badge variant={bucket.storageStatus === "active" ? "success" : "destructive"}>{bucket.storageStatus === "active" ? t.buckets.statusActive : t.buckets.statusIssue}</Badge></TableCell><TableCell className="whitespace-nowrap">{new Date(bucket.createdAt).toLocaleString()}</TableCell>
-                <TableCell className="text-right"><div className="flex justify-end gap-1">{bucket.ownedByMe && bucket.storageKind === "shared_drive" ? <Button size="icon" variant="ghost" aria-label={t.buckets.manageAccessLabel(bucket.name)} title={t.buckets.manageAccessTitle} onClick={() => void openAccess(bucket)}><Users /></Button> : null}{bucket.ownedByMe ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.deleteBucketLabel(bucket.name)} title={t.buckets.deleteBucketTitle} onClick={() => setPendingDelete(bucket)}><Trash2 /></Button> : null}</div></TableCell>
+                <TableCell className="text-right"><div className="flex justify-end gap-1">{bucket.ownedByMe ? <Button size="icon" variant="ghost" aria-label={t.buckets.manageAccessLabel(bucket.name)} title={t.buckets.manageAccessTitle} onClick={() => void openAccess(bucket)}><Settings2 /></Button> : null}{bucket.ownedByMe ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.deleteBucketLabel(bucket.name)} title={t.buckets.deleteBucketTitle} onClick={() => setPendingDelete(bucket)}><Trash2 /></Button> : null}</div></TableCell>
               </TableRow>
             ))}</TableBody>
           </Table>
