@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Activity, ArrowDownToLine, ArrowLeft, CloudDownload, Eye, Files, Folder, HardDriveDownload, Link2, Plus, Search, Trash2 } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowLeft, CloudDownload, Eye, FileCode2, Files, Folder, HardDriveDownload, Link2, Plus, Search, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -33,6 +33,7 @@ import {
   cancelDriveImport,
   createDriveImport,
   createPresignedLink,
+  createPresignedPost,
   getDriveImport,
   createPublicLink,
   deleteObject,
@@ -61,10 +62,46 @@ import {
   type CreatedPublicLink,
   type ObjectItem,
   type PresignedLink,
+  type PresignedPostForm,
   type PublicLinkSummary,
   type BackupAccount,
   type BackupTransfer,
 } from "../api/client.ts";
+
+/** Escape a value for an HTML attribute, so a signature or policy can never
+ *  break out of the markup the operator is about to paste into their page. */
+function escapeAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+/** A ready-to-paste form. The file input comes last, which the gateway requires. */
+function htmlSnippet(form: PresignedPostForm): string {
+  const inputs = Object.entries(form.fields)
+    .map(([name, value]) => `  <input type="hidden" name="${escapeAttribute(name)}" value="${escapeAttribute(value)}" />`)
+    .join("\n");
+  return [
+    `<form action="${escapeAttribute(form.url)}" method="post" enctype="multipart/form-data">`,
+    inputs,
+    `  <input type="file" name="file" />`,
+    `  <button type="submit">Upload</button>`,
+    `</form>`,
+  ].join("\n");
+}
+
+function curlSnippet(form: PresignedPostForm): string {
+  const fields = Object.entries(form.fields)
+    .map(([name, value]) => `  -F ${shellQuote(`${name}=${value}`)} \\`)
+    .join("\n");
+  return [`curl -X POST ${shellQuote(form.url)} \\`, fields, `  -F 'file=@./example.txt'`].join("\n");
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
 
 function isPreviewable(contentType: string): boolean {
   const mime = contentType.split(";", 1)[0]!.toLowerCase();
@@ -132,6 +169,12 @@ export function ObjectsPage({
   const [linkLoaded, setLinkLoaded] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<PublicLinkSummary | null>(null);
   const [revokingLink, setRevokingLink] = useState(false);
+  const [showUploadForm, setShowUploadForm] = useState(false);
+  const [uploadFormPrefix, setUploadFormPrefix] = useState("inbox/");
+  const [uploadFormMaxMb, setUploadFormMaxMb] = useState(25);
+  const [uploadFormExpires, setUploadFormExpires] = useState(3600);
+  const [uploadForm, setUploadForm] = useState<PresignedPostForm | null>(null);
+  const [uploadFormBusy, setUploadFormBusy] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importKind, setImportKind] = useState<"my_drive" | "shared_drive">("my_drive");
   const [sharedDrives, setSharedDrives] = useState<SharedDriveSummary[]>([]);
@@ -375,6 +418,36 @@ export function ObjectsPage({
     finally { setLinkBusy(false); }
   };
 
+  const openUploadForm = async () => {
+    setShowUploadForm(true); setUploadForm(null); setUploadFormBusy(true); setError(null);
+    try {
+      const creds = await listCredentials();
+      const active = creds.filter((credential) => credential.status === "active");
+      setCredentials(active); setCredentialId(active[0]?.id ?? "");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setUploadFormBusy(false); }
+  };
+
+  const generateUploadForm = async () => {
+    if (!credentialId) return;
+    setUploadFormBusy(true);
+    try {
+      setUploadForm(await createPresignedPost(
+        bucket.id,
+        credentialId,
+        uploadFormPrefix,
+        uploadFormExpires,
+        uploadFormMaxMb * 1024 * 1024,
+      ));
+      toast.success(t.toast.presignedPostCreated);
+    }
+    catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      toast.fromError(t.toast.presignedPostFailed, cause);
+    }
+    finally { setUploadFormBusy(false); }
+  };
+
   const persistentLink = async () => {
     if (!linkTarget || !publicLabel.trim()) return;
     setLinkBusy(true);
@@ -430,7 +503,7 @@ export function ObjectsPage({
       {view === "traffic" ? <Suspense fallback={<LoadingState label={t.objects.loadingTraffic} />}><BucketTraffic bucketId={bucket.id} /></Suspense> : <>
       {importJob ? <Alert variant={importJob.status === "failed" ? "destructive" : "default"}><CloudDownload /><AlertTitle>{t.objects.importAlertTitle(importJob.status)}</AlertTitle><AlertDescription><p>{t.objects.importAlertDescription({ sourceFolderName: importJob.sourceFolderName, discovered: importJob.discovered, imported: importJob.imported, conflicts: importJob.conflicts, unsupported: importJob.unsupported, failed: importJob.failed })}</p>{importJob.lastError ? <p>{importJob.lastError}</p> : null}<div className="mt-3 flex gap-2">{!["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void doCancelImport(importJob.id)}>{t.objects.cancelImport}</Button> : null}{["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void listDriveImportIssues(bucket.id, importJob.id).then((page) => setImportIssues(page.items))}>{t.objects.viewReport}</Button> : null}</div></AlertDescription></Alert> : null}
       {importIssues.length ? <Table><TableHeader><TableRow><TableHead>{t.objects.issueKey}</TableHead><TableHead>{t.objects.issueStatus}</TableHead><TableHead>{t.objects.issueReason}</TableHead></TableRow></TableHeader><TableBody>{importIssues.map((issue) => <TableRow key={issue.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{issue.key}</TableRowHeader><TableCell>{issue.status}</TableCell><TableCell>{issue.reason ?? "-"}</TableCell></TableRow>)}</TableBody></Table> : null}
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><form onSubmit={search} role="search" className="flex flex-1 gap-2"><Input placeholder={t.objects.filterPlaceholder} value={prefix} onChange={(event) => setPrefix(event.target.value)} aria-label={t.objects.filterAriaLabel} /><Button type="submit" variant="outline" disabled={loading}><Search /> <span className="hidden sm:inline">{t.objects.search}</span></Button></form><div className="flex gap-2">{owner ? <Button variant="outline" onClick={() => void openImport()}><CloudDownload /> {t.objects.importFromDrive}</Button> : null}{owner ? <Button variant="outline" onClick={() => void openBackup()}><HardDriveDownload /> {t.backup.button}</Button> : null}{writable ? <Button onClick={() => setShowUpload(true)}><Plus /> {t.objects.upload}</Button> : null}</div></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><form onSubmit={search} role="search" className="flex flex-1 gap-2"><Input placeholder={t.objects.filterPlaceholder} value={prefix} onChange={(event) => setPrefix(event.target.value)} aria-label={t.objects.filterAriaLabel} /><Button type="submit" variant="outline" disabled={loading}><Search /> <span className="hidden sm:inline">{t.objects.search}</span></Button></form><div className="flex gap-2">{owner ? <Button variant="outline" onClick={() => void openImport()}><CloudDownload /> {t.objects.importFromDrive}</Button> : null}{owner ? <Button variant="outline" onClick={() => void openBackup()}><HardDriveDownload /> {t.backup.button}</Button> : null}{writable ? <Button variant="outline" onClick={() => void openUploadForm()}><FileCode2 /> {t.objects.uploadFormAction}</Button> : null}{writable ? <Button onClick={() => setShowUpload(true)}><Plus /> {t.objects.upload}</Button> : null}</div></div>
 
       {loading ? <LoadingState label={t.objects.loading} /> : items.length === 0 ? <EmptyState icon={Files} title={t.objects.emptyTitle} description={writable ? t.objects.emptyDescriptionWritable : t.objects.emptyDescriptionReadonly} /> : <><Table><TableHeader><TableRow><TableHead>{t.objects.tableKey}</TableHead><TableHead>{t.objects.tableSize}</TableHead><TableHead>{t.objects.tableType}</TableHead><TableHead>{t.objects.tableModified}</TableHead><TableHead className="text-right">{t.objects.tableAction}</TableHead></TableRow></TableHeader><TableBody>{items.map((item) => <TableRow key={item.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{item.key}</TableRowHeader><TableCell className="whitespace-nowrap">{humanBytes(item.size)}</TableCell><TableCell className="max-w-48 break-all">{item.contentType}</TableCell><TableCell className="whitespace-nowrap">{new Date(item.lastModified).toLocaleString()}</TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title={t.objects.download} aria-label={t.objects.downloadLabel(item.key)} asChild><a href={objectDownloadUrl(bucket.id, item.id)}><ArrowDownToLine /></a></Button>{isPreviewable(item.contentType) ? <Button size="icon" variant="ghost" title={t.objects.preview} aria-label={t.objects.previewLabel(item.key)} onClick={() => window.open(objectPreviewUrl(bucket.id, item.id), "_blank", "noopener,noreferrer")}><Eye /></Button> : null}{owner ? <Button size="icon" variant="ghost" title={t.objects.publicLink} aria-label={t.objects.publicLinkLabel(item.key)} onClick={() => void openLinks(item)}><Link2 /></Button> : null}{writable ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" title={t.objects.deleteTitle} aria-label={t.objects.deleteLabel(item.key)} onClick={() => setDeleteTarget(item)}><Trash2 /></Button> : null}</div></TableCell></TableRow>)}</TableBody></Table>{nextAfter ? <div className="flex justify-center"><Button variant="outline" disabled={loadingMore} onClick={() => void more()}>{loadingMore ? t.common.loadingMore : t.common.loadMore}</Button></div> : null}</>}
       </>}
@@ -526,6 +599,86 @@ export function ObjectsPage({
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.objects.deleteConfirmTitle}</AlertDialogTitle><AlertDialogDescription className="break-all">Namespace <span className="font-mono">{deleteTarget?.key}</span> {t.objects.deleteConfirmDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={(event) => { event.preventDefault(); void doDelete(); }}>{deleting ? t.common.deleting : t.common.delete}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
       <Dialog open={Boolean(linkTarget)} onOpenChange={(open) => { if (!open && !linkBusy) { setLinkTarget(null); setGenerated(null); setLinkLoaded(false); } }}><DialogContent className="min-w-0 max-h-[90vh] max-w-2xl overflow-x-hidden overflow-y-auto"><DialogHeader><DialogTitle>{t.objects.publicLinkDialogTitle}</DialogTitle><DialogDescription className="break-all">{t.objects.publicLinkDialogDescriptionPrefix} <span className="font-mono">{linkTarget?.key}</span>{t.objects.publicLinkDialogDescriptionSuffix}</DialogDescription></DialogHeader>{!linkLoaded ? <LoadingState label={t.objects.loadingLinkSettings} /> : <>{generated ? <div className="space-y-2"><Label>{t.objects.newUrlLabel}</Label><CopyableCode value={generated.url} label={t.objects.publicUrlCopyLabel} /><p className="text-xs text-muted-foreground">{generated.expiresAt ? t.objects.validUntil(new Date(generated.expiresAt).toLocaleString()) : t.objects.validUntilRevoked}</p></div> : null}<div className="grid gap-6 md:grid-cols-2"><section className="space-y-3"><h3 className="font-medium">{t.objects.presignedTitle}</h3><p className="text-sm text-muted-foreground">{t.objects.presignedDescription}</p>{credentials.length ? <><Select ariaLabel={t.objects.presignedCredentialAriaLabel} value={credentialId} onValueChange={setCredentialId} options={credentials.map((credential) => ({ value: credential.id, label: `${credential.label} · ${credential.access_key_id}` }))} /><Select ariaLabel={t.objects.presignedExpiryAriaLabel} value={String(expiresSeconds)} onValueChange={(value) => setExpiresSeconds(Number(value))} options={EXPIRY_OPTIONS} /><Button variant="outline" disabled={linkBusy} onClick={() => void temporaryLink()}>{t.objects.generateTemporary}</Button></> : <Alert><AlertTitle>{t.objects.noActiveKeyTitle}</AlertTitle><AlertDescription>{t.objects.noActiveKeyDescription}</AlertDescription></Alert>}</section><section className="space-y-3"><h3 className="font-medium">{t.objects.persistentTitle}</h3><p className="text-sm text-muted-foreground">{t.objects.persistentDescription}</p><Input value={publicLabel} maxLength={100} onChange={(event) => setPublicLabel(event.target.value)} placeholder={t.objects.linkLabelPlaceholder} /><Input type="datetime-local" min={new Date().toISOString().slice(0, 16)} value={publicExpiresAt} onChange={(event) => setPublicExpiresAt(event.target.value)} /><Button variant="outline" disabled={linkBusy || !publicLabel.trim()} onClick={() => void persistentLink()}>{t.objects.createPermanentLink}</Button></section></div>{publicLinks.length ? <div className="space-y-2"><h3 className="font-medium">{t.objects.permanentLinksTitle}</h3>{publicLinks.map((link) => <div key={link.id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{link.label}</p><p className="text-xs text-muted-foreground">{link.status === "active" ? link.expiresAt ? t.objects.activeUntil(new Date(link.expiresAt).toLocaleString()) : t.objects.activeNoExpiry : t.objects.revoked}</p></div>{link.status === "active" ? <Button size="sm" variant="destructive" disabled={linkBusy} onClick={() => setRevokeTarget(link)}>{t.objects.revoke}</Button> : null}</div>)}</div> : null}</>}<DialogFooter><Button onClick={() => { setLinkTarget(null); setGenerated(null); setLinkLoaded(false); }} disabled={linkBusy}>{t.credentials.done}</Button></DialogFooter></DialogContent></Dialog>
+
+      <Dialog open={showUploadForm} onOpenChange={(open) => { if (!uploadFormBusy) { setShowUploadForm(open); if (!open) setUploadForm(null); } }}>
+        <DialogContent className="min-w-0 max-h-[90vh] max-w-2xl overflow-x-hidden overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t.objects.uploadFormDialogTitle}</DialogTitle>
+            <DialogDescription>{t.objects.uploadFormDialogDescription}</DialogDescription>
+          </DialogHeader>
+          {credentials.length === 0 && !uploadFormBusy ? (
+            <Alert>
+              <AlertTitle>{t.objects.noActiveKeyTitle}</AlertTitle>
+              <AlertDescription>{t.objects.noActiveKeyDescription}</AlertDescription>
+            </Alert>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">{t.objects.uploadFormDescription}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="upload-form-prefix">{t.objects.uploadFormPrefixLabel}</Label>
+                  <Input
+                    id="upload-form-prefix"
+                    value={uploadFormPrefix}
+                    placeholder={t.objects.uploadFormPrefixPlaceholder}
+                    maxLength={512}
+                    onChange={(event) => setUploadFormPrefix(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">{t.objects.uploadFormPrefixHint}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="upload-form-max">{t.objects.uploadFormMaxSizeLabel}</Label>
+                  <Input
+                    id="upload-form-max"
+                    type="number"
+                    min={1}
+                    max={5120}
+                    value={uploadFormMaxMb}
+                    onChange={(event) => setUploadFormMaxMb(Math.max(1, Number(event.target.value) || 1))}
+                  />
+                  <p className="text-xs text-muted-foreground">{humanBytes(uploadFormMaxMb * 1024 * 1024)}</p>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Select
+                  ariaLabel={t.objects.uploadFormCredentialAriaLabel}
+                  value={credentialId}
+                  onValueChange={setCredentialId}
+                  options={credentials.map((credential) => ({ value: credential.id, label: `${credential.label} · ${credential.access_key_id}` }))}
+                />
+                <Select
+                  ariaLabel={t.objects.uploadFormExpiryAriaLabel}
+                  value={String(uploadFormExpires)}
+                  onValueChange={(value) => setUploadFormExpires(Number(value))}
+                  options={EXPIRY_OPTIONS}
+                />
+              </div>
+              <Button variant="outline" disabled={uploadFormBusy || !credentialId} onClick={() => void generateUploadForm()}>
+                {t.objects.uploadFormGenerate}
+              </Button>
+
+              {uploadForm ? (
+                <div className="space-y-3 border-t pt-4">
+                  <div className="space-y-1">
+                    <Label>{t.objects.uploadFormResultTitle} {new Date(uploadForm.expiresAt).toLocaleString()}</Label>
+                    <p className="text-xs text-muted-foreground">
+                      {t.objects.uploadFormKeyTemplate}: <span className="font-mono">{uploadForm.keyTemplate}</span> · {t.objects.uploadFormFileLast}
+                    </p>
+                  </div>
+                  <CopyableCode value={uploadForm.url} label={t.objects.uploadFormEndpointLabel} />
+                  <CopyableCode value={htmlSnippet(uploadForm)} label={t.objects.uploadFormHtmlLabel} />
+                  <CopyableCode value={curlSnippet(uploadForm)} label={t.objects.uploadFormCurlLabel} />
+                </div>
+              ) : null}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => { setShowUploadForm(false); setUploadForm(null); }} disabled={uploadFormBusy}>
+              {t.credentials.done}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={Boolean(revokeTarget)} onOpenChange={(open) => { if (!open && !revokingLink) setRevokeTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.objects.revokeLinkConfirmTitle}</AlertDialogTitle><AlertDialogDescription>Link <span className="font-medium">{revokeTarget?.label}</span> {t.objects.revokeLinkConfirmDescriptionSuffix}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={revokingLink}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={revokingLink} onClick={(event) => { event.preventDefault(); if (revokeTarget) void revokeLink(revokeTarget.id); }}>{revokingLink ? t.objects.revoking : t.objects.revoke}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>

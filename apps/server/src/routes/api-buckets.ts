@@ -17,6 +17,11 @@ import {
 } from "../services/bucket-access-service.ts";
 import type { BucketMemberRole } from "../db/repositories/bucket-members.ts";
 import { InvalidBucketNameError } from "../util/bucket-name.ts";
+import {
+  PresignCredentialNotFoundError,
+  PresignExpiryError,
+  PresignPostInputError,
+} from "../services/presigned-url-service.ts";
 import { handleObjects } from "./api-objects.ts";
 import { handleBucketImports } from "./api-drive-imports.ts";
 import { handleBucketBackups } from "./api-backup.ts";
@@ -200,6 +205,82 @@ export async function handleBuckets(
       objectSegments.length = 0;
     }
     return handleObjects(ctx, req, session, requestId, bucketId, objectSegments);
+  }
+
+  if (segments[1] === "presigned-post" && segments.length === 2) {
+    if (req.method !== "POST") {
+      return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+    }
+    const bucket = ctx.bucketAccess.findById(userId, bucketId, "write");
+    if (!bucket) return apiError("NOT_FOUND", "Bucket tidak ditemukan.", 404, requestId);
+    try {
+      await ctx.bucketAccess.verifyActorAccess(userId, bucket, true, req.signal);
+    } catch {
+      return apiError("ACCESS_DENIED", "Akses bucket ditolak.", 403, requestId);
+    }
+
+    let body;
+    try {
+      body = await readJson<{
+        credentialId?: unknown;
+        keyPrefix?: unknown;
+        expiresSeconds?: unknown;
+        maxBytes?: unknown;
+      }>(ctx, req);
+    } catch (error) {
+      const mapped = mapBodyReadError(error, requestId);
+      if (mapped) return mapped;
+      throw error;
+    }
+    const credentialId = body?.credentialId;
+    const keyPrefix = body?.keyPrefix ?? "";
+    const expiresSeconds = body?.expiresSeconds;
+    const maxBytes = body?.maxBytes;
+    if (
+      typeof credentialId !== "string" ||
+      typeof keyPrefix !== "string" ||
+      typeof expiresSeconds !== "number" ||
+      typeof maxBytes !== "number"
+    ) {
+      return apiError("INVALID", "Credential, masa berlaku, dan batas ukuran wajib diisi.", 400, requestId);
+    }
+
+    try {
+      const created = ctx.presignedUrlService.createPost({
+        userId,
+        credentialId,
+        bucketName: bucket.name,
+        keyPrefix,
+        expiresSeconds,
+        maxBytes,
+      });
+      ctx.repos.audit.record({
+        userId,
+        credentialId,
+        action: "bucket.presigned_post.create",
+        bucketName: bucket.name,
+        bucketId: bucket.id,
+        statusCode: 201,
+        requestId,
+        detail: { keyPrefix, expiresAt: created.expiresAt, maxBytes },
+      });
+      // The signature is a bearer credential for the upload; keep it out of
+      // any intermediary cache.
+      const response = ok(created, requestId, 201);
+      response.headers.set("Cache-Control", "no-store");
+      return response;
+    } catch (error) {
+      if (error instanceof PresignCredentialNotFoundError) {
+        return apiError("NOT_FOUND", "Credential aktif tidak ditemukan.", 404, requestId);
+      }
+      if (error instanceof PresignExpiryError) {
+        return apiError("INVALID", "Masa berlaku presigned form tidak valid.", 400, requestId);
+      }
+      if (error instanceof PresignPostInputError) {
+        return apiError("INVALID", error.message, 400, requestId);
+      }
+      throw error;
+    }
   }
 
   if (segments[1] === "traffic") {

@@ -24,6 +24,10 @@ export interface ObjectUploadInput {
   signal?: AbortSignal;
   verify?: (result: StreamingUploadResult) => void;
   ifAbsent?: boolean;
+  /** Caps the upload below the server-wide limit. A POST policy's
+   *  content-length-range uses this so an oversize body fails while streaming
+   *  instead of after the whole object has landed in Drive. */
+  maxBytes?: number;
 }
 
 export interface ObjectDownloadInput {
@@ -89,7 +93,10 @@ export class ObjectService {
           mimeType: input.metadata.contentType,
           body: input.body,
           contentLength: input.contentLength,
-          maxBytes: this.app.config.maxSinglePutBytes,
+          maxBytes: Math.min(
+            input.maxBytes ?? Number.POSITIVE_INFINITY,
+            this.app.config.maxSinglePutBytes,
+          ),
           resumableThreshold: this.app.config.driveResumableThresholdBytes,
           chunkSize: this.app.config.driveUploadChunkBytes,
           target,

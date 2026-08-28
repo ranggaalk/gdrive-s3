@@ -313,6 +313,16 @@ export interface PresignedLink {
   credentialId: string;
 }
 
+export interface PresignedPostForm {
+  url: string;
+  /** Hidden inputs the form must submit, in order, before the file input. */
+  fields: Record<string, string>;
+  expiresAt: string;
+  credentialId: string;
+  keyTemplate: string;
+  maxBytes: number;
+}
+
 export const listObjects = async (
   bucketId: string,
   prefix = "",
@@ -355,6 +365,17 @@ export const createPresignedLink = async (
 ) => unwrap<PresignedLink>(await fetch(
   `/api/buckets/${encodeURIComponent(bucketId)}/objects/${encodeURIComponent(objectId)}/presigned-links`,
   mutate("POST", { credentialId, expiresSeconds }),
+));
+
+export const createPresignedPost = async (
+  bucketId: string,
+  credentialId: string,
+  keyPrefix: string,
+  expiresSeconds: number,
+  maxBytes: number,
+) => unwrap<PresignedPostForm>(await fetch(
+  `/api/buckets/${encodeURIComponent(bucketId)}/presigned-post`,
+  mutate("POST", { credentialId, keyPrefix, expiresSeconds, maxBytes }),
 ));
 
 export const listPublicLinks = async (bucketId: string, objectId: string) =>
