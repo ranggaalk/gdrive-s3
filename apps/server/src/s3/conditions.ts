@@ -42,6 +42,48 @@ export function evaluateConditions(
   return "proceed";
 }
 
+/**
+ * Copy-source preconditions.
+ *
+ * Same RFC 7232 semantics, but read from the `x-amz-copy-source-if-*` headers
+ * and with different outcomes: S3 answers a failed copy precondition with 412
+ * in both directions, since there is no "not modified" response to give for a
+ * copy. Sharing `etagListMatches` keeps the matching rules identical to the
+ * GET path rather than reimplementing them.
+ */
+export function evaluateCopySourceConditions(
+  headers: Headers,
+  source: Pick<ObjectRow, "etag" | "last_modified_at">,
+): void {
+  const etag = quoteEtag(source.etag);
+  const modifiedMs = Date.parse(source.last_modified_at);
+
+  const ifMatch = headers.get("x-amz-copy-source-if-match");
+  if (ifMatch !== null && !etagListMatches(ifMatch, etag, true)) {
+    throw new S3Error("PreconditionFailed");
+  }
+
+  const ifNoneMatch = headers.get("x-amz-copy-source-if-none-match");
+  if (ifNoneMatch !== null && etagListMatches(ifNoneMatch, etag, false)) {
+    throw new S3Error("PreconditionFailed");
+  }
+
+  const ifUnmodified = headers.get("x-amz-copy-source-if-unmodified-since");
+  if (ifUnmodified) {
+    const t = Date.parse(ifUnmodified);
+    if (!Number.isNaN(t) && modifiedMs > t) throw new S3Error("PreconditionFailed");
+  }
+
+  const ifModified = headers.get("x-amz-copy-source-if-modified-since");
+  if (ifModified) {
+    const t = Date.parse(ifModified);
+    // HTTP dates only carry second precision.
+    if (!Number.isNaN(t) && Math.floor(modifiedMs / 1000) <= Math.floor(t / 1000)) {
+      throw new S3Error("PreconditionFailed");
+    }
+  }
+}
+
 function etagListMatches(header: string, current: string, strong: boolean): boolean {
   if (header.trim() === "*") return true;
   return header.split(",").some((raw) => {

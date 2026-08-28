@@ -1,57 +1,45 @@
 // S3 CopyObject. Streams source bytes through DriveStorage into a new staging
-// file, then atomically promotes the target mapping (AGENTS.md M6).
+// file, then atomically promotes the target mapping.
+//
+// Source and target may belong to different owners. Authorization for both
+// ends runs through AuthorizationService, while the bytes are read with the
+// source owner's Drive token and written with the target owner's — the two
+// identities are deliberately not the same thing.
 
 import { requireUser, type S3RequestContext } from "../context.ts";
+import { authorizeBucket, verifyDriveAccess } from "../authorize.ts";
+import { openCopySourceStream, resolveCopySource } from "../copy-source.ts";
 import { S3Error } from "../errors.ts";
-import { decodeS3Path, validateObjectKey } from "../key.ts";
+import { validateObjectKey } from "../key.ts";
 import { parseObjectMetadata } from "../metadata.ts";
+import { newVersionId } from "../../db/repositories/object-versions.ts";
+import { EncryptionService } from "../../services/encryption-service.ts";
 import { streamingUpload } from "../../drive/upload-streaming.ts";
 import { quoteEtag } from "../etag.ts";
+import { parseSseRequest, applySseResponseHeaders } from "../sse.ts";
+import { parseLockHeaders, resolveDefaultRetention } from "../object-lock.ts";
 import { tag, xmlDocument, xmlResponse } from "../xml.ts";
 
-// CopyObject stays authenticated for now: it needs read authorization on the
-// source and write on the target, plus a decision about whose Drive token
-// moves the bytes when the two buckets have different owners. That
-// cross-actor work is its own milestone; until then a copy always acts as a
-// real caller.
 export async function copyObject(
   ctx: S3RequestContext,
   targetBucketName: string,
   targetKey: string,
 ): Promise<Response> {
+  const userId = requireUser(ctx);
   validateObjectKey(targetKey, true);
-  if (ctx.headers.has("x-amz-copy-source-range")) throw new S3Error("NotImplemented");
-  const sourceHeader = ctx.headers.get("x-amz-copy-source");
-  if (!sourceHeader) throw new S3Error("InvalidRequest");
-  const { bucket: sourceBucketName, key: sourceKey } = decodeS3Path(
-    sourceHeader.startsWith("/") ? sourceHeader : `/${sourceHeader}`,
-  );
-  if (!sourceBucketName || sourceKey === null) throw new S3Error("InvalidRequest");
-  validateObjectKey(sourceKey, true);
 
-  let sourceBucket;
-  let targetBucket;
-  try {
-    sourceBucket = ctx.app.bucketAccess.findByName(requireUser(ctx), sourceBucketName, "read");
-    targetBucket = ctx.app.bucketAccess.findByName(requireUser(ctx), targetBucketName, "write");
-  } catch {
-    throw new S3Error("AccessDenied");
-  }
-  if (!sourceBucket) throw new S3Error("NoSuchBucket", { BucketName: sourceBucketName });
-  const source = ctx.app.repos.objects.findByKey(sourceBucket.id, sourceKey);
-  if (!source) throw new S3Error("NoSuchKey", { Key: sourceKey });
-  if (!targetBucket) throw new S3Error("NoSuchBucket", { BucketName: targetBucketName });
+  const source = resolveCopySource(ctx, { allowRange: false });
+  const targetAuth = authorizeBucket(ctx, targetBucketName, "s3:PutObject", targetKey);
+  const targetBucket = targetAuth.bucket;
+
+  // Each side is checked against the account that will actually touch its
+  // Drive, which for a cross-user copy are two different accounts.
+  await verifyDriveAccess(ctx, targetAuth, true);
   try {
     await ctx.app.bucketAccess.verifyActorAccess(
-      requireUser(ctx),
-      sourceBucket,
+      source.driveActorUserId,
+      source.bucket,
       false,
-      ctx.signal ?? undefined,
-    );
-    await ctx.app.bucketAccess.verifyActorAccess(
-      requireUser(ctx),
-      targetBucket,
-      true,
       ctx.signal ?? undefined,
     );
   } catch {
@@ -63,8 +51,33 @@ export async function copyObject(
     throw new S3Error("InvalidArgument", { ArgumentName: "x-amz-metadata-directive" });
   }
   const replacement = directive === "REPLACE" ? parseObjectMetadata(ctx.headers) : null;
-  const metadata = replacement ? replacement.userMetadata : parseJsonMetadata(source.metadata_json);
-  const contentType = replacement?.contentType ?? source.content_type;
+  const metadata = replacement
+    ? replacement.userMetadata
+    : parseJsonMetadata(source.object.metadata_json);
+  const contentType = replacement?.contentType ?? source.object.content_type;
+
+  // The target is encrypted according to its own bucket's rules, not the
+  // source's — a copy out of an encrypted bucket into a plain one is a
+  // legitimate way to decrypt, and vice versa.
+  const encryption = new EncryptionService(ctx.app).planFor({
+    ownerUserId: targetBucket.user_id,
+    bucket: targetBucket,
+    request: parseSseRequest(ctx.headers),
+  });
+
+  const requestedLock = parseLockHeaders(ctx.headers);
+  const defaultRetention = requestedLock.mode
+    ? null
+    : resolveDefaultRetention(targetBucket.object_lock_default_json);
+  const lock = targetBucket.object_lock_enabled
+    ? {
+        mode: requestedLock.mode ?? defaultRetention?.mode ?? null,
+        retainUntil: requestedLock.retainUntil ?? defaultRetention?.retainUntil ?? null,
+        legalHold: requestedLock.legalHold,
+      }
+    : null;
+
+  const versionId = targetBucket.versioning === "Enabled" ? newVersionId() : "null";
   const previous = ctx.app.repos.objects.findByKey(targetBucket.id, targetKey);
   const staging = ctx.app.repos.objectStaging.start({
     requestId: ctx.requestId,
@@ -73,40 +86,50 @@ export async function copyObject(
     objectKey: targetKey,
     contentType,
     metadata,
-    cacheControl: replacement?.cacheControl ?? source.cache_control,
-    contentDisposition: replacement?.contentDisposition ?? source.content_disposition,
-    contentEncoding: replacement?.contentEncoding ?? source.content_encoding,
-    contentLanguage: replacement?.contentLanguage ?? source.content_language,
-    expiresAt: replacement?.expiresAt ?? source.expires_at,
+    cacheControl: replacement?.cacheControl ?? source.object.cache_control,
+    contentDisposition: replacement?.contentDisposition ?? source.object.content_disposition,
+    contentEncoding: replacement?.contentEncoding ?? source.object.content_encoding,
+    contentLanguage: replacement?.contentLanguage ?? source.object.content_language,
+    expiresAt: replacement?.expiresAt ?? source.object.expires_at,
+    acl: source.object.acl,
+    lock,
+    sse: encryption
+      ? {
+          algorithm: encryption.algorithm,
+          kmsKeyId: encryption.kmsKeyId,
+          kmsKeyVersion: encryption.kmsKeyVersion,
+          wrappedDataKey: encryption.wrappedDataKey,
+          iv: encryption.iv.toString("base64"),
+          customerKeyMd5: encryption.customerKeyMd5,
+        }
+      : null,
     oldDriveFileId: previous?.drive_file_id ?? null,
     driveTargetId: targetBucket.drive_target_id,
   });
 
   let uploadedId: string | null = null;
-  const slot = await ctx.app.driveLimits.upload(requireUser(ctx), ctx.signal ?? undefined);
+  // The upload slot belongs to the account doing the writing.
+  const slot = await ctx.app.driveLimits.upload(targetBucket.user_id, ctx.signal ?? undefined);
   try {
-    const sourceResponse = await ctx.app.driveStorage.downloadObject({
-      userId: requireUser(ctx),
-      driveFileId: source.drive_file_id,
-      target: ctx.app.bucketAccess.operationTarget(sourceBucket),
-      signal: ctx.signal ?? undefined,
-    });
-    if (!sourceResponse.ok || !sourceResponse.body) throw new S3Error("NoSuchKey", { Key: sourceKey });
+    const body = await openCopySourceStream(ctx, source);
     const result = await streamingUpload({
       storage: ctx.app.driveStorage,
-      userId: requireUser(ctx),
+      userId: targetBucket.user_id,
       bucketId: targetBucket.id,
       bucketFolderId: targetBucket.drive_folder_id,
       objectId: staging.object_id,
       objectKey: targetKey,
       mimeType: contentType,
-      body: sourceResponse.body,
-      contentLength: source.size_bytes,
+      body,
+      contentLength: source.length,
       maxBytes: ctx.app.config.maxSinglePutBytes,
       resumableThreshold: ctx.app.config.driveResumableThresholdBytes,
       chunkSize: ctx.app.config.driveUploadChunkBytes,
       target: ctx.app.bucketAccess.operationTarget(targetBucket),
       signal: ctx.signal ?? undefined,
+      ...(encryption
+        ? { cipher: new EncryptionService(ctx.app).cipherFor(encryption) }
+        : {}),
     });
     uploadedId = result.uploaded.driveFileId;
     ctx.app.repos.objectStaging.markUploaded({
@@ -116,8 +139,15 @@ export async function copyObject(
       etag: result.md5Hex,
       checksumSha256: result.sha256Hex,
     });
-    const committed = ctx.app.repos.objects.commitStagedObject(staging.id);
-    if (committed.previous && committed.previous.drive_file_id !== uploadedId) {
+    const committed = ctx.app.repos.objects.commitStagedObject(staging.id, {
+      versioning: targetBucket.versioning,
+      versionId,
+    });
+    if (
+      !committed.archivedPrevious &&
+      committed.previous &&
+      committed.previous.drive_file_id !== uploadedId
+    ) {
       await deleteOldTarget(
         ctx,
         committed.previous.drive_file_id,
@@ -126,7 +156,7 @@ export async function copyObject(
       );
     }
     ctx.app.repos.audit.record({
-      userId: requireUser(ctx),
+      userId,
       credentialId: ctx.credentialId,
       action: "s3.CopyObject",
       bucketName: targetBucketName,
@@ -135,17 +165,35 @@ export async function copyObject(
       statusCode: 200,
       bytesIn: result.size,
       requestId: ctx.requestId,
-      detail: { sourceBucket: sourceBucketName, directive },
+      detail: {
+        sourceBucket: source.bucketName,
+        directive,
+        crossUser: source.bucket.user_id !== targetBucket.user_id,
+      },
     });
+
     const object = committed.current;
-    const body = xmlDocument(
-      "CopyObjectResult",
-      tag("LastModified", object.last_modified_at) + tag("ETag", quoteEtag(object.etag)),
-    );
-    return xmlResponse(body, 200, {
+    const headers = new Headers({
       ETag: quoteEtag(object.etag),
       "x-amz-request-id": ctx.requestId,
     });
+    if (encryption) {
+      applySseResponseHeaders(headers, {
+        sse_algorithm: encryption.algorithm,
+        kms_key_id: encryption.kmsKeyId,
+        customer_key_md5: encryption.customerKeyMd5,
+      });
+    }
+    if (versionId !== "null") headers.set("x-amz-version-id", versionId);
+    if (source.object.version_id !== "null") {
+      headers.set("x-amz-copy-source-version-id", source.object.version_id);
+    }
+
+    const body2 = xmlDocument(
+      "CopyObjectResult",
+      tag("LastModified", object.last_modified_at) + tag("ETag", quoteEtag(object.etag)),
+    );
+    return xmlResponse(body2, 200, Object.fromEntries(headers));
   } catch (error) {
     ctx.app.repos.objectStaging.markFailed(
       staging.id,
@@ -182,13 +230,14 @@ async function deleteOldTarget(
 ): Promise<void> {
   try {
     await ctx.app.driveStorage.deleteFile({
-      userId: requireUser(ctx),
+      // Deleting the superseded target file is the target owner's business.
+      userId: cleanupUserId,
       driveFileId,
       mode: ctx.app.config.s3DeleteMode,
       target,
     });
     ctx.app.repos.pendingCleanup.completeResource(cleanupUserId, "drive_file", driveFileId);
   } catch {
-    // commit transaction already enqueued it.
+    // The commit transaction already enqueued it.
   }
 }

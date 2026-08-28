@@ -17,6 +17,7 @@ import * as objects from "./operations/objects.ts";
 import * as multipart from "./operations/multipart.ts";
 import { completeMultipartUpload } from "./operations/multipart-complete.ts";
 import { copyObject } from "./operations/copy-object.ts";
+import { uploadPartCopy } from "./operations/upload-part-copy.ts";
 import { postObject } from "./operations/post-object.ts";
 import * as aclPolicy from "./operations/acl-policy.ts";
 import * as versioning from "./operations/versioning.ts";
@@ -285,7 +286,10 @@ async function dispatch(
   }
   if (q.has("uploadId")) {
     if (ctx.method === "PUT" && q.has("partNumber")) {
-      return multipart.uploadPart(ctx, bucket, key);
+      // A part sourced from another object rather than the request body.
+      return ctx.headers.has("x-amz-copy-source")
+        ? uploadPartCopy(ctx, bucket, key)
+        : multipart.uploadPart(ctx, bucket, key);
     }
     if (ctx.method === "GET") return multipart.listParts(ctx, bucket, key);
     if (ctx.method === "POST") return completeMultipartUpload(ctx, bucket, key);
