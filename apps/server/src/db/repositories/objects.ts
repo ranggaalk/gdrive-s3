@@ -38,6 +38,8 @@ export interface ObjectRow {
   content_language: string | null;
   expires_at: string | null;
   acl: ObjectAclName;
+  /** 'null' for objects written while versioning was off, matching S3. */
+  version_id: string;
   last_modified_at: string;
   created_at: string;
   updated_at: string;
@@ -63,6 +65,7 @@ export interface UpsertObjectInput {
   contentLanguage?: string | null;
   expiresAt?: string | null;
   acl?: ObjectAclName;
+  versionId?: string;
 }
 
 export class ObjectKeyConflictError extends Error {}
@@ -132,8 +135,9 @@ export class ObjectsRepository {
              (id, bucket_id, object_key, drive_file_id, size_bytes, content_type,
               etag, checksum_sha256, storage_class, status, metadata_json,
               cache_control, content_disposition, content_encoding,
-              content_language, expires_at, acl, last_modified_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              content_language, expires_at, acl, version_id, last_modified_at,
+              created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(bucket_id, object_key) DO UPDATE SET
              drive_file_id = excluded.drive_file_id,
              size_bytes = excluded.size_bytes,
@@ -148,6 +152,7 @@ export class ObjectsRepository {
              content_language = excluded.content_language,
              expires_at = excluded.expires_at,
              acl = excluded.acl,
+             version_id = excluded.version_id,
              last_modified_at = excluded.last_modified_at,
              updated_at = excluded.updated_at`,
         )
@@ -167,6 +172,7 @@ export class ObjectsRepository {
           input.contentLanguage ?? null,
           input.expiresAt ?? null,
           input.acl ?? "private",
+          input.versionId ?? "null",
           now,
           previous?.created_at ?? now,
           now,
@@ -239,11 +245,25 @@ export class ObjectsRepository {
    * namespace and mark the staging row committed. The old Drive file remains
    * untouched until after this transaction commits.
    */
-  commitStagedObject(stagingId: string, options: { ifAbsent?: boolean } = {}): {
+  commitStagedObject(
+    stagingId: string,
+    options: {
+      ifAbsent?: boolean;
+      /** When "Enabled", the row being replaced is archived instead of
+       *  overwritten, and its Drive file is left alone. */
+      versioning?: "Disabled" | "Enabled" | "Suspended";
+      /** Version id for the new current object. */
+      versionId?: string;
+    } = {},
+  ): {
     current: ObjectRow;
     previous: ObjectRow | null;
+    /** True when `previous` was retained as a version rather than replaced. */
+    archivedPrevious: boolean;
   } {
-    let result: { current: ObjectRow; previous: ObjectRow | null } | null = null;
+    let result:
+      | { current: ObjectRow; previous: ObjectRow | null; archivedPrevious: boolean }
+      | null = null;
     const tx = this.db.transaction(() => {
       const staging = this.db
         .query<{
@@ -290,14 +310,86 @@ export class ObjectsRepository {
         throw new ObjectKeyConflictError("object key already exists");
       }
       const now = nowIso();
+      const newVersionId = options.versionId ?? "null";
+      // Whether the row being replaced must be retained.
+      //
+      // Enabled always retains. Suspended is the subtle one: it writes the
+      // 'null' version id, but it must NOT destroy versions created while
+      // versioning was on. So a previous row is retained unless it is itself a
+      // 'null' version, which a suspended write legitimately replaces.
+      const archivePrevious =
+        !!previous &&
+        (options.versioning === "Enabled" ||
+          (options.versioning === "Suspended" && previous.version_id !== "null"));
+
+      // With versioning on, the row being replaced becomes a retained version
+      // rather than being overwritten. Its Drive file must survive, which is
+      // why the cleanup enqueue below is skipped in that case.
+      if (archivePrevious && previous) {
+        const previousEncryption = this.db
+          .query<{
+            sse_algorithm: string;
+            kms_key_id: string | null;
+            kms_key_version: number | null;
+            wrapped_data_key: string | null;
+            iv: string;
+            customer_key_md5: string | null;
+          }, [string]>(
+            `SELECT sse_algorithm, kms_key_id, kms_key_version,
+                    wrapped_data_key, iv, customer_key_md5
+               FROM object_encryption WHERE object_id = ?`,
+          )
+          .get(previous.id);
+        this.db
+          .query(
+            `INSERT INTO object_versions
+               (id, bucket_id, object_key, version_id, drive_file_id, size_bytes,
+                content_type, etag, checksum_sha256, storage_class, metadata_json,
+                cache_control, content_disposition, content_encoding, content_language,
+                expires_at, acl, is_delete_marker, is_latest,
+                sse_algorithm, sse_kms_key_id, sse_kms_key_version,
+                sse_wrapped_data_key, sse_iv, sse_customer_key_md5,
+                last_modified_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(bucket_id, object_key, version_id) DO NOTHING`,
+          )
+          .run(
+            `ver_${crypto.randomUUID().replace(/-/g, "")}`,
+            previous.bucket_id,
+            previous.object_key,
+            previous.version_id,
+            previous.drive_file_id,
+            previous.size_bytes,
+            previous.content_type,
+            previous.etag,
+            previous.checksum_sha256,
+            previous.storage_class,
+            previous.metadata_json,
+            previous.cache_control,
+            previous.content_disposition,
+            previous.content_encoding,
+            previous.content_language,
+            previous.expires_at,
+            previous.acl,
+            previousEncryption?.sse_algorithm ?? null,
+            previousEncryption?.kms_key_id ?? null,
+            previousEncryption?.kms_key_version ?? null,
+            previousEncryption?.wrapped_data_key ?? null,
+            previousEncryption?.iv ?? null,
+            previousEncryption?.customer_key_md5 ?? null,
+            previous.last_modified_at,
+            now,
+          );
+      }
       this.db
         .query(
           `INSERT INTO objects
              (id, bucket_id, object_key, drive_file_id, size_bytes, content_type,
               etag, checksum_sha256, storage_class, status, metadata_json,
               cache_control, content_disposition, content_encoding,
-              content_language, expires_at, acl, last_modified_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              content_language, expires_at, acl, version_id, last_modified_at,
+              created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(bucket_id, object_key) DO UPDATE SET
              drive_file_id = excluded.drive_file_id,
              size_bytes = excluded.size_bytes,
@@ -312,6 +404,7 @@ export class ObjectsRepository {
              content_language = excluded.content_language,
              expires_at = excluded.expires_at,
              acl = excluded.acl,
+             version_id = excluded.version_id,
              last_modified_at = excluded.last_modified_at,
              updated_at = excluded.updated_at`,
         )
@@ -331,6 +424,7 @@ export class ObjectsRepository {
           staging.content_language,
           staging.expires_at,
           staging.acl,
+          newVersionId,
           now,
           previous?.created_at ?? now,
           now,
@@ -369,7 +463,9 @@ export class ObjectsRepository {
         this.db.query("DELETE FROM object_encryption WHERE object_id = ?").run(committedId);
       }
 
-      if (previous && previous.drive_file_id !== staging.new_drive_file_id) {
+      // A retained version still references the previous Drive file, so
+      // deleting it would destroy that version's bytes.
+      if (!archivePrevious && previous && previous.drive_file_id !== staging.new_drive_file_id) {
         this.db
           .query(
             `INSERT INTO pending_cleanup
@@ -386,6 +482,14 @@ export class ObjectsRepository {
             staging.drive_target_id,
           );
       }
+      // Writing a key clears any delete marker that was hiding it: the object
+      // is current again, so no marker may still claim to be latest.
+      this.db
+        .query(
+          "UPDATE object_versions SET is_latest = 0 WHERE bucket_id = ? AND object_key = ?",
+        )
+        .run(staging.bucket_id, staging.object_key);
+
       this.db
         .query(
           `UPDATE object_staging
@@ -396,6 +500,7 @@ export class ObjectsRepository {
       result = {
         current: this.findByKey(staging.bucket_id, staging.object_key)!,
         previous,
+        archivedPrevious: archivePrevious,
       };
     });
     tx();

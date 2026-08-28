@@ -19,6 +19,7 @@ import { completeMultipartUpload } from "./operations/multipart-complete.ts";
 import { copyObject } from "./operations/copy-object.ts";
 import { postObject } from "./operations/post-object.ts";
 import * as aclPolicy from "./operations/acl-policy.ts";
+import * as versioning from "./operations/versioning.ts";
 import { parseBoundary } from "./multipart-form.ts";
 import { clientIpFrom, type HasRequestIp } from "../util/client-ip.ts";
 import { retryAfterSeconds } from "../security/rate-limits.ts";
@@ -218,6 +219,15 @@ async function dispatch(
       if (ctx.method === "GET") return aclPolicy.getBucketPolicy(ctx, bucket);
       if (ctx.method === "PUT") return aclPolicy.putBucketPolicy(ctx, bucket);
       if (ctx.method === "DELETE") return aclPolicy.deleteBucketPolicy(ctx, bucket);
+      throw new S3Error("MethodNotAllowed");
+    }
+    if (q.has("versioning")) {
+      if (ctx.method === "GET") return versioning.getBucketVersioning(ctx, bucket);
+      if (ctx.method === "PUT") return versioning.putBucketVersioning(ctx, bucket);
+      throw new S3Error("MethodNotAllowed");
+    }
+    if (q.has("versions")) {
+      if (ctx.method === "GET") return versioning.listObjectVersions(ctx, bucket);
       throw new S3Error("MethodNotAllowed");
     }
     if (q.has("encryption")) {

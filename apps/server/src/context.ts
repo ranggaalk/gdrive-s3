@@ -41,6 +41,7 @@ import { PublicLinkService } from "./services/public-link-service.ts";
 import { AuthorizationService } from "./services/authorization-service.ts";
 import { BucketPoliciesRepository } from "./db/repositories/bucket-policies.ts";
 import { KmsKeysRepository } from "./db/repositories/kms-keys.ts";
+import { ObjectVersionsRepository } from "./db/repositories/object-versions.ts";
 import { ObjectEncryptionRepository } from "./db/repositories/object-encryption.ts";
 import { KmsService } from "./security/kms.ts";
 import { PresignedUrlService } from "./services/presigned-url-service.ts";
@@ -68,6 +69,7 @@ export interface AppContext {
     bucketPolicies: BucketPoliciesRepository;
     kmsKeys: KmsKeysRepository;
     objectEncryption: ObjectEncryptionRepository;
+    objectVersions: ObjectVersionsRepository;
     driveImports: DriveImportsRepository;
     settings: SettingsRepository;
     backupAccounts: BackupAccountsRepository;
@@ -121,6 +123,7 @@ export function createContext(
   const bucketPolicies = new BucketPoliciesRepository(db);
   const kmsKeys = new KmsKeysRepository(db);
   const objectEncryption = new ObjectEncryptionRepository(db);
+  const objectVersions = new ObjectVersionsRepository(db);
   const driveImports = new DriveImportsRepository(db);
   const settings = new SettingsRepository(db);
   const backupAccounts = new BackupAccountsRepository(db);
@@ -182,6 +185,7 @@ export function createContext(
       bucketPolicies,
       kmsKeys,
       objectEncryption,
+      objectVersions,
       driveImports,
       settings,
       backupAccounts,
