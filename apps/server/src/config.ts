@@ -47,6 +47,10 @@ export interface AppConfig {
   // a request Host of "{bucket}.{this value}" is treated as virtual-hosted;
   // any other Host (including the bare domain itself) stays path-style.
   s3VirtualHostedDomain: string;
+  /** Whether an unsigned request may be admitted by a public ACL or bucket
+   *  policy. Turning this off makes SigV4 mandatory again, whatever any
+   *  ACL or policy says. */
+  s3AllowAnonymous: boolean;
 
   maxSinglePutBytes: number;
   maxMultipartObjectBytes: number;
@@ -80,6 +84,7 @@ export interface AppConfig {
     credentialCreatePerHour: number;
     signatureFailuresPerMinute: number;
     s3PublicRpsPerIp: number;
+    s3AnonymousRpsPerIp: number;
     publicShareRpsPerIp: number;
     mfaVerifyPerMinute: number;
     maxKeys: number;
@@ -271,6 +276,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       const raw = optional(env, "S3_VIRTUAL_HOSTED_DOMAIN", "");
       return raw === "" ? "" : validateHostname(raw, "S3_VIRTUAL_HOSTED_DOMAIN");
     })(),
+    s3AllowAnonymous: parseBool(
+      optional(env, "S3_ALLOW_ANONYMOUS", "true"),
+      "S3_ALLOW_ANONYMOUS",
+    ),
 
     maxSinglePutBytes: parseIntStrict(
       optional(env, "MAX_SINGLE_PUT_BYTES", "5368709120"),
@@ -371,6 +380,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         optional(env, "RATE_LIMIT_S3_PUBLIC_RPS_PER_IP", "200"),
         "RATE_LIMIT_S3_PUBLIC_RPS_PER_IP",
       ),
+      s3AnonymousRpsPerIp: parseIntStrict(
+        optional(env, "RATE_LIMIT_S3_ANONYMOUS_RPS_PER_IP", "50"),
+        "RATE_LIMIT_S3_ANONYMOUS_RPS_PER_IP",
+      ),
       publicShareRpsPerIp: parseIntStrict(
         optional(env, "RATE_LIMIT_PUBLIC_SHARE_RPS_PER_IP", "50"),
         "RATE_LIMIT_PUBLIC_SHARE_RPS_PER_IP",
@@ -449,6 +462,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ["RATE_LIMIT_CREDENTIAL_CREATE_PER_HOUR", config.rateLimit.credentialCreatePerHour],
     ["RATE_LIMIT_SIGNATURE_FAILURES_PER_MINUTE", config.rateLimit.signatureFailuresPerMinute],
     ["RATE_LIMIT_S3_PUBLIC_RPS_PER_IP", config.rateLimit.s3PublicRpsPerIp],
+    ["RATE_LIMIT_S3_ANONYMOUS_RPS_PER_IP", config.rateLimit.s3AnonymousRpsPerIp],
     ["RATE_LIMIT_PUBLIC_SHARE_RPS_PER_IP", config.rateLimit.publicShareRpsPerIp],
     ["RATE_LIMIT_MFA_VERIFY_PER_MINUTE", config.rateLimit.mfaVerifyPerMinute],
     ["RATE_LIMIT_MAX_KEYS", config.rateLimit.maxKeys],

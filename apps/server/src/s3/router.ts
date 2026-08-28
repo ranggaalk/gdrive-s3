@@ -8,7 +8,7 @@ import type { AppContext } from "../context.ts";
 import type { S3RequestContext } from "./context.ts";
 import { driveErrorToS3Error, S3Error, s3ErrorResponse } from "./errors.ts";
 import { DriveError } from "../drive/errors.ts";
-import { SigV4Verifier, type SigV4Failure } from "../auth/s3-sigv4.ts";
+import { SigV4Verifier, type SigV4Failure, type SigV4Result } from "../auth/s3-sigv4.ts";
 import { SigV4PresignedVerifier } from "../auth/s3-sigv4-presigned.ts";
 import { SigV4aVerifier } from "../auth/s3-sigv4a.ts";
 import { resolveS3Path } from "./key.ts";
@@ -18,9 +18,22 @@ import * as multipart from "./operations/multipart.ts";
 import { completeMultipartUpload } from "./operations/multipart-complete.ts";
 import { copyObject } from "./operations/copy-object.ts";
 import { postObject } from "./operations/post-object.ts";
+import * as aclPolicy from "./operations/acl-policy.ts";
 import { parseBoundary } from "./multipart-form.ts";
 import { clientIpFrom, type HasRequestIp } from "../util/client-ip.ts";
 import { retryAfterSeconds } from "../security/rate-limits.ts";
+
+/**
+ * A request that carried no credentials at all. It is "ok" in the sense that
+ * there was nothing to reject — whether it may actually do anything is decided
+ * later by AuthorizationService against the bucket's ACL and policy.
+ */
+interface AnonymousAuth {
+  ok: true;
+  userId: null;
+  credentialId: null;
+  streaming?: undefined;
+}
 
 function failureToError(failure: SigV4Failure): S3Error {
   switch (failure) {
@@ -89,14 +102,34 @@ export async function handleS3(
     };
     // SigV4A first: it owns its own algorithm label in both the header and the
     // query form, and returns null for anything that is not SigV4A.
-    let auth =
+    let auth: SigV4Result | AnonymousAuth | null =
       new SigV4aVerifier(app.config, app.repos.credentials).verify(verifierInput) ??
       new SigV4PresignedVerifier(app.config, app.repos.credentials).verify(verifierInput);
     if (!auth) {
       if (url.searchParams.has("X-Amz-Signature")) {
         throw new S3Error("AuthorizationQueryParametersError");
       }
-      auth = new SigV4Verifier(app.config, app.repos.credentials).verify(verifierInput);
+      // No signature of any kind. Rather than rejecting outright, fall through
+      // as an anonymous principal so a public-read ACL or bucket policy can
+      // admit the request — real S3 behaviour. Every operation still asks the
+      // authorization layer, and anything requiring a caller refuses via
+      // `requireUser`, so the default remains closed.
+      const anonymousAllowed =
+        app.config.s3AllowAnonymous && !req.headers.has("authorization");
+      if (!anonymousAllowed) {
+        auth = new SigV4Verifier(app.config, app.repos.credentials).verify(verifierInput);
+      } else {
+        // Anonymous traffic gets its own, tighter budget: it needs no
+        // credential, so it is the cheapest surface to abuse.
+        const anonDecision = app.rateLimits.take("s3Anonymous", ipKey);
+        if (!anonDecision.allowed) {
+          const throttled = new S3Error("SlowDown");
+          const res = s3ErrorResponse(throttled, requestId);
+          res.headers.set("Retry-After", retryAfterSeconds(anonDecision));
+          return res;
+        }
+        auth = { ok: true, userId: null, credentialId: null };
+      }
     }
     if (!auth.ok) {
       const failureDecision = app.rateLimits.take("signatureFailure", ipKey);
@@ -125,6 +158,9 @@ export async function handleS3(
       body: req.body,
       ...(auth.streaming ? { streamingAuth: auth.streaming } : {}),
       signal: req.signal,
+      sourceIp: ipKey || null,
+      secureTransport: url.protocol === "https:" ||
+        (req.headers.get("x-forwarded-proto") ?? "").toLowerCase() === "https",
     };
 
     try {
@@ -169,6 +205,25 @@ async function dispatch(
 
   // Bucket-level (no key or empty key)
   if (key === null || key === "") {
+    if (q.has("acl")) {
+      if (ctx.method === "GET") return aclPolicy.getBucketAcl(ctx, bucket);
+      if (ctx.method === "PUT") return aclPolicy.putBucketAcl(ctx, bucket);
+      throw new S3Error("MethodNotAllowed");
+    }
+    if (q.has("policyStatus")) {
+      if (ctx.method === "GET") return aclPolicy.getBucketPolicyStatus(ctx, bucket);
+      throw new S3Error("MethodNotAllowed");
+    }
+    if (q.has("policy")) {
+      if (ctx.method === "GET") return aclPolicy.getBucketPolicy(ctx, bucket);
+      if (ctx.method === "PUT") return aclPolicy.putBucketPolicy(ctx, bucket);
+      if (ctx.method === "DELETE") return aclPolicy.deleteBucketPolicy(ctx, bucket);
+      throw new S3Error("MethodNotAllowed");
+    }
+    if (q.has("location")) {
+      if (ctx.method === "GET") return aclPolicy.getBucketLocation(ctx, bucket);
+      throw new S3Error("MethodNotAllowed");
+    }
     if (ctx.method === "GET" && q.has("uploads")) {
       return multipart.listMultipartUploads(ctx, bucket);
     }
@@ -182,6 +237,12 @@ async function dispatch(
     if (ctx.method === "HEAD") return buckets.headBucket(ctx, bucket);
     if (ctx.method === "POST" && q.has("delete")) return objects.deleteObjects(ctx, bucket);
     if (ctx.method === "DELETE") return buckets.deleteBucket(ctx, bucket);
+    throw new S3Error("MethodNotAllowed");
+  }
+
+  if (q.has("acl")) {
+    if (ctx.method === "GET") return aclPolicy.getObjectAcl(ctx, bucket, key);
+    if (ctx.method === "PUT") return aclPolicy.putObjectAcl(ctx, bucket, key);
     throw new S3Error("MethodNotAllowed");
   }
 

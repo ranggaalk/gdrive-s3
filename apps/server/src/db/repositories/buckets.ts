@@ -6,6 +6,12 @@ import { newBucketId, nowIso } from "../../util/ids.ts";
 export type BucketStatus = "creating" | "active" | "deleting" | "error";
 export type BucketEffectiveRole = "owner" | "editor" | "viewer";
 
+export type BucketAclName =
+  | "private"
+  | "public-read"
+  | "public-read-write"
+  | "authenticated-read";
+
 export interface BucketRow {
   id: string;
   user_id: string;
@@ -14,6 +20,7 @@ export interface BucketRow {
   drive_folder_id: string;
   drive_target_id: string;
   status: BucketStatus;
+  acl: BucketAclName;
   created_at: string;
   updated_at: string;
 }
@@ -131,6 +138,44 @@ export class BucketsRepository {
           "SELECT * FROM buckets WHERE id = ? AND user_id = ?",
         )
         .get(id, userId) ?? null
+    );
+  }
+
+  /**
+   * Every active bucket carrying this name, across all owners.
+   *
+   * Bucket names here are unique per user (`UNIQUE(user_id, name)`), not
+   * globally as in real S3, so a request that arrives without a caller — an
+   * anonymous one — cannot resolve a name to a single owner. This returns the
+   * candidates and leaves the disambiguation to AuthorizationService, which
+   * accepts the request only when exactly one candidate actually grants
+   * anonymous access.
+   */
+  listByName(name: string): AccessibleBucketRow[] {
+    return this.db
+      .query<AccessibleBucketRow, [string]>(
+        // effective_role is a placeholder: this query has no caller to resolve
+        // it against. AuthorizationService establishes the real relationship
+        // via ownership and bucket_members, and never trusts this value.
+        `SELECT b.*,
+                'viewer' AS effective_role,
+                t.kind AS storage_kind,
+                t.display_name AS storage_display_name,
+                t.status AS storage_status,
+                t.shared_drive_id
+           FROM buckets b
+           JOIN drive_targets t ON t.id = b.drive_target_id
+          WHERE b.name = ? AND b.status = 'active'
+          ORDER BY b.created_at ASC`,
+      )
+      .all(name);
+  }
+
+  setAcl(bucketId: string, acl: BucketAclName): boolean {
+    return (
+      this.db
+        .query("UPDATE buckets SET acl = ?, updated_at = ? WHERE id = ?")
+        .run(acl, nowIso(), bucketId).changes > 0
     );
   }
 

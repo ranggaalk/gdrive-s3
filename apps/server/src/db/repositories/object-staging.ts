@@ -26,6 +26,7 @@ export interface StagingRow {
   content_encoding: string | null;
   content_language: string | null;
   expires_at: string | null;
+  acl: string;
   status: StagingStatus;
   last_error: string | null;
   created_at: string;
@@ -45,6 +46,8 @@ export interface StartStagingInput {
   contentEncoding: string | null;
   contentLanguage: string | null;
   expiresAt: string | null;
+  /** Canned ACL for the object. Defaults to private, matching S3. */
+  acl?: string;
   oldDriveFileId: string | null;
   driveTargetId?: string;
 }
@@ -70,8 +73,8 @@ export class ObjectStagingRepository {
            (id, request_id, user_id, bucket_id, object_key, object_id,
             old_drive_file_id, content_type, metadata_json, cache_control,
             content_disposition, content_encoding, content_language, expires_at,
-            drive_target_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploading', ?, ?)`,
+            acl, drive_target_id, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploading', ?, ?)`,
       )
       .run(
         id,
@@ -88,6 +91,7 @@ export class ObjectStagingRepository {
         input.contentEncoding,
         input.contentLanguage,
         input.expiresAt,
+        input.acl ?? "private",
         input.driveTargetId ?? null,
         now,
         now,

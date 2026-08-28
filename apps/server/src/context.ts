@@ -38,6 +38,8 @@ import { CredentialService } from "./services/credential-service.ts";
 import { BucketAccessService } from "./services/bucket-access-service.ts";
 import { RateLimits } from "./security/rate-limits.ts";
 import { PublicLinkService } from "./services/public-link-service.ts";
+import { AuthorizationService } from "./services/authorization-service.ts";
+import { BucketPoliciesRepository } from "./db/repositories/bucket-policies.ts";
 import { PresignedUrlService } from "./services/presigned-url-service.ts";
 
 export interface AppContext {
@@ -60,6 +62,7 @@ export interface AppContext {
     driveTargets: DriveTargetsRepository;
     bucketMembers: BucketMembersRepository;
     publicObjectLinks: PublicObjectLinksRepository;
+    bucketPolicies: BucketPoliciesRepository;
     driveImports: DriveImportsRepository;
     settings: SettingsRepository;
     backupAccounts: BackupAccountsRepository;
@@ -77,6 +80,7 @@ export interface AppContext {
   rootFolder: RootFolderService;
   bucketService: BucketService;
   bucketAccess: BucketAccessService;
+  authorization: AuthorizationService;
   credentialService: CredentialService;
   publicLinkService: PublicLinkService;
   presignedUrlService: PresignedUrlService;
@@ -108,6 +112,7 @@ export function createContext(
   const driveTargets = new DriveTargetsRepository(db);
   const bucketMembers = new BucketMembersRepository(db);
   const publicObjectLinks = new PublicObjectLinksRepository(db);
+  const bucketPolicies = new BucketPoliciesRepository(db);
   const driveImports = new DriveImportsRepository(db);
   const settings = new SettingsRepository(db);
   const backupAccounts = new BackupAccountsRepository(db);
@@ -166,6 +171,7 @@ export function createContext(
       driveTargets,
       bucketMembers,
       publicObjectLinks,
+      bucketPolicies,
       driveImports,
       settings,
       backupAccounts,
@@ -191,6 +197,7 @@ export function createContext(
     rootFolder,
     bucketService,
     bucketAccess,
+    authorization: new AuthorizationService(buckets, bucketPolicies, users, bucketMembers, objects),
     credentialService,
     publicLinkService: new PublicLinkService(publicObjectLinks, config),
     presignedUrlService: new PresignedUrlService(config, credentials),

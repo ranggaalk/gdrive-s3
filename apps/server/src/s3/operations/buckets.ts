@@ -1,7 +1,8 @@
 // S3 bucket operations (AGENTS.md §11-13): ListBuckets, CreateBucket,
 // HeadBucket, DeleteBucket, ListObjects v1/v2, DeleteObjects.
 
-import type { S3RequestContext } from "../context.ts";
+import { requireUser, type S3RequestContext } from "../context.ts";
+import { authorizeBucket, verifyDriveAccess } from "../authorize.ts";
 import { S3Error } from "../errors.ts";
 import { tag, xmlDocument, xmlResponse } from "../xml.ts";
 import { isValidBucketName } from "../../util/bucket-name.ts";
@@ -16,33 +17,37 @@ import { uriEncode } from "../../auth/sigv4-canonical.ts";
 import type { AccessibleBucketRow } from "../../db/repositories/buckets.ts";
 
 export async function listBuckets(ctx: S3RequestContext): Promise<Response> {
-  const user = ctx.app.repos.users.findById(ctx.userId);
-  const buckets = ctx.app.bucketAccess.list(ctx.userId);
+  // Listing every bucket you can reach is inherently a question about *you*,
+  // so there is no anonymous form of it.
+  const userId = requireUser(ctx);
+  const user = ctx.app.repos.users.findById(userId);
+  const buckets = ctx.app.bucketAccess.list(userId);
   const bucketsXml = buckets
     .map((b) => `<Bucket>${tag("Name", b.name)}${tag("CreationDate", b.created_at)}</Bucket>`)
     .join("");
   const body = xmlDocument(
     "ListAllMyBucketsResult",
-    `<Owner>${tag("ID", ctx.userId)}${tag("DisplayName", user?.email ?? "")}</Owner>` +
+    `<Owner>${tag("ID", userId)}${tag("DisplayName", user?.email ?? "")}</Owner>` +
       `<Buckets>${bucketsXml}</Buckets>`,
   );
   return xmlResponse(body, 200, { "x-amz-request-id": ctx.requestId });
 }
 
 export async function createBucket(ctx: S3RequestContext, bucketName: string): Promise<Response> {
+  const userId = requireUser(ctx);
   if (!isValidBucketName(bucketName)) throw new S3Error("InvalidBucketName");
-  if (ctx.app.repos.buckets.hasAccessibleName(ctx.userId, bucketName)) {
+  if (ctx.app.repos.buckets.hasAccessibleName(userId, bucketName)) {
     throw new S3Error("BucketAlreadyOwnedByYou");
   }
   let bucket;
   try {
-    bucket = await ctx.app.bucketService.create(ctx.userId, bucketName);
+    bucket = await ctx.app.bucketService.create(userId, bucketName);
   } catch (err) {
     if (err instanceof BucketAlreadyOwnedError) throw new S3Error("BucketAlreadyOwnedByYou");
     throw err;
   }
   ctx.app.repos.audit.record({
-    userId: ctx.userId,
+    userId,
     credentialId: ctx.credentialId,
     action: "s3.CreateBucket",
     bucketName,
@@ -57,38 +62,29 @@ export async function createBucket(ctx: S3RequestContext, bucketName: string): P
 }
 
 export async function headBucket(ctx: S3RequestContext, bucketName: string): Promise<Response> {
-  const bucket = ctx.app.bucketAccess.findByName(ctx.userId, bucketName, "read");
-  if (!bucket) throw new S3Error("NoSuchBucket", { BucketName: bucketName });
-  try {
-    await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
-      bucket,
-      false,
-      ctx.signal ?? undefined,
-    );
-  } catch {
-    throw new S3Error("AccessDenied");
-  }
+  const authorized = authorizeBucket(ctx, bucketName, "s3:ListBucket");
+  await verifyDriveAccess(ctx, authorized, false);
   return new Response(null, { status: 200, headers: { "x-amz-request-id": ctx.requestId } });
 }
 
 export async function deleteBucket(ctx: S3RequestContext, bucketName: string): Promise<Response> {
+  const userId = requireUser(ctx);
   let bucket;
   try {
-    bucket = ctx.app.bucketAccess.findByName(ctx.userId, bucketName, "owner");
+    bucket = ctx.app.bucketAccess.findByName(userId, bucketName, "owner");
   } catch {
     throw new S3Error("AccessDenied");
   }
   if (!bucket) throw new S3Error("NoSuchBucket", { BucketName: bucketName });
   try {
-    await ctx.app.bucketService.delete(ctx.userId, bucket.id);
+    await ctx.app.bucketService.delete(userId, bucket.id);
   } catch (err) {
     if (err instanceof BucketNotEmptyError) throw new S3Error("BucketNotEmpty", { BucketName: bucketName });
     if (err instanceof BucketNotFoundError) throw new S3Error("NoSuchBucket", { BucketName: bucketName });
     throw err;
   }
   ctx.app.repos.audit.record({
-    userId: ctx.userId,
+    userId,
     credentialId: ctx.credentialId,
     action: "s3.DeleteBucket",
     bucketName,
@@ -111,19 +107,9 @@ async function resolveReadableBucket(
   ctx: S3RequestContext,
   bucketName: string,
 ): Promise<AccessibleBucketRow> {
-  const bucket = ctx.app.bucketAccess.findByName(ctx.userId, bucketName, "read");
-  if (!bucket) throw new S3Error("NoSuchBucket", { BucketName: bucketName });
-  try {
-    await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
-      bucket,
-      false,
-      ctx.signal ?? undefined,
-    );
-  } catch {
-    throw new S3Error("AccessDenied");
-  }
-  return bucket;
+  const authorized = authorizeBucket(ctx, bucketName, "s3:ListBucket");
+  await verifyDriveAccess(ctx, authorized, false);
+  return authorized.bucket;
 }
 
 function listingQuery(ctx: S3RequestContext): ListingQuery {

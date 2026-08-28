@@ -21,6 +21,9 @@ export interface ObjectUploadInput {
   body: ReadableStream<Uint8Array>;
   contentLength: number | null;
   metadata: ObjectMetadataHeaders;
+  /** Canned ACL for the object, carried through staging so it commits in the
+   *  same transaction that publishes the object. */
+  acl?: string;
   signal?: AbortSignal;
   verify?: (result: StreamingUploadResult) => void;
   ifAbsent?: boolean;
@@ -77,6 +80,7 @@ export class ObjectService {
         contentEncoding: input.metadata.contentEncoding,
         contentLanguage: input.metadata.contentLanguage,
         expiresAt: input.metadata.expiresAt,
+        acl: input.acl,
         oldDriveFileId: previous?.drive_file_id ?? null,
       });
 

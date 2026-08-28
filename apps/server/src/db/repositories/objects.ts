@@ -5,6 +5,14 @@
 import type { Database } from "bun:sqlite";
 import { newObjectId, nowIso } from "../../util/ids.ts";
 
+export type ObjectAclName =
+  | "private"
+  | "public-read"
+  | "public-read-write"
+  | "authenticated-read"
+  | "bucket-owner-read"
+  | "bucket-owner-full-control";
+
 export type ObjectStatus =
   | "active"
   | "missing"
@@ -29,6 +37,7 @@ export interface ObjectRow {
   content_encoding: string | null;
   content_language: string | null;
   expires_at: string | null;
+  acl: ObjectAclName;
   last_modified_at: string;
   created_at: string;
   updated_at: string;
@@ -53,6 +62,7 @@ export interface UpsertObjectInput {
   contentEncoding?: string | null;
   contentLanguage?: string | null;
   expiresAt?: string | null;
+  acl?: ObjectAclName;
 }
 
 export class ObjectKeyConflictError extends Error {}
@@ -122,8 +132,8 @@ export class ObjectsRepository {
              (id, bucket_id, object_key, drive_file_id, size_bytes, content_type,
               etag, checksum_sha256, storage_class, status, metadata_json,
               cache_control, content_disposition, content_encoding,
-              content_language, expires_at, last_modified_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              content_language, expires_at, acl, last_modified_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(bucket_id, object_key) DO UPDATE SET
              drive_file_id = excluded.drive_file_id,
              size_bytes = excluded.size_bytes,
@@ -137,6 +147,7 @@ export class ObjectsRepository {
              content_encoding = excluded.content_encoding,
              content_language = excluded.content_language,
              expires_at = excluded.expires_at,
+             acl = excluded.acl,
              last_modified_at = excluded.last_modified_at,
              updated_at = excluded.updated_at`,
         )
@@ -155,6 +166,7 @@ export class ObjectsRepository {
           input.contentEncoding ?? null,
           input.contentLanguage ?? null,
           input.expiresAt ?? null,
+          input.acl ?? "private",
           now,
           previous?.created_at ?? now,
           now,
@@ -251,6 +263,7 @@ export class ObjectsRepository {
           content_encoding: string | null;
           content_language: string | null;
           expires_at: string | null;
+          acl: string;
           status: string;
           drive_target_id: string | null;
         }, [string]>("SELECT * FROM object_staging WHERE id = ?")
@@ -277,8 +290,8 @@ export class ObjectsRepository {
              (id, bucket_id, object_key, drive_file_id, size_bytes, content_type,
               etag, checksum_sha256, storage_class, status, metadata_json,
               cache_control, content_disposition, content_encoding,
-              content_language, expires_at, last_modified_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              content_language, expires_at, acl, last_modified_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(bucket_id, object_key) DO UPDATE SET
              drive_file_id = excluded.drive_file_id,
              size_bytes = excluded.size_bytes,
@@ -292,6 +305,7 @@ export class ObjectsRepository {
              content_encoding = excluded.content_encoding,
              content_language = excluded.content_language,
              expires_at = excluded.expires_at,
+             acl = excluded.acl,
              last_modified_at = excluded.last_modified_at,
              updated_at = excluded.updated_at`,
         )
@@ -310,6 +324,7 @@ export class ObjectsRepository {
           staging.content_encoding,
           staging.content_language,
           staging.expires_at,
+          staging.acl,
           now,
           previous?.created_at ?? now,
           now,
@@ -511,6 +526,17 @@ export class ObjectsRepository {
     maxKeys: number;
   }): ListObjectsResult {
     return this.listObjects({ ...input, startAfter: input.afterKey });
+  }
+
+  setAcl(bucketId: string, objectKey: string, acl: ObjectAclName): boolean {
+    return (
+      this.db
+        .query(
+          `UPDATE objects SET acl = ?, updated_at = ?
+            WHERE bucket_id = ? AND object_key = ? AND status = 'active'`,
+        )
+        .run(acl, nowIso(), bucketId, objectKey).changes > 0
+    );
   }
 
   countActive(bucketId: string): number {

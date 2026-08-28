@@ -109,6 +109,7 @@ describe("loadConfig", () => {
       loginPerMinute: 10,
       credentialCreatePerHour: 20,
       signatureFailuresPerMinute: 30,
+      s3AnonymousRpsPerIp: 50,
       s3PublicRpsPerIp: 200,
       publicShareRpsPerIp: 50,
       mfaVerifyPerMinute: 8,

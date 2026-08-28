@@ -3,7 +3,7 @@
 
 import { rm, rmdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { S3RequestContext } from "../context.ts";
+import { requireUser, type S3RequestContext } from "../context.ts";
 import { S3Error } from "../errors.ts";
 import { withUploadLock } from "../../util/upload-lock.ts";
 import { streamingUpload } from "../../drive/upload-streaming.ts";
@@ -40,14 +40,14 @@ async function completeLocked(
 ): Promise<Response> {
   let bucket;
   try {
-    bucket = ctx.app.bucketAccess.findByName(ctx.userId, bucketName, "write");
+    bucket = ctx.app.bucketAccess.findByName(requireUser(ctx), bucketName, "write");
   } catch {
     throw new S3Error("AccessDenied");
   }
   if (!bucket) throw new S3Error("NoSuchBucket", { BucketName: bucketName });
   try {
     await ctx.app.bucketAccess.verifyActorAccess(
-      ctx.userId,
+      requireUser(ctx),
       bucket,
       true,
       ctx.signal ?? undefined,
@@ -109,11 +109,11 @@ async function completeLocked(
 
   const multiEtag = multipartEtag(selected);
   let uploadedFileId: string | null = null;
-  const slot = await ctx.app.driveLimits.upload(ctx.userId, ctx.signal ?? undefined);
+  const slot = await ctx.app.driveLimits.upload(requireUser(ctx), ctx.signal ?? undefined);
   try {
     const streamed = await streamingUpload({
       storage: ctx.app.driveStorage,
-      userId: ctx.userId,
+      userId: requireUser(ctx),
       bucketId: bucket.id,
       bucketFolderId: upload.drive_folder_id ?? bucket.drive_folder_id,
       objectId: staging.object_id,
@@ -149,7 +149,7 @@ async function completeLocked(
     await cleanupTempFiles(ctx, tempFiles);
 
     ctx.app.repos.audit.record({
-      userId: ctx.userId,
+      userId: requireUser(ctx),
       credentialId: ctx.credentialId,
       action: "s3.CompleteMultipartUpload",
       bucketName,
@@ -240,7 +240,7 @@ async function cleanupTempFiles(ctx: S3RequestContext, parts: MultipartPartRow[]
       dirs.add(dirname(part.temp_path));
     } catch {
       ctx.app.repos.pendingCleanup.enqueue({
-        userId: ctx.userId,
+        userId: requireUser(ctx),
         resourceType: "temp_file",
         resourceId: part.temp_path,
         reason: "multipart_complete_cleanup",
@@ -258,7 +258,7 @@ async function drainOldDriveFile(
 ): Promise<void> {
   try {
     await ctx.app.driveStorage.deleteFile({
-      userId: ctx.userId,
+      userId: requireUser(ctx),
       driveFileId,
       mode: ctx.app.config.s3DeleteMode,
       target,
