@@ -26,11 +26,11 @@ describe("Drive fault injection through the S3 surface", () => {
     const h = makeHarness({}, storage);
     contexts.push(h.ctx);
     const { credential } = auth(h, "quota@x.com");
-    await h.signAndSend({ method: "PUT", path: "/quota", ...credential });
+    await h.signAndSend({ method: "PUT", path: "/quota-fault", ...credential });
 
     const put = await h.signAndSend({
       method: "PUT",
-      path: "/quota/file.txt",
+      path: "/quota-fault/file.txt",
       body: "quota",
       ...credential,
     });

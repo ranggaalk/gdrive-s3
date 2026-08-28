@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { generateKeyPairSync } from "node:crypto";
 import { loadConfig, ConfigError } from "../../apps/server/src/config.ts";
 
 const key32 = Buffer.alloc(32, 7).toString("base64");
@@ -150,5 +151,77 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig(baseEnv({ S3_VIRTUAL_HOSTED_DOMAIN: "storage.example.com:8787" })),
     ).toThrow(ConfigError);
+  });
+});
+
+describe("drive quota config", () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const keyJson = JSON.stringify({
+    type: "service_account",
+    project_id: "quota-project",
+    client_email: "quota@quota-project.iam.gserviceaccount.com",
+    private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+  });
+
+  test("is disabled by default", () => {
+    const cfg = loadConfig(baseEnv());
+    expect(cfg.driveQuota.serviceAccount).toBeNull();
+    expect(cfg.driveQuota.projectId).toBe("");
+    expect(cfg.driveQuota.cacheSeconds).toBe(60);
+  });
+
+  test("takes the project id from the key file when not given one", () => {
+    const cfg = loadConfig(baseEnv({ GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON: keyJson }));
+    expect(cfg.driveQuota.projectId).toBe("quota-project");
+    expect(cfg.driveQuota.serviceAccount?.clientEmail).toBe(
+      "quota@quota-project.iam.gserviceaccount.com",
+    );
+  });
+
+  test("an explicit project id wins, so quota can live in another project", () => {
+    const cfg = loadConfig(
+      baseEnv({ GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON: keyJson, GOOGLE_QUOTA_PROJECT_ID: "other" }),
+    );
+    expect(cfg.driveQuota.projectId).toBe("other");
+  });
+
+  test("accepts the key base64-encoded", () => {
+    const cfg = loadConfig(
+      baseEnv({ GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON: Buffer.from(keyJson).toString("base64") }),
+    );
+    expect(cfg.driveQuota.serviceAccount).not.toBeNull();
+  });
+
+  test("refuses a project id with no credential to read it with", () => {
+    expect(() => loadConfig(baseEnv({ GOOGLE_QUOTA_PROJECT_ID: "p" }))).toThrow(ConfigError);
+  });
+
+  test("refuses a malformed service account key", () => {
+    expect(() => loadConfig(baseEnv({ GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON: "{}" }))).toThrow(
+      /Invalid quota service account key/,
+    );
+  });
+
+  test("refuses both inline and file forms at once", () => {
+    expect(() =>
+      loadConfig(
+        baseEnv({
+          GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON: keyJson,
+          GOOGLE_QUOTA_SERVICE_ACCOUNT_FILE: "/tmp/key.json",
+        }),
+      ),
+    ).toThrow(ConfigError);
+  });
+
+  test("refuses a cache window too short to be worth polling", () => {
+    expect(() =>
+      loadConfig(baseEnv({ GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON: keyJson, GOOGLE_QUOTA_CACHE_SECONDS: "5" })),
+    ).toThrow(/GOOGLE_QUOTA_CACHE_SECONDS/);
+  });
+
+  test("reports an unreadable key file instead of booting without quota", () => {
+    expect(() =>
+      loadConfig(baseEnv({ GOOGLE_QUOTA_SERVICE_ACCOUNT_FILE: "/nonexistent/key.json" })),
+    ).toThrow(/could not be read/);
   });
 });

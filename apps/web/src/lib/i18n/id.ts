@@ -158,6 +158,7 @@ export const id = {
     buckets: "Buckets",
     credentials: "S3 Credentials",
     backup: "Backup",
+    quota: "Kuota API",
     activity: "Activity",
     documentation: "Dokumentasi",
     settings: "Pengaturan",
@@ -781,6 +782,98 @@ export const id = {
     sessionExpiredTitle: "Sesi tidak berlaku",
     sessionExpiredDescription: "Sesi login sudah kedaluwarsa. Silakan masuk ulang.",
     backToLogin: "Kembali ke login",
+  },
+
+  quota: {
+    pageTitle: "Kuota API Drive",
+    loading: "Memuat kuota",
+    refresh: "Muat ulang",
+    refreshing: "Memuat ulang…",
+    loadFailed: "Gagal memuat kuota Drive.",
+
+    liveTitle: "Kuota permintaan (langsung dari Google)",
+    liveDescription:
+      "Batas dan pemakaian dibaca langsung dari project Google Cloud Anda, bukan perkiraan.",
+    liveProject: (projectId: string) => `Project ${projectId}`,
+    liveSampledAt: (time: string) => `Sampel Google per ${time}`,
+    liveLagNote:
+      "Google menerbitkan angka kuota dengan jeda beberapa menit, jadi sampel terakhir bisa sedikit tertinggal dari lalu lintas saat ini.",
+    liveTableMetric: "Metrik",
+    liveTableScope: "Cakupan",
+    liveTableLimit: "Batas",
+    liveTableConsumed: "Terpakai",
+    liveTableRemaining: "Sisa",
+    scopeProject: "Per project",
+    scopeUser: "Per pengguna",
+    scopeOther: "Lainnya",
+    unlimited: "Tanpa batas",
+    unknown: "Tidak diketahui",
+    unknownHint:
+      "Google tidak melaporkan pemakaian untuk batas ini. Angkanya dibiarkan kosong, bukan ditebak.",
+    perMinuteUnit: (value: number) => `${value.toLocaleString("id-ID")}/menit`,
+
+    notConfiguredTitle: "Kuota langsung belum dikonfigurasi",
+    notConfiguredBody:
+      "Respons Drive API tidak menyertakan header kuota, jadi sisa kuota permintaan hanya bisa dibaca dari project Google Cloud yang memiliki OAuth client ini.",
+    notConfiguredSteps: [
+      "Aktifkan Service Usage API dan Cloud Monitoring API di project tersebut.",
+      "Buat service account dengan role Monitoring Viewer dan Service Usage Consumer.",
+      "Isi GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON (atau _FILE) dan restart gateway.",
+    ],
+    liveFailedTitle: "Kuota langsung tidak bisa dibaca",
+
+    observedTitle: "Terpantau di gateway ini",
+    observedDescription:
+      "Dihitung dari setiap panggilan yang benar-benar dikirim ke Google, bukan perkiraan. Hanya mencakup lalu lintas gateway ini.",
+    observedSince: (time: string) => `Dihitung sejak ${time}`,
+    observedScopeNote:
+      "Kalau ada aplikasi lain memakai project Google Cloud yang sama, angka di sini lebih rendah daripada yang dihitung Google.",
+    windowLabel: (seconds: number) =>
+      seconds < 60
+        ? `${seconds} detik terakhir`
+        : seconds < 3600
+          ? `${Math.round(seconds / 60)} menit terakhir`
+          : seconds < 86_400
+            ? `${Math.round(seconds / 3600)} jam terakhir`
+            : `${Math.round(seconds / 86_400)} hari terakhir`,
+    windowRequests: "Permintaan",
+    windowRate: "Laju",
+    windowThrottled: "Ditolak kuota",
+    windowErrors: "Error lain",
+    kindApi: "Metadata",
+    kindUpload: "Upload",
+    kindDownload: "Download",
+
+    throttleTitle: "Penolakan kuota terakhir",
+    throttleDescription: "Saat Google benar-benar menolak permintaan karena rate limit.",
+    throttleEmpty: "Belum ada permintaan yang ditolak karena kuota.",
+    throttleRetryAfter: (seconds: number) => `Google minta tunggu ${seconds} detik`,
+    throttleNoRetryAfter: "Tanpa Retry-After",
+
+    usersTitle: "Pemakaian per pengguna (1 jam terakhir)",
+    usersDescription: "Hanya terlihat oleh admin.",
+    usersEmpty: "Belum ada aktivitas Drive dalam satu jam terakhir.",
+    usersTableUser: "Pengguna",
+    usersTableRequests: "Permintaan",
+    usersTableThrottled: "Ditolak",
+    usersTableLast: "Terakhir",
+
+    storageTitle: "Kuota penyimpanan Drive",
+    storageDescription: "Dibaca langsung dari akun Google Drive Anda.",
+    storageUsed: "Terpakai",
+    storageRemaining: "Sisa",
+    storageLimit: "Total",
+    storageTrash: "Di sampah",
+    storageUnlimited: "Akun ini tidak punya batas penyimpanan.",
+    storageFailed: (reason: string) => `Kuota penyimpanan tidak terbaca: ${reason}`,
+
+    concurrencyTitle: "Batas gateway sendiri",
+    concurrencyDescription:
+      "Batas ini diterapkan gateway sebelum permintaan sampai ke Google, agar kuota Google tidak terkuras satu pengguna.",
+    concurrencyUploads: "Upload bersamaan per pengguna",
+    concurrencyDownloads: "Download bersamaan per pengguna",
+    concurrencyApi: "Panggilan API bersamaan per pengguna",
+    concurrencyRetries: "Maksimum percobaan ulang",
   },
 
   security: {

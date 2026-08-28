@@ -64,11 +64,31 @@ export interface ListVersionsResult {
 
 /** Version ids sort lexicographically newest-first, so a listing needs no
  *  join against timestamps to order correctly. */
+// Writes landing in the same millisecond share an inverted clock value, so the
+// clock alone cannot order them. A sequence counter breaks those ties in write
+// order; without it two rapid overwrites sort at random and "the newest
+// version" becomes a coin flip.
+let lastVersionMs = -1;
+let versionSeq = 0;
+const MAX_SEQ = 0xffff;
+
 export function newVersionId(): string {
-  // Inverted millisecond clock, then randomness to break ties within a
-  // millisecond. Padded so string ordering matches numeric ordering.
-  const inverted = (9_999_999_999_999 - Date.now()).toString().padStart(13, "0");
-  return `v${inverted}${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  const nowMs = Date.now();
+  if (nowMs === lastVersionMs) {
+    // Clamping instead of rolling over keeps ordering monotonic: at worst the
+    // 65,537th write in one millisecond ties, as it did before this counter.
+    versionSeq = Math.min(MAX_SEQ, versionSeq + 1);
+  } else {
+    lastVersionMs = nowMs;
+    versionSeq = 0;
+  }
+
+  // Both clock and sequence are inverted so plain ASC string ordering yields
+  // newest-first; the random tail keeps ids unguessable.
+  const invertedMs = (9_999_999_999_999 - nowMs).toString().padStart(13, "0");
+  const invertedSeq = (MAX_SEQ - versionSeq).toString(16).padStart(4, "0");
+  const random = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  return `v${invertedMs}${invertedSeq}${random}`;
 }
 
 export class ObjectVersionsRepository {

@@ -11,6 +11,7 @@ import type { ObjectRow } from "../db/repositories/objects.ts";
 import type { DriveOperationTarget } from "../drive/storage.ts";
 import { BackupAccountService } from "./backup-account-service.ts";
 import { DriveClient } from "../drive/client.ts";
+import { meteredFetch } from "../drive/metered-fetch.ts";
 import { releaseWhenConsumed } from "../drive/stream-utils.ts";
 import type { AppContext } from "../context.ts";
 
@@ -109,7 +110,11 @@ export class BackupTransferService {
       let uploadedId: string;
       try {
         const token = await this.ctx.backupTokenProvider.getAccessToken(account.id, signal);
-        const client = new DriveClient(token, this.ctx.config.driveRetryMaxAttempts);
+        const client = new DriveClient(
+          token,
+          this.ctx.config.driveRetryMaxAttempts,
+          meteredFetch(this.ctx.driveQuotaMeter, account.owner_user_id),
+        );
         const uploaded = await client.uploadMedia(
           {
             name: object.object_key,

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DashboardServer } from "../../apps/server/src/routes/dashboard.ts";
 import { testConfig } from "../integration/_helpers.ts";
+import { isValidBucketName } from "../../apps/server/src/util/bucket-name.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -66,5 +67,41 @@ describe("DashboardServer", () => {
     expect(
       await dashboard.serve(new Request("http://x/__drives3_assets/nested/app.js")),
     ).toBeNull();
+  });
+});
+
+describe("dashboard SPA routes", () => {
+  // Every client-side section must survive a hard refresh. When a segment is
+  // missing here the request falls through to the S3 router and 404s, which is
+  // what /backup, /settings, and /security used to do.
+  const server = new DashboardServer(testConfig({ serveDashboard: true, staticRoot: makeRoot() }));
+
+  test.each([
+    "/overview",
+    "/buckets",
+    "/credentials",
+    "/activity",
+    "/documentation",
+    "/backup",
+    "/quota",
+    "/settings",
+    "/security",
+  ])("serves the dashboard on a refresh of %s", async (path) => {
+    const res = await server.serve(new Request(`http://localhost${path}`));
+    expect(res?.status).toBe(200);
+    expect(res?.headers.get("content-type")).toContain("text/html");
+  });
+
+  test("a dashboard route segment cannot be taken as a bucket name", () => {
+    for (const path of ["/overview", "/buckets", "/backup", "/quota", "/settings", "/security"]) {
+      expect(isValidBucketName(path.slice(1))).toBe(false);
+    }
+  });
+
+  test("a signed S3 request for that path is still routed to S3", async () => {
+    const res = await server.serve(
+      new Request("http://localhost/quota", { headers: { authorization: "AWS4-HMAC-SHA256 ..." } }),
+    );
+    expect(res).toBeNull();
   });
 });

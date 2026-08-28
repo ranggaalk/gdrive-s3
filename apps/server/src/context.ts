@@ -32,6 +32,8 @@ import { RuntimeSettingsService } from "./services/runtime-settings-service.ts";
 import { RootFolderService } from "./drive/root-folder.ts";
 import { GoogleDriveStorage, type DriveStorage } from "./drive/storage.ts";
 import { DriveLimits } from "./drive/limits.ts";
+import { DriveQuotaMeter } from "./drive/quota-meter.ts";
+import { DriveQuotaService } from "./services/drive-quota-service.ts";
 import { ReconcileService } from "./drive/reconcile.ts";
 import { BucketService } from "./services/bucket-service.ts";
 import { CredentialService } from "./services/credential-service.ts";
@@ -84,6 +86,8 @@ export interface AppContext {
   runtimeSettings: RuntimeSettingsService;
   driveStorage: DriveStorage;
   driveLimits: DriveLimits;
+  driveQuotaMeter: DriveQuotaMeter;
+  driveQuotaService: DriveQuotaService;
   reconcileService: ReconcileService;
   rootFolder: RootFolderService;
   bucketService: BucketService;
@@ -143,9 +147,17 @@ export function createContext(
     downloads: config.maxUserDownloads,
     apiRequests: config.maxUserDriveRequests,
   });
+  const driveQuotaMeter = new DriveQuotaMeter();
   const driveStorage: DriveStorage =
     storageOverride ??
-    new GoogleDriveStorage(tokenProvider, driveRoots, runtimeSettings, driveLimits, config.driveRetryMaxAttempts);
+    new GoogleDriveStorage(
+      tokenProvider,
+      driveRoots,
+      runtimeSettings,
+      driveLimits,
+      config.driveRetryMaxAttempts,
+      driveQuotaMeter,
+    );
   const rootFolder = new RootFolderService(driveStorage);
   const bucketService = new BucketService(
     buckets,
@@ -201,6 +213,8 @@ export function createContext(
     runtimeSettings,
     driveStorage,
     driveLimits,
+    driveQuotaMeter,
+    driveQuotaService: new DriveQuotaService(config, driveQuotaMeter, driveStorage),
     reconcileService: new ReconcileService(
       config,
       driveStorage,

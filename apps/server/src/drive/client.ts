@@ -9,6 +9,7 @@ import { withDriveRetry } from "./retry.ts";
 const DRIVE_FILES = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_DRIVES = "https://www.googleapis.com/drive/v3/drives";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+const DRIVE_ABOUT = "https://www.googleapis.com/drive/v3/about";
 const APP_FOLDER_MIME = "application/vnd.google-apps.folder";
 
 export type DriveFetch = typeof fetch;
@@ -30,6 +31,16 @@ export interface SharedDrivePage {
 
 export interface SharedDriveContext {
   driveId: string;
+}
+
+/** Live storage quota for the account behind the current access token. Byte
+ *  counts arrive as decimal strings; `limit` is absent on unlimited accounts. */
+export interface DriveStorageQuota {
+  limitBytes: number | null;
+  usageBytes: number;
+  usageInDriveBytes: number;
+  usageInDriveTrashBytes: number;
+  emailAddress: string | null;
 }
 
 export interface DriveFilePage {
@@ -317,6 +328,42 @@ export class DriveClient {
       if (err instanceof DriveError && err.status === 404) return null;
       throw err;
     }
+  }
+
+  /**
+   * Read the account's live storage quota. This is the one quota Google
+   * reports directly on a Drive call — request quotas are not exposed here
+   * and must come from the Cloud Monitoring probe instead.
+   */
+  async getStorageQuota(signal?: AbortSignal): Promise<DriveStorageQuota> {
+    const url = new URL(DRIVE_ABOUT);
+    url.searchParams.set("fields", "storageQuota,user(emailAddress)");
+    const res = await this.fetcher(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+      signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw classifyDriveResponse(res.status, text, res.headers.get("retry-after"));
+    }
+    const body = (await res.json()) as {
+      storageQuota?: {
+        limit?: string;
+        usage?: string;
+        usageInDrive?: string;
+        usageInDriveTrash?: string;
+      };
+      user?: { emailAddress?: string };
+    };
+    const quota = body.storageQuota ?? {};
+    return {
+      limitBytes: quota.limit === undefined ? null : Number(quota.limit),
+      usageBytes: Number(quota.usage ?? 0),
+      usageInDriveBytes: Number(quota.usageInDrive ?? 0),
+      usageInDriveTrashBytes: Number(quota.usageInDriveTrash ?? 0),
+      emailAddress: body.user?.emailAddress ?? null,
+    };
   }
 
   /**

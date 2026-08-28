@@ -27,6 +27,8 @@ import type {
   UploadObjectInput,
   UploadResumableChunkInput,
   UploadedObject,
+  StorageQuotaInput,
+  DriveStorageQuota,
 } from "./storage.ts";
 
 export type FaultKind =
@@ -89,6 +91,10 @@ export class FaultInjectingDriveStorage implements DriveStorage {
     const failure = this.tick(op);
     if (failure) throw failure;
     return run();
+  }
+
+  getStorageQuota(input: StorageQuotaInput): Promise<DriveStorageQuota> {
+    return this.invoke("getStorageQuota", () => this.inner.getStorageQuota(input));
   }
 
   listSharedDrives(input: ListSharedDrivesInput): Promise<SharedDriveListPage> {
