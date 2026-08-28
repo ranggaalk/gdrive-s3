@@ -826,7 +826,10 @@ export function ObjectsPage({
               ) : null}
               {versions.map((version) => (
                 <div key={version.versionId} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-                  <div className="min-w-0">
+                  {/* The badge row and the timestamp are two stacked lines, not
+                      one wrapped one -- without the gap they read as a single
+                      cramped block. */}
+                  <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       {/* S3 reports 'null' as the version id for objects written
                           while versioning was off; showing that literally reads
