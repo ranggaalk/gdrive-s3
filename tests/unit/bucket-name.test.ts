@@ -21,6 +21,10 @@ describe("isValidBucketName", () => {
     "credentials", // reserved dashboard route
     "activity", // reserved dashboard route
     "documentation", // reserved dashboard route
+    "backup", // reserved dashboard route
+    "quota", // reserved dashboard route
+    "settings", // reserved dashboard route
+    "security", // reserved dashboard route
     "overview", // reserved dashboard route
   ];
 

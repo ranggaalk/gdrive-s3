@@ -19,6 +19,10 @@ const DASHBOARD_ROUTE_SEGMENTS = new Set([
   "credentials",
   "activity",
   "documentation",
+  "backup",
+  "quota",
+  "settings",
+  "security",
 ]);
 
 function isDashboardRoutePath(path: string): boolean {

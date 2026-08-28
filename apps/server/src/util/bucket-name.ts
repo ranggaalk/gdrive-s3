@@ -12,6 +12,10 @@ const RESERVED_NAMES = new Set([
   "credentials",
   "activity",
   "documentation",
+  "backup",
+  "quota",
+  "settings",
+  "security",
 ]);
 
 export function isValidBucketName(name: string): boolean {
