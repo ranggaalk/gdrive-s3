@@ -219,6 +219,8 @@ export interface DriveQuota {
         projectId: string;
         rows: DriveQuotaRow[];
         sampledAt: string | null;
+        /** Why `consumed` is missing, when limits read but Monitoring did not. */
+        usageError: string | null;
         fetchedAt: string;
         error?: undefined;
       };

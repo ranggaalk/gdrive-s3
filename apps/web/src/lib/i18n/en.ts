@@ -795,6 +795,9 @@ export const en: Dictionary = {
       "Create a service account with the Monitoring Viewer and Service Usage Consumer roles.",
       "Set GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON (or _FILE) and restart the gateway.",
     ],
+    usageUnavailableTitle: "Limits only — Google reported no consumption",
+    usageUnavailableBody:
+      "The configured limits above came from Google, but Cloud Monitoring did not return usage, so what is consumed and remaining is unknown rather than estimated. Cloud Monitoring requires billing to be enabled on the project; the observed counters below still cover this gateway's own traffic.",
     liveFailedTitle: "Live quota couldn't be read",
 
     observedTitle: "Observed on this gateway",

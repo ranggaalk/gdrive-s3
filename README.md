@@ -248,7 +248,13 @@ This needs a read-only credential, separate from the user OAuth flow:
 2. Create a service account with the **Monitoring Viewer** and **Service Usage
    Consumer** roles. Both are read-only; neither can touch Drive data.
 3. Set `GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON` (raw or base64 JSON) or
-   `GOOGLE_QUOTA_SERVICE_ACCOUNT_FILE`, then restart.
+   `GOOGLE_QUOTA_SERVICE_ACCOUNT_FILE` (an absolute path — the server's working
+   directory is `apps/server`, so a relative one resolves there), then restart.
+
+Cloud Monitoring additionally requires **billing enabled** on the project. Without
+it the limits still read fine and the page shows them, but consumption and
+remaining stay *Unknown* with the reason spelled out — the gateway never fills
+that gap with an estimate. The observed counters below are unaffected.
 
 Without it the page still works — it just says live quota is unconfigured
 instead of inventing a remaining figure. Quota samples are cached for

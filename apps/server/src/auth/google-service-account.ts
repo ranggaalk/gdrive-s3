@@ -17,8 +17,18 @@ export class ServiceAccountError extends Error {}
 
 const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
 const JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
-/** Enough for Service Usage and Cloud Monitoring reads, and nothing else. */
-export const QUOTA_PROBE_SCOPE = "https://www.googleapis.com/auth/cloud-platform.read-only";
+/**
+ * Enough for Service Usage and Cloud Monitoring reads, and nothing else.
+ *
+ * Two scopes are required, not one. Cloud Monitoring rejects
+ * cloud-platform.read-only outright (ACCESS_TOKEN_SCOPE_INSUFFICIENT) and wants
+ * monitoring.read, while Service Usage does not accept monitoring.read. Both
+ * are read-only, so this is still the minimum that works.
+ */
+export const QUOTA_PROBE_SCOPE = [
+  "https://www.googleapis.com/auth/monitoring.read",
+  "https://www.googleapis.com/auth/cloud-platform.read-only",
+].join(" ");
 
 /**
  * Parse a service-account key file. Accepts the raw JSON Google hands out, or

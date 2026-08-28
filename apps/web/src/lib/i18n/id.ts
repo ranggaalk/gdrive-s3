@@ -820,6 +820,9 @@ export const id = {
       "Buat service account dengan role Monitoring Viewer dan Service Usage Consumer.",
       "Isi GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON (atau _FILE) dan restart gateway.",
     ],
+    usageUnavailableTitle: "Hanya batas — Google tidak melaporkan pemakaian",
+    usageUnavailableBody:
+      "Batas di atas berasal dari Google, tapi Cloud Monitoring tidak mengembalikan angka pemakaian, jadi terpakai dan sisanya dibiarkan tidak diketahui, bukan ditebak. Cloud Monitoring mensyaratkan billing aktif di project tersebut; penghitung di bawah tetap mencakup lalu lintas gateway ini sendiri.",
     liveFailedTitle: "Kuota langsung tidak bisa dibaca",
 
     observedTitle: "Terpantau di gateway ini",

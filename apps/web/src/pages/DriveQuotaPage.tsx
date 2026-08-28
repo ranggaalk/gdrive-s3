@@ -127,10 +127,21 @@ export function DriveQuotaPage() {
                   ))}
                 </TableBody>
               </Table>
-              <p className="text-xs text-muted-foreground">
-                {live.sampledAt ? `${t.quota.liveSampledAt(timeFormat(live.sampledAt))} — ` : ""}
-                {t.quota.liveLagNote}
-              </p>
+              {live.usageError ? (
+                <Alert variant="warning">
+                  <AlertTriangle />
+                  <AlertTitle>{t.quota.usageUnavailableTitle}</AlertTitle>
+                  <AlertDescription className="space-y-1">
+                    <p>{t.quota.usageUnavailableBody}</p>
+                    <p className="break-all font-mono text-xs opacity-80">{live.usageError}</p>
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {live.sampledAt ? `${t.quota.liveSampledAt(timeFormat(live.sampledAt))} — ` : ""}
+                  {t.quota.liveLagNote}
+                </p>
+              )}
             </>
           ) : (
             <Alert variant={live.configured ? "destructive" : "default"}>

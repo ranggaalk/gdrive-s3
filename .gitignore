@@ -7,3 +7,10 @@ dist/
 .env.local
 *.log
 .DS_Store
+
+# Service-account keys, and .env variants the bare `.env` line above misses
+# (.env.local, .env.bak.*). These carry live private keys.
+.env.*
+!.env.example
+gdrive-storage-*.json
+*service-account*.json
