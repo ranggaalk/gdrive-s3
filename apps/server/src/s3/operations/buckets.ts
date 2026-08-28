@@ -46,6 +46,12 @@ export async function createBucket(ctx: S3RequestContext, bucketName: string): P
     if (err instanceof BucketAlreadyOwnedError) throw new S3Error("BucketAlreadyOwnedByYou");
     throw err;
   }
+  // Object Lock requires versioning, so asking for it at creation turns both
+  // on together — and neither can be turned off afterwards.
+  if ((ctx.headers.get("x-amz-bucket-object-lock-enabled") ?? "").toLowerCase() === "true") {
+    ctx.app.repos.buckets.enableObjectLock(bucket.id);
+  }
+
   ctx.app.repos.audit.record({
     userId,
     credentialId: ctx.credentialId,

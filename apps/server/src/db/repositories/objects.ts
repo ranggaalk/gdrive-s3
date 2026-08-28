@@ -40,6 +40,9 @@ export interface ObjectRow {
   acl: ObjectAclName;
   /** 'null' for objects written while versioning was off, matching S3. */
   version_id: string;
+  lock_mode: "GOVERNANCE" | "COMPLIANCE" | null;
+  retain_until: string | null;
+  legal_hold: number;
   last_modified_at: string;
   created_at: string;
   updated_at: string;
@@ -290,6 +293,9 @@ export class ObjectsRepository {
           sse_wrapped_data_key: string | null;
           sse_iv: string | null;
           sse_customer_key_md5: string | null;
+          lock_mode: string | null;
+          retain_until: string | null;
+          legal_hold: number;
           status: string;
           drive_target_id: string | null;
         }, [string]>("SELECT * FROM object_staging WHERE id = ?")
@@ -349,8 +355,9 @@ export class ObjectsRepository {
                 expires_at, acl, is_delete_marker, is_latest,
                 sse_algorithm, sse_kms_key_id, sse_kms_key_version,
                 sse_wrapped_data_key, sse_iv, sse_customer_key_md5,
+                lock_mode, retain_until, legal_hold,
                 last_modified_at, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(bucket_id, object_key, version_id) DO NOTHING`,
           )
           .run(
@@ -377,6 +384,9 @@ export class ObjectsRepository {
             previousEncryption?.wrapped_data_key ?? null,
             previousEncryption?.iv ?? null,
             previousEncryption?.customer_key_md5 ?? null,
+            previous.lock_mode,
+            previous.retain_until,
+            previous.legal_hold,
             previous.last_modified_at,
             now,
           );
@@ -387,9 +397,10 @@ export class ObjectsRepository {
              (id, bucket_id, object_key, drive_file_id, size_bytes, content_type,
               etag, checksum_sha256, storage_class, status, metadata_json,
               cache_control, content_disposition, content_encoding,
-              content_language, expires_at, acl, version_id, last_modified_at,
+              content_language, expires_at, acl, version_id,
+              lock_mode, retain_until, legal_hold, last_modified_at,
               created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STANDARD', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(bucket_id, object_key) DO UPDATE SET
              drive_file_id = excluded.drive_file_id,
              size_bytes = excluded.size_bytes,
@@ -405,6 +416,9 @@ export class ObjectsRepository {
              expires_at = excluded.expires_at,
              acl = excluded.acl,
              version_id = excluded.version_id,
+             lock_mode = excluded.lock_mode,
+             retain_until = excluded.retain_until,
+             legal_hold = excluded.legal_hold,
              last_modified_at = excluded.last_modified_at,
              updated_at = excluded.updated_at`,
         )
@@ -425,6 +439,9 @@ export class ObjectsRepository {
           staging.expires_at,
           staging.acl,
           newVersionId,
+          staging.lock_mode,
+          staging.retain_until,
+          staging.legal_hold,
           now,
           previous?.created_at ?? now,
           now,
@@ -671,6 +688,36 @@ export class ObjectsRepository {
     maxKeys: number;
   }): ListObjectsResult {
     return this.listObjects({ ...input, startAfter: input.afterKey });
+  }
+
+  setLock(input: {
+    bucketId: string;
+    objectKey: string;
+    lockMode?: "GOVERNANCE" | "COMPLIANCE" | null;
+    retainUntil?: string | null;
+    legalHold?: boolean;
+  }): boolean {
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    if (input.lockMode !== undefined) {
+      sets.push("lock_mode = ?", "retain_until = ?");
+      values.push(input.lockMode, input.retainUntil ?? null);
+    }
+    if (input.legalHold !== undefined) {
+      sets.push("legal_hold = ?");
+      values.push(input.legalHold ? 1 : 0);
+    }
+    if (sets.length === 0) return false;
+    sets.push("updated_at = ?");
+    values.push(nowIso(), input.bucketId, input.objectKey);
+    return (
+      this.db
+        .query(
+          `UPDATE objects SET ${sets.join(", ")}
+            WHERE bucket_id = ? AND object_key = ? AND status = 'active'`,
+        )
+        .run(...(values as never[])).changes > 0
+    );
   }
 
   setAcl(bucketId: string, objectKey: string, acl: ObjectAclName): boolean {

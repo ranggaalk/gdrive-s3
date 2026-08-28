@@ -33,6 +33,8 @@ export interface ObjectUploadInput {
   versioning?: "Disabled" | "Enabled" | "Suspended";
   /** Version id for the new object. */
   versionId?: string;
+  /** Object Lock state to publish alongside the object. */
+  lock?: { mode: string | null; retainUntil: string | null; legalHold: boolean } | null;
   signal?: AbortSignal;
   verify?: (result: StreamingUploadResult) => void;
   ifAbsent?: boolean;
@@ -98,6 +100,7 @@ export class ObjectService {
         contentLanguage: input.metadata.contentLanguage,
         expiresAt: input.metadata.expiresAt,
         acl: input.acl,
+        lock: input.lock,
         sse: input.encryption
           ? {
               algorithm: input.encryption.algorithm,

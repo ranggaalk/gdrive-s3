@@ -25,6 +25,8 @@ export interface BucketRow {
   default_sse_algorithm: "AES256" | "aws:kms" | null;
   default_kms_key_id: string | null;
   versioning: BucketVersioning;
+  object_lock_enabled: number;
+  object_lock_default_json: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -173,6 +175,27 @@ export class BucketsRepository {
           ORDER BY b.created_at ASC`,
       )
       .all(name);
+  }
+
+  /** Enable Object Lock. There is deliberately no way to turn it off — a
+   *  retention guarantee that can be switched off is not a guarantee. */
+  enableObjectLock(bucketId: string): boolean {
+    return (
+      this.db
+        .query(
+          `UPDATE buckets SET object_lock_enabled = 1, versioning = 'Enabled', updated_at = ?
+            WHERE id = ?`,
+        )
+        .run(nowIso(), bucketId).changes > 0
+    );
+  }
+
+  setObjectLockDefault(bucketId: string, defaultJson: string | null): boolean {
+    return (
+      this.db
+        .query("UPDATE buckets SET object_lock_default_json = ?, updated_at = ? WHERE id = ?")
+        .run(defaultJson, nowIso(), bucketId).changes > 0
+    );
   }
 
   setVersioning(bucketId: string, versioning: BucketVersioning): boolean {

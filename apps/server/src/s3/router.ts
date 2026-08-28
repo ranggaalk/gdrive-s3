@@ -20,6 +20,7 @@ import { copyObject } from "./operations/copy-object.ts";
 import { postObject } from "./operations/post-object.ts";
 import * as aclPolicy from "./operations/acl-policy.ts";
 import * as versioning from "./operations/versioning.ts";
+import * as lock from "./operations/lock.ts";
 import { parseBoundary } from "./multipart-form.ts";
 import { clientIpFrom, type HasRequestIp } from "../util/client-ip.ts";
 import { retryAfterSeconds } from "../security/rate-limits.ts";
@@ -221,6 +222,11 @@ async function dispatch(
       if (ctx.method === "DELETE") return aclPolicy.deleteBucketPolicy(ctx, bucket);
       throw new S3Error("MethodNotAllowed");
     }
+    if (q.has("object-lock")) {
+      if (ctx.method === "GET") return lock.getObjectLockConfiguration(ctx, bucket);
+      if (ctx.method === "PUT") return lock.putObjectLockConfiguration(ctx, bucket);
+      throw new S3Error("MethodNotAllowed");
+    }
     if (q.has("versioning")) {
       if (ctx.method === "GET") return versioning.getBucketVersioning(ctx, bucket);
       if (ctx.method === "PUT") return versioning.putBucketVersioning(ctx, bucket);
@@ -253,6 +259,17 @@ async function dispatch(
     if (ctx.method === "HEAD") return buckets.headBucket(ctx, bucket);
     if (ctx.method === "POST" && q.has("delete")) return objects.deleteObjects(ctx, bucket);
     if (ctx.method === "DELETE") return buckets.deleteBucket(ctx, bucket);
+    throw new S3Error("MethodNotAllowed");
+  }
+
+  if (q.has("retention")) {
+    if (ctx.method === "GET") return lock.getObjectRetention(ctx, bucket, key);
+    if (ctx.method === "PUT") return lock.putObjectRetention(ctx, bucket, key);
+    throw new S3Error("MethodNotAllowed");
+  }
+  if (q.has("legal-hold")) {
+    if (ctx.method === "GET") return lock.getObjectLegalHold(ctx, bucket, key);
+    if (ctx.method === "PUT") return lock.putObjectLegalHold(ctx, bucket, key);
     throw new S3Error("MethodNotAllowed");
   }
 

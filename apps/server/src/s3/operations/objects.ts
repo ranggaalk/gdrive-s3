@@ -11,6 +11,13 @@ import {
 } from "../sse.ts";
 import { EncryptionService } from "../../services/encryption-service.ts";
 import { newVersionId } from "../../db/repositories/object-versions.ts";
+import {
+  assertDeletable,
+  bypassRequested,
+  evaluateDelete,
+  parseLockHeaders,
+  resolveDefaultRetention,
+} from "../object-lock.ts";
 import type { AccessibleBucketRow } from "../../db/repositories/buckets.ts";
 import type { ObjectRow } from "../../db/repositories/objects.ts";
 import { S3Error } from "../errors.ts";
@@ -64,6 +71,26 @@ export async function putObject(
   // A "Suspended" bucket keeps existing versions but writes the literal
   // 'null' version id, exactly as S3 does.
   const versionId = bucket.versioning === "Enabled" ? newVersionId() : "null";
+
+  // An explicit lock wins; otherwise the bucket default applies, which is what
+  // makes default retention a safety net rather than something each client has
+  // to remember.
+  const requestedLock = parseLockHeaders(ctx.headers);
+  const defaultRetention = requestedLock.mode
+    ? null
+    : resolveDefaultRetention(bucket.object_lock_default_json);
+  const lock = bucket.object_lock_enabled
+    ? {
+        mode: requestedLock.mode ?? defaultRetention?.mode ?? null,
+        retainUntil: requestedLock.retainUntil ?? defaultRetention?.retainUntil ?? null,
+        legalHold: requestedLock.legalHold,
+      }
+    : null;
+  if (!bucket.object_lock_enabled && (requestedLock.mode || requestedLock.legalHold)) {
+    throw new S3Error("InvalidRequest", {
+      Reason: "Object Lock is not enabled for this bucket.",
+    });
+  }
   const payload = preparePayload(ctx);
   const meta = parseObjectMetadata(ctx.headers);
   let uploaded;
@@ -76,6 +103,7 @@ export async function putObject(
       encryption,
       versioning: bucket.versioning,
       versionId,
+      lock,
       requestId: `${ctx.requestId}:put:${crypto.randomUUID()}`,
       body: payload.body,
       contentLength: payload.contentLength,
@@ -255,6 +283,21 @@ export async function deleteObject(
   }
 
   const existing = authorized.object;
+  if (existing) {
+    // A delete marker still hides the data rather than destroying it, so under
+    // versioning a lock does not block one. Without versioning the bytes would
+    // really go, which retention exists to prevent.
+    const wouldDestroy = bucket.versioning !== "Enabled";
+    if (wouldDestroy) {
+      assertDeletable(
+        evaluateDelete({
+          state: existing,
+          bypassGovernance: bypassRequested(ctx.headers),
+          isBucketOwner: ctx.userId !== null && ctx.userId === bucket.user_id,
+        }),
+      );
+    }
+  }
   let deleteMarkerVersionId: string | null = null;
   // Deleting a non-existent object is idempotent success in S3.
   if (existing) {
@@ -341,6 +384,9 @@ async function getObjectVersion(
       expires_at: archived.expires_at,
       acl: archived.acl as ObjectRow["acl"],
       version_id: archived.version_id,
+      lock_mode: archived.lock_mode,
+      retain_until: archived.retain_until,
+      legal_hold: archived.legal_hold,
       last_modified_at: archived.last_modified_at,
       created_at: archived.created_at,
       updated_at: archived.created_at,
@@ -426,9 +472,16 @@ async function deleteObjectVersion(
   const { bucket } = authorized;
   const versions = ctx.app.repos.objectVersions;
   const headers = new Headers({ "x-amz-request-id": ctx.requestId });
+  const isOwner = ctx.userId !== null && ctx.userId === bucket.user_id;
+  const bypass = bypassRequested(ctx.headers);
 
   const current = ctx.app.repos.objects.findByKey(bucket.id, key);
   if (current && current.version_id === versionId) {
+    // Deleting a specific version destroys its bytes outright, so the lock
+    // applies here even under versioning.
+    assertDeletable(
+      evaluateDelete({ state: current, bypassGovernance: bypass, isBucketOwner: isOwner }),
+    );
     // Removing the live version: drop it, then promote the newest archived one.
     ctx.app.repos.objects.deleteAndQueueCleanup({
       userId: bucket.user_id,
@@ -444,6 +497,9 @@ async function deleteObjectVersion(
 
   const archived = versions.find(bucket.id, key, versionId);
   if (!archived) throw new S3Error("NoSuchVersion", { VersionId: versionId });
+  assertDeletable(
+    evaluateDelete({ state: archived, bypassGovernance: bypass, isBucketOwner: isOwner }),
+  );
 
   versions.delete(bucket.id, key, versionId);
   if (archived.is_delete_marker === 1) {
