@@ -103,9 +103,10 @@ passing test, so nothing is marked supported on faith.
 
 | Supported | Not supported |
 |---|---|
-| Path-style (default) and virtual-hosted (opt-in) endpoints | Object Lock and Legal Hold |
-| Core object CRUD, `ListObjectsV2`, byte-range and conditional GET | Cross-user `CopyObject` between unrelated My Drive accounts |
+| Path-style (default) and virtual-hosted (opt-in) endpoints | Cross-user `CopyObject` between unrelated My Drive accounts |
+| Core object CRUD, `ListObjectsV2`, byte-range and conditional GET | |
 | Multipart upload, `CopyObject` (same actor) | |
+| Object Lock and Legal Hold | |
 | SigV4 header and presigned-query auth | |
 | Object versioning with delete markers | |
 | SigV4A (`AWS4-ECDSA-P256-SHA256`), header and presigned-query | |

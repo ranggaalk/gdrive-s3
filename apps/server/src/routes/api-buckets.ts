@@ -307,6 +307,10 @@ export async function handleBuckets(
           defaultKmsKeyId: bucket.default_kms_key_id,
           versioning: bucket.versioning,
           retainedVersions: ctx.repos.objectVersions.countForBucket(bucket.id),
+          objectLockEnabled: !!bucket.object_lock_enabled,
+          objectLockDefault: bucket.object_lock_default_json
+            ? (JSON.parse(bucket.object_lock_default_json) as unknown)
+            : null,
         },
         requestId,
       );
@@ -321,6 +325,8 @@ export async function handleBuckets(
           defaultSseAlgorithm?: unknown;
           defaultKmsKeyId?: unknown;
           versioning?: unknown;
+          objectLockEnabled?: unknown;
+          objectLockDefault?: unknown;
         }>(ctx, req);
       } catch (error) {
         const mapped = mapBodyReadError(error, requestId);
@@ -387,6 +393,51 @@ export async function handleBuckets(
         }
       }
 
+      // Object Lock is one-way: enabling it also turns versioning on, and
+      // there is deliberately no path back. A retention guarantee that can be
+      // switched off is not a guarantee.
+      if (body?.objectLockEnabled === true && !bucket.object_lock_enabled) {
+        ctx.repos.buckets.enableObjectLock(bucket.id);
+        ctx.repos.audit.record({
+          userId,
+          action: "bucket.object_lock.enable",
+          bucketName: bucket.name,
+          bucketId: bucket.id,
+          statusCode: 200,
+          requestId,
+        });
+      }
+
+      if (body?.objectLockDefault !== undefined) {
+        const value = body.objectLockDefault;
+        if (value === null) {
+          ctx.repos.buckets.setObjectLockDefault(bucket.id, null);
+        } else if (
+          typeof value === "object" &&
+          typeof (value as { mode?: unknown }).mode === "string" &&
+          typeof (value as { days?: unknown }).days === "number"
+        ) {
+          const { mode, days } = value as { mode: string; days: number };
+          if ((mode !== "GOVERNANCE" && mode !== "COMPLIANCE") || !(days > 0)) {
+            return apiError("INVALID", "Default retention tidak valid.", 400, requestId);
+          }
+          if (!ctx.bucketAccess.findById(userId, bucketId, "owner")?.object_lock_enabled) {
+            return apiError("INVALID", "Aktifkan Object Lock terlebih dahulu.", 400, requestId);
+          }
+          ctx.repos.buckets.setObjectLockDefault(bucket.id, JSON.stringify({ mode, days }));
+        } else {
+          return apiError("INVALID", "Default retention tidak valid.", 400, requestId);
+        }
+        ctx.repos.audit.record({
+          userId,
+          action: "bucket.object_lock.default",
+          bucketName: bucket.name,
+          bucketId: bucket.id,
+          statusCode: 200,
+          requestId,
+        });
+      }
+
       // Versioning. Once on, S3 has no way back to Disabled — Suspended is
       // the off switch, and it keeps existing versions.
       if (body?.versioning !== undefined) {
@@ -451,6 +502,10 @@ export async function handleBuckets(
           defaultKmsKeyId: updated.default_kms_key_id,
           versioning: updated.versioning,
           retainedVersions: ctx.repos.objectVersions.countForBucket(updated.id),
+          objectLockEnabled: !!updated.object_lock_enabled,
+          objectLockDefault: updated.object_lock_default_json
+            ? (JSON.parse(updated.object_lock_default_json) as unknown)
+            : null,
         },
         requestId,
       );

@@ -334,7 +334,11 @@ export interface BucketAccessConfig {
   versioning: BucketVersioning;
   /** How many superseded versions and delete markers the bucket holds. */
   retainedVersions: number;
+  objectLockEnabled: boolean;
+  objectLockDefault: { mode: LockMode; days: number } | null;
 }
+
+export type LockMode = "GOVERNANCE" | "COMPLIANCE";
 
 export type BucketVersioning = "Disabled" | "Enabled" | "Suspended";
 
@@ -425,6 +429,8 @@ export const updateBucketAccess = async (
     defaultSseAlgorithm?: SseAlgorithm | null;
     defaultKmsKeyId?: string | null;
     versioning?: Exclude<BucketVersioning, "Disabled">;
+    objectLockEnabled?: true;
+    objectLockDefault?: { mode: LockMode; days: number } | null;
   },
 ) => unwrap<BucketAccessConfig>(await fetch(
   `/api/buckets/${encodeURIComponent(bucketId)}/access`,

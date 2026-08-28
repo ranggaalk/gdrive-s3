@@ -62,6 +62,7 @@ export const id = {
     kmsFailed: "Aksi kunci enkripsi gagal",
     versionsPruned: "Versi lama dihapus",
     versionsFailed: "Gagal menghapus versi",
+    objectLockEnabled: "Object Lock diaktifkan",
     accessSaved: "Pengaturan akses disimpan",
     accessFailed: "Gagal menyimpan pengaturan akses",
     presignedPostCreated: "Form upload dibuat",
@@ -251,6 +252,20 @@ export const id = {
     policyTemplateLabel: "Sisipkan contoh",
     policyTemplatePublicRead: "Publik baca objek",
     policyTemplateGrantUser: "Beri akses satu pengguna",
+    lockLabel: "Object Lock",
+    lockHelp:
+      "Melindungi versi objek agar tidak bisa dihapus. Sekali aktif tidak bisa dimatikan dan otomatis menyalakan versioning.",
+    lockEnable: "Aktifkan Object Lock",
+    lockEnabled: "Aktif",
+    lockIrreversible: "Tindakan ini permanen.",
+    lockDefaultLabel: "Retention default",
+    lockDefaultNone: "Tidak ada — atur per objek",
+    lockModeGovernance: "GOVERNANCE — bisa di-bypass pemilik bucket",
+    lockModeCompliance: "COMPLIANCE — tidak bisa di-bypass siapa pun",
+    lockDefaultDaysLabel: "Lama retention (hari)",
+    lockConfirmTitle: "Aktifkan Object Lock?",
+    lockConfirmDescription:
+      "Object Lock tidak bisa dimatikan lagi setelah aktif, dan versioning ikut dinyalakan permanen. Versi dengan retention COMPLIANCE tidak akan bisa dihapus siapa pun sampai masa retention berakhir.",
     versioningLabel: "Versioning objek",
     versioningHelp:
       "Menyimpan versi lama saat objek ditimpa atau dihapus. Sekali aktif hanya bisa disuspend, tidak bisa dimatikan.",
