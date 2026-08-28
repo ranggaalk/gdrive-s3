@@ -437,6 +437,16 @@ export const updateBucketAccess = async (
   mutate("PUT", changes),
 ));
 
+export const copyObjectTo = async (
+  bucketId: string,
+  objectId: string,
+  targetBucketId: string,
+  targetKey: string,
+) => unwrap<{ key: string; bucketId: string; size: number }>(await fetch(
+  `/api/buckets/${encodeURIComponent(bucketId)}/objects/${encodeURIComponent(objectId)}/copy`,
+  mutate("POST", { targetBucketId, targetKey }),
+));
+
 export const listObjectVersions = async (bucketId: string, objectId: string) =>
   unwrap<ObjectVersion[]>(await fetch(
     `/api/buckets/${encodeURIComponent(bucketId)}/objects/${encodeURIComponent(objectId)}/versions`,

@@ -129,7 +129,17 @@ export const COMPAT_MATRIX: readonly CompatRow[] = [
       "success_action_status dan success_action_redirect didukung; body di-stream, " +
       "tidak pernah dibuffer penuh.",
   },
-  { feature: "CopyObject with byte range / cross-user", status: "unsupported" },
+  {
+    feature: "CopyObject with byte range / cross-user",
+    status: "supported",
+    verifiedBy: ["unit"],
+    notes:
+      "UploadPartCopy dengan x-amz-copy-source-range, copy lintas pemilik bila " +
+      "bucket policy/ACL mengizinkan, kondisi x-amz-copy-source-if-*, dan " +
+      "?versionId pada sumber. Byte dibaca dengan token pemilik bucket sumber " +
+      "dan ditulis dengan token pemilik bucket tujuan. Enkripsi tujuan " +
+      "mengikuti aturan bucket tujuan, bukan sumber.",
+  },
   {
     feature: "SSE-KMS / Server-side encryption",
     status: "supported",

@@ -184,6 +184,58 @@ export async function handleObjects(
     return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
   }
 
+  if (segments.length === 2 && action === "copy" && req.method === "POST") {
+    let body;
+    try {
+      body = await readObjectJson<{ targetBucketId?: unknown; targetKey?: unknown }>(
+        ctx,
+        req,
+        requestId,
+      );
+    } catch (error) {
+      const mapped = mapBodyReadError(error, requestId);
+      if (mapped) return mapped;
+      throw error;
+    }
+    if (body.response) return body.response;
+    const targetBucketId = body.value?.targetBucketId;
+    const targetKey = body.value?.targetKey;
+    if (typeof targetBucketId !== "string" || typeof targetKey !== "string" || !targetKey.trim()) {
+      return apiError("INVALID", "Bucket dan key tujuan wajib diisi.", 400, requestId);
+    }
+
+    // Write access to the target is checked here; read access to the source
+    // was already established by reaching this handler.
+    const target = ctx.bucketAccess.findById(userId, targetBucketId, "write");
+    if (!target) return apiError("NOT_FOUND", "Bucket tujuan tidak ditemukan.", 404, requestId);
+
+    try {
+      const copied = await ctx.objectCopyService.copy({
+        actorUserId: userId,
+        sourceBucket: bucket,
+        sourceObject: object,
+        targetBucket: target,
+        targetKey: targetKey.trim(),
+        requestId,
+        signal: req.signal,
+      });
+      ctx.repos.audit.record({
+        userId,
+        action: "object.copy",
+        bucketName: target.name,
+        bucketId: target.id,
+        objectKey: targetKey.trim(),
+        statusCode: 201,
+        bytesIn: copied.size,
+        requestId,
+        detail: { sourceBucket: bucket.name, sourceKey: object.object_key },
+      });
+      return ok({ key: targetKey.trim(), bucketId: target.id, size: copied.size }, requestId, 201);
+    } catch (error) {
+      return mapObjectError(error, requestId);
+    }
+  }
+
   if (segments.length === 2 && action === "presigned-links" && req.method === "POST") {
     if (bucket.effective_role !== "owner") {
       return apiError("ACCESS_DENIED", "Hanya pemilik bucket dapat membuat public link.", 403, requestId);
