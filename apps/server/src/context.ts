@@ -33,6 +33,7 @@ import { RootFolderService } from "./drive/root-folder.ts";
 import { GoogleDriveStorage, type DriveStorage } from "./drive/storage.ts";
 import { DriveLimits } from "./drive/limits.ts";
 import { DriveQuotaMeter } from "./drive/quota-meter.ts";
+import type { FetchLike } from "./util/fetch-like.ts";
 import { DriveQuotaService } from "./services/drive-quota-service.ts";
 import { ReconcileService } from "./drive/reconcile.ts";
 import { BucketService } from "./services/bucket-service.ts";
@@ -87,6 +88,9 @@ export interface AppContext {
   driveStorage: DriveStorage;
   driveLimits: DriveLimits;
   driveQuotaMeter: DriveQuotaMeter;
+  /** The fetch backup services issue Drive calls through. Injectable so those
+   *  paths can be tested without reaching Google. */
+  driveFetch: FetchLike;
   driveQuotaService: DriveQuotaService;
   reconcileService: ReconcileService;
   rootFolder: RootFolderService;
@@ -214,6 +218,7 @@ export function createContext(
     driveStorage,
     driveLimits,
     driveQuotaMeter,
+    driveFetch: fetch,
     driveQuotaService: new DriveQuotaService(config, driveQuotaMeter, driveStorage),
     reconcileService: new ReconcileService(
       config,

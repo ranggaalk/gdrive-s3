@@ -113,7 +113,7 @@ export class BackupTransferService {
         const client = new DriveClient(
           token,
           this.ctx.config.driveRetryMaxAttempts,
-          meteredFetch(this.ctx.driveQuotaMeter, account.owner_user_id),
+          meteredFetch(this.ctx.driveQuotaMeter, account.owner_user_id, this.ctx.driveFetch),
         );
         const uploaded = await client.uploadMedia(
           {
