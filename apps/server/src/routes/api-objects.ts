@@ -7,6 +7,9 @@ import {
 } from "../services/presigned-url-service.ts";
 import { S3Error } from "../s3/errors.ts";
 import { validateObjectKey } from "../s3/key.ts";
+import { DriveError } from "../drive/errors.ts";
+import { TokenRevokedError, TokenUndecryptableError } from "../drive/oauth-token.ts";
+import { resolveWriteOptions } from "../services/write-options.ts";
 import { parseObjectMetadata } from "../s3/metadata.ts";
 import { apiError, mapBodyReadError, ok, readJson } from "./api-helpers.ts";
 import { isPreviewableContentType, objectResponseHeaders } from "./object-http.ts";
@@ -46,6 +49,10 @@ export async function handleObjects(
         return apiError("INVALID", "Content-Length tidak valid.", 400, requestId);
       }
       try {
+        // Versioning, default encryption, and Object Lock are bucket
+        // properties, so a dashboard upload must honour them exactly as an S3
+        // PUT does.
+        const write = resolveWriteOptions(ctx, bucket);
         const uploaded = await service.upload({
           actorUserId: userId,
           bucket,
@@ -54,6 +61,10 @@ export async function handleObjects(
           body: req.body,
           contentLength: declared,
           metadata: parseDashboardMetadata(req.headers),
+          versioning: write.versioning,
+          versionId: write.versionId,
+          encryption: write.encryption,
+          lock: write.lock,
           signal: req.signal,
         });
         ctx.repos.audit.record({
@@ -68,7 +79,7 @@ export async function handleObjects(
         });
         return ok(objectView(uploaded.current), requestId, 201);
       } catch (error) {
-        return mapObjectError(error, requestId);
+        return mapObjectError(error, requestId, ctx);
       }
     }
     return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
@@ -115,7 +126,7 @@ export async function handleObjects(
       });
       return ok({ id: object.id, deleted: true }, requestId);
     } catch (error) {
-      return mapObjectError(error, requestId);
+      return mapObjectError(error, requestId, ctx);
     }
   }
 
@@ -232,7 +243,7 @@ export async function handleObjects(
       });
       return ok({ key: targetKey.trim(), bucketId: target.id, size: copied.size }, requestId, 201);
     } catch (error) {
-      return mapObjectError(error, requestId);
+      return mapObjectError(error, requestId, ctx);
     }
   }
 
@@ -429,7 +440,7 @@ export async function handleObjects(
       });
       return new Response(downloaded.body, { status: downloaded.status, headers });
     } catch (error) {
-      return mapObjectError(error, requestId);
+      return mapObjectError(error, requestId, ctx);
     }
   }
 
@@ -518,7 +529,15 @@ function parseContentLength(value: string | null): number | null | "invalid" {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : "invalid";
 }
 
-function mapObjectError(error: unknown, requestId: string): Response {
+function mapObjectError(error: unknown, requestId: string, ctx?: AppContext): Response {
+  // Without this the only trace of a failed upload was a generic message in
+  // the browser, with nothing written down anywhere to diagnose it from.
+  ctx?.log.error("object operation failed", {
+    requestId,
+    error: error instanceof Error ? error.message : String(error),
+    kind: error instanceof Error ? error.name : typeof error,
+    ...(error instanceof DriveError ? { driveCategory: error.category, driveStatus: error.status } : {}),
+  });
   if (error instanceof ObjectAccessError) {
     return apiError("ACCESS_DENIED", "Akses objek ditolak.", 403, requestId);
   }
@@ -535,6 +554,39 @@ function mapObjectError(error: unknown, requestId: string): Response {
       return response;
     }
     return apiError("INVALID", error.message, error.status, requestId);
+  }
+  // Google no longer accepts the stored grant. This is the single most likely
+  // cause of an upload failing on a previously working deployment, since
+  // unverified apps get refresh tokens that expire after seven days.
+  if (error instanceof TokenRevokedError || error instanceof TokenUndecryptableError) {
+    return apiError(
+      "DRIVE_REAUTHORIZATION_REQUIRED",
+      "Koneksi Google Drive kedaluwarsa. Hubungkan ulang akun Google Anda dari halaman Overview.",
+      409,
+      requestId,
+    );
+  }
+  if (error instanceof DriveError) {
+    // Tell the operator which Drive condition they actually hit; "operation
+    // failed" gives them nothing to act on.
+    if (error.category === "quota_exceeded") {
+      return apiError("DRIVE_QUOTA", "Kuota Google Drive habis.", 507, requestId);
+    }
+    if (error.category === "rate_limit") {
+      return apiError("DRIVE_RATE_LIMIT", "Google Drive membatasi laju permintaan. Coba lagi.", 503, requestId);
+    }
+    if (error.category === "unauthorized" || error.category === "forbidden") {
+      return apiError(
+        "DRIVE_REAUTHORIZATION_REQUIRED",
+        "Akses Google Drive ditolak. Hubungkan ulang akun Google Anda.",
+        409,
+        requestId,
+      );
+    }
+    if (error.category === "not_found") {
+      return apiError("NOT_FOUND", "Folder atau file Drive tidak ditemukan.", 404, requestId);
+    }
+    return apiError("DRIVE_ERROR", `Google Drive menolak permintaan (${error.category}).`, 502, requestId);
   }
   return apiError("DRIVE_ERROR", "Operasi objek gagal.", 502, requestId);
 }

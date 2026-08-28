@@ -11,13 +11,8 @@ import {
 } from "../sse.ts";
 import { EncryptionService } from "../../services/encryption-service.ts";
 import { newVersionId } from "../../db/repositories/object-versions.ts";
-import {
-  assertDeletable,
-  bypassRequested,
-  evaluateDelete,
-  parseLockHeaders,
-  resolveDefaultRetention,
-} from "../object-lock.ts";
+import { resolveWriteOptions } from "../../services/write-options.ts";
+import { assertDeletable, bypassRequested, evaluateDelete } from "../object-lock.ts";
 import type { AccessibleBucketRow } from "../../db/repositories/buckets.ts";
 import type { ObjectRow } from "../../db/repositories/objects.ts";
 import { S3Error } from "../errors.ts";
@@ -57,40 +52,15 @@ export async function putObject(
   if (ctx.headers.has("x-amz-copy-source")) throw new S3Error("NotImplemented");
 
   const acl = requestedAcl(ctx);
-  const sseRequest = parseSseRequest(ctx.headers);
   const authorized = authorizeBucket(ctx, bucketName, "s3:PutObject", key);
   const { bucket } = authorized;
   await verifyDriveAccess(ctx, authorized, true);
-  // The bucket owner's key catalogue backs the encryption, since the bytes
-  // land in their Drive regardless of who is writing.
-  const encryption = new EncryptionService(ctx.app).planFor({
-    ownerUserId: bucket.user_id,
-    bucket,
-    request: sseRequest,
-  });
   // A "Suspended" bucket keeps existing versions but writes the literal
   // 'null' version id, exactly as S3 does.
-  const versionId = bucket.versioning === "Enabled" ? newVersionId() : "null";
-
-  // An explicit lock wins; otherwise the bucket default applies, which is what
-  // makes default retention a safety net rather than something each client has
-  // to remember.
-  const requestedLock = parseLockHeaders(ctx.headers);
-  const defaultRetention = requestedLock.mode
-    ? null
-    : resolveDefaultRetention(bucket.object_lock_default_json);
-  const lock = bucket.object_lock_enabled
-    ? {
-        mode: requestedLock.mode ?? defaultRetention?.mode ?? null,
-        retainUntil: requestedLock.retainUntil ?? defaultRetention?.retainUntil ?? null,
-        legalHold: requestedLock.legalHold,
-      }
-    : null;
-  if (!bucket.object_lock_enabled && (requestedLock.mode || requestedLock.legalHold)) {
-    throw new S3Error("InvalidRequest", {
-      Reason: "Object Lock is not enabled for this bucket.",
-    });
-  }
+  // Same resolver the dashboard and copy paths use, so a bucket's versioning,
+  // encryption, and lock settings cannot apply on one route and not another.
+  const write = resolveWriteOptions(ctx.app, bucket, ctx.headers);
+  const { versionId, lock, encryption } = write;
   const payload = preparePayload(ctx);
   const meta = parseObjectMetadata(ctx.headers);
   let uploaded;

@@ -203,7 +203,7 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
                   <TableRowHeader>{item.feature}</TableRowHeader>
                   <TableCell><Badge variant={statusVariant[item.status]}>{statusLabel[item.status]}</Badge></TableCell>
                   <TableCell>{item.verifiedBy && item.verifiedBy.length > 0 ? item.verifiedBy.join(", ") : "-"}</TableCell>
-                  <TableCell className="min-w-52 text-muted-foreground">{item.notes ?? ""}</TableCell>
+                  <TableCell className="min-w-52 text-muted-foreground">{t.compatNotes[item.feature] ?? item.notes ?? ""}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

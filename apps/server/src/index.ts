@@ -5,7 +5,7 @@ import { mkdirSync } from "node:fs";
 import { loadConfig } from "./config.ts";
 import { createLogger, newRequestId } from "./observability/logger.ts";
 import { openDatabase } from "./db/connection.ts";
-import { runMigrations } from "./db/migrate.ts";
+import { findSchemaDrift, runMigrations } from "./db/migrate.ts";
 import { handleLive, handleReady } from "./routes/health.ts";
 import { createContext } from "./context.ts";
 import { handleAuthCallback, handleAuthStart, handleLogout } from "./routes/auth.ts";
@@ -53,6 +53,22 @@ function main(): void {
     applied: migrateResult.applied,
     currentVersion: migrateResult.currentVersion,
   });
+
+  // A migration edited after it was applied is recorded as done and never
+  // re-run, so the schema silently drifts and only fails later at some
+  // unrelated query. Refuse to serve rather than hand out confusing runtime
+  // errors.
+  const drift = findSchemaDrift(db);
+  if (drift.length > 0) {
+    log.error("database schema does not match the migrations", { drift });
+    process.stderr.write(
+      `Database schema drift detected:\n  ${drift.join("\n  ")}\n` +
+        "The database is missing schema the migrations describe. This happens when a\n" +
+        "migration is modified after it has already been applied. Add the change as a\n" +
+        "new migration file instead.\n",
+    );
+    process.exit(1);
+  }
 
   const ctx = createContext(config, db, log);
   const recovered = recoverStaleStaging(ctx);

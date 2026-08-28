@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { HardDrive, PackageOpen, Plus, Share2, Trash2, Users } from "lucide-react";
+import { HardDrive, PackageOpen, Plus, Settings2, Share2, Trash2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -198,7 +198,9 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const openAccess = async (bucket: Bucket) => {
     setAccessBucket(bucket);
     setMemberEmail("");
-    setAccessTab("members");
+    // Members are a Shared Drive concept; a My Drive bucket has only the ACL,
+    // policy, versioning, encryption, and lock settings.
+    setAccessTab(bucket.storageKind === "shared_drive" ? "members" : "policy");
     setPolicyError(null);
     setError(null);
     try {
@@ -342,7 +344,7 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
                 <TableCell><div className="flex min-w-40 items-center gap-2">{bucket.storageKind === "shared_drive" ? <Share2 className="size-4 text-muted-foreground" /> : <HardDrive className="size-4 text-muted-foreground" />}<span>{bucket.storageDisplayName}</span></div></TableCell>
                 <TableCell><Badge variant={bucket.effectiveRole === "owner" ? "default" : "secondary"}>{roleLabel(bucket.effectiveRole)}</Badge></TableCell>
                 <TableCell>{bucket.objectCount ?? 0}</TableCell><TableCell>{bucket.multipartOpen ?? 0}</TableCell><TableCell><Badge variant={bucket.storageStatus === "active" ? "success" : "destructive"}>{bucket.storageStatus === "active" ? t.buckets.statusActive : t.buckets.statusIssue}</Badge></TableCell><TableCell className="whitespace-nowrap">{new Date(bucket.createdAt).toLocaleString()}</TableCell>
-                <TableCell className="text-right"><div className="flex justify-end gap-1">{bucket.ownedByMe && bucket.storageKind === "shared_drive" ? <Button size="icon" variant="ghost" aria-label={t.buckets.manageAccessLabel(bucket.name)} title={t.buckets.manageAccessTitle} onClick={() => void openAccess(bucket)}><Users /></Button> : null}{bucket.ownedByMe ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.deleteBucketLabel(bucket.name)} title={t.buckets.deleteBucketTitle} onClick={() => setPendingDelete(bucket)}><Trash2 /></Button> : null}</div></TableCell>
+                <TableCell className="text-right"><div className="flex justify-end gap-1">{bucket.ownedByMe ? <Button size="icon" variant="ghost" aria-label={t.buckets.manageAccessLabel(bucket.name)} title={t.buckets.manageAccessTitle} onClick={() => void openAccess(bucket)}><Settings2 /></Button> : null}{bucket.ownedByMe ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.deleteBucketLabel(bucket.name)} title={t.buckets.deleteBucketTitle} onClick={() => setPendingDelete(bucket)}><Trash2 /></Button> : null}</div></TableCell>
               </TableRow>
             ))}</TableBody>
           </Table>
@@ -362,11 +364,15 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       </Dialog>
 
       <Dialog open={Boolean(accessBucket)} onOpenChange={(open) => { if (!open && !memberBusy) setAccessBucket(null); }}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{t.buckets.manageAccessDialogDescription}</DialogDescription></DialogHeader>
-        <div className="grid w-fit grid-cols-2 gap-2">
-          <Button type="button" size="sm" variant={accessTab === "members" ? "default" : "outline"} onClick={() => setAccessTab("members")}>{t.buckets.accessTabMembers}</Button>
-          <Button type="button" size="sm" variant={accessTab === "policy" ? "default" : "outline"} onClick={() => setAccessTab("policy")}>{t.buckets.accessTabPolicy}</Button>
-        </div>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "") : t.buckets.bucketSettingsTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogDescription : t.buckets.bucketSettingsDescription}</DialogDescription></DialogHeader>
+        {/* Members are a Shared Drive concept, so a My Drive bucket has only
+            one panel and needs no tabs. */}
+        {accessBucket?.storageKind === "shared_drive" ? (
+          <div className="grid w-fit grid-cols-2 gap-2">
+            <Button type="button" size="sm" variant={accessTab === "members" ? "default" : "outline"} onClick={() => setAccessTab("members")}>{t.buckets.accessTabMembers}</Button>
+            <Button type="button" size="sm" variant={accessTab === "policy" ? "default" : "outline"} onClick={() => setAccessTab("policy")}>{t.buckets.accessTabPolicy}</Button>
+          </div>
+        ) : null}
         {accessTab === "policy" ? (
           <div className="space-y-4">
             {aclDraft === "public-read-write" ? (

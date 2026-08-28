@@ -12,11 +12,6 @@ ALTER TABLE objects ADD COLUMN acl TEXT NOT NULL DEFAULT 'private'
   CHECK (acl IN ('private', 'public-read', 'public-read-write', 'authenticated-read',
                  'bucket-owner-read', 'bucket-owner-full-control'));
 
--- Carried through staging so a PUT's ACL lands in the same transaction that
--- publishes the object, rather than as a second write that could be lost if
--- the process dies between them.
-ALTER TABLE object_staging ADD COLUMN acl TEXT NOT NULL DEFAULT 'private';
-
 -- One policy document per bucket, mirroring S3 where PutBucketPolicy replaces
 -- the whole document rather than merging statements.
 CREATE TABLE bucket_policies (
