@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { openMemoryDatabase } from "../../apps/server/src/db/connection.ts";
 import {
+  findSchemaDrift,
   runMigrations,
   appliedMigrationVersion,
   latestMigrationVersion,
@@ -90,6 +91,37 @@ describe("runMigrations", () => {
       .query<{ c: number }, []>("SELECT COUNT(*) AS c FROM buckets")
       .get();
     expect(count?.c).toBe(0);
+    db.close();
+  });
+});
+
+describe("schema drift detection", () => {
+  test("reports nothing for a fully migrated database", () => {
+    const db = openMemoryDatabase();
+    runMigrations(db);
+    expect(findSchemaDrift(db)).toEqual([]);
+    db.close();
+  });
+
+  test("names a column that a migration describes but the database lacks", () => {
+    // Reproduces the real failure: a migration edited after it was applied is
+    // recorded as done and never re-run, so its later statements never land.
+    const db = openMemoryDatabase();
+    runMigrations(db);
+    db.exec("ALTER TABLE object_staging DROP COLUMN acl");
+
+    const drift = findSchemaDrift(db);
+    expect(drift).toHaveLength(1);
+    expect(drift[0]).toContain("object_staging");
+    expect(drift[0]).toContain("acl");
+    db.close();
+  });
+
+  test("names a table that is missing entirely", () => {
+    const db = openMemoryDatabase();
+    runMigrations(db);
+    db.exec("DROP TABLE bucket_policies");
+    expect(findSchemaDrift(db)).toEqual(["missing table: bucket_policies"]);
     db.close();
   });
 });

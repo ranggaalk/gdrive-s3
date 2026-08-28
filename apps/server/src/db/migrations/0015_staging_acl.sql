@@ -1,0 +1,11 @@
+-- Carries a PUT's canned ACL through staging, so it lands in the same
+-- transaction that publishes the object rather than as a second write that
+-- could be lost if the process died between them.
+--
+-- This belongs to migration 0011 conceptually. It is a separate migration
+-- because 0011 had already been applied to running databases by the time the
+-- staging column was needed, and an applied migration must never be edited:
+-- the runner records it as done and will not re-run it, so the change is
+-- silently skipped and the schema drifts. That is exactly what happened —
+-- object writes then failed against a table with no `acl` column.
+ALTER TABLE object_staging ADD COLUMN acl TEXT NOT NULL DEFAULT 'private';

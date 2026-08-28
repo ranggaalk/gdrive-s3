@@ -91,6 +91,58 @@ export function runMigrations(db: Database): MigrateResult {
   return { applied, currentVersion };
 }
 
+/**
+ * Compare a live database against the schema the migrations produce.
+ *
+ * Migrations are recorded as applied by version number, so a migration that is
+ * edited after it has run is silently skipped and the schema drifts. That
+ * failure mode is invisible until some unrelated query breaks at runtime, so
+ * it is worth one cheap check at boot: build the expected schema in memory and
+ * diff the column sets.
+ *
+ * Returns a list of human-readable differences; empty means the schema is
+ * exactly what the migrations describe.
+ */
+export function findSchemaDrift(db: Database): string[] {
+  const expected = new Database(":memory:");
+  try {
+    runMigrations(expected);
+
+    const tableNames = (source: Database): string[] =>
+      source
+        .query<{ name: string }, []>(
+          `SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+        )
+        .all()
+        .map((row) => row.name);
+
+    const columnNames = (source: Database, table: string): string[] =>
+      source
+        .query<{ name: string }, []>(`PRAGMA table_info("${table}")`)
+        .all()
+        .map((row) => row.name);
+
+    const actualTables = new Set(tableNames(db));
+    const drift: string[] = [];
+
+    for (const table of tableNames(expected)) {
+      if (!actualTables.has(table)) {
+        drift.push(`missing table: ${table}`);
+        continue;
+      }
+      const actual = new Set(columnNames(db, table));
+      const missing = columnNames(expected, table).filter((c) => !actual.has(c));
+      if (missing.length > 0) {
+        drift.push(`table ${table} is missing column(s): ${missing.join(", ")}`);
+      }
+    }
+    return drift;
+  } finally {
+    expected.close();
+  }
+}
+
 /** Latest migration version declared on disk (for readiness checks). */
 export function latestMigrationVersion(): number {
   const migrations = loadMigrations();
