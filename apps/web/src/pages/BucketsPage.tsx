@@ -4,7 +4,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -352,19 +352,21 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
 
       <Dialog open={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); if (open) void loadSharedDrives(); } }}>
         <DialogContent>
-          <form onSubmit={(event) => void doCreate(event)} className="space-y-5">
+          <form onSubmit={(event) => void doCreate(event)} className="flex min-h-0 flex-1 flex-col gap-5">
             <DialogHeader><DialogTitle>{t.buckets.createDialogTitle}</DialogTitle><DialogDescription>{t.buckets.createDialogDescription}</DialogDescription></DialogHeader>
+            <DialogBody className="space-y-5">
             {formError ? <ErrorAlert message={formError} /> : null}
             <div className="space-y-2"><Label htmlFor="bucket-name">{t.buckets.nameLabel}</Label><Input id="bucket-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus aria-invalid={Boolean(formError)} aria-describedby="bucket-help" /><p id="bucket-help" className="text-xs text-muted-foreground">{t.buckets.nameHelp}</p></div>
             <fieldset className="space-y-2"><legend className="text-sm font-medium">{t.buckets.locationLegend}</legend><div className="grid grid-cols-2 gap-2"><Button type="button" variant={storageKind === "my_drive" ? "default" : "outline"} onClick={() => setStorageKind("my_drive")}><HardDrive /> My Drive</Button><Button type="button" variant={storageKind === "shared_drive" ? "default" : "outline"} disabled={drivesLoading || noSharedDrives} title={noSharedDrives ? t.buckets.noWritableSharedDriveTitle : undefined} onClick={() => setStorageKind("shared_drive")}><Share2 /> Shared Drive</Button></div>{noSharedDrives ? <p className="text-xs text-muted-foreground">{t.buckets.noWritableSharedDriveHelp}</p> : null}</fieldset>
             {storageKind === "shared_drive" ? <div className="space-y-2"><Label>{t.buckets.sharedDriveLabel}</Label><Select value={sharedDriveId} onValueChange={setSharedDriveId} disabled={drivesLoading} placeholder={drivesLoading ? t.buckets.loadingSharedDrives : t.buckets.pickSharedDrive} options={writableSharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} /><p className="text-xs text-muted-foreground">{t.buckets.sharedDriveHelp}</p></div> : null}
+            </DialogBody>
             <DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>{t.common.cancel}</Button><Button type="submit" disabled={name.trim().length < 3 || creating || (storageKind === "shared_drive" && !sharedDriveId)}>{creating ? t.buckets.creating : t.buckets.create}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(accessBucket)} onOpenChange={(open) => { if (!open && !memberBusy) setAccessBucket(null); }}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "") : t.buckets.bucketSettingsTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogDescription : t.buckets.bucketSettingsDescription}</DialogDescription></DialogHeader>
+        <DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "") : t.buckets.bucketSettingsTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogDescription : t.buckets.bucketSettingsDescription}</DialogDescription></DialogHeader>
         {/* Members are a Shared Drive concept, so a My Drive bucket has only
             one panel and needs no tabs. */}
         {accessBucket?.storageKind === "shared_drive" ? (
@@ -374,7 +376,7 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
           </div>
         ) : null}
         {accessTab === "policy" ? (
-          <div className="space-y-4">
+          <><DialogBody className="space-y-4">
             {aclDraft === "public-read-write" ? (
               <Alert variant="destructive"><AlertTitle>{t.buckets.publicBadge}</AlertTitle><AlertDescription>{t.buckets.aclPublicWriteWarning}</AlertDescription></Alert>
             ) : aclDraft === "public-read" ? (
@@ -512,12 +514,12 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
               {policyError ? <Alert variant="destructive"><AlertTitle>{t.buckets.policyInvalid}</AlertTitle><AlertDescription className="break-all">{policyError}</AlertDescription></Alert> : null}
               {access?.policyUpdatedAt ? <p className="text-xs text-muted-foreground">{t.buckets.policySavedAt(new Date(access.policyUpdatedAt).toLocaleString())}</p> : null}
             </div>
-            <DialogFooter>
-              <Button disabled={accessBusy} onClick={() => void saveAccess()}>{accessBusy ? t.buckets.savingAccess : t.buckets.saveAccess}</Button>
-            </DialogFooter>
-          </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button disabled={accessBusy} onClick={() => void saveAccess()}>{accessBusy ? t.buckets.savingAccess : t.buckets.saveAccess}</Button>
+          </DialogFooter></>
         ) : (
-        <><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></>)}</DialogContent>
+        <><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><DialogBody className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</DialogBody></>)}</DialogContent>
       </Dialog>
 
       <AlertDialog open={confirmLock} onOpenChange={(open) => { if (!accessBusy) setConfirmLock(open); }}>

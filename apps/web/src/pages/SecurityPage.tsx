@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CopyableCode } from "@/components/copyable-code";
@@ -328,7 +328,7 @@ export function SecurityPage() {
         onOpenChange={(open) => { if (!open && !confirmBusy) { setConfirmAction(null); setConfirmError(null); } }}
       >
         <DialogContent>
-          <form onSubmit={(event) => void onConfirmDialogSubmit(event)} className="space-y-5">
+          <form onSubmit={(event) => void onConfirmDialogSubmit(event)} className="flex min-h-0 flex-1 flex-col gap-5">
             <DialogHeader>
               <DialogTitle>
                 {confirmAction === "disable" ? t.security.disableConfirmTitle : t.security.regenerateConfirmTitle}
@@ -339,6 +339,7 @@ export function SecurityPage() {
                   : t.security.regenerateConfirmDescription}
               </DialogDescription>
             </DialogHeader>
+            <DialogBody className="space-y-5">
             {confirmError ? <ErrorAlert message={confirmError} /> : null}
             <div className="space-y-2">
               <Label htmlFor="security-confirm-code">{t.security.confirmCodeInputLabel}</Label>
@@ -351,6 +352,7 @@ export function SecurityPage() {
                 aria-invalid={Boolean(confirmError)}
               />
             </div>
+            </DialogBody>
             <DialogFooter>
               <Button
                 type="button"
@@ -377,11 +379,12 @@ export function SecurityPage() {
       </Dialog>
 
       <Dialog open={Boolean(recoveryCodes)} onOpenChange={(open) => { if (!open) setRecoveryCodes(null); }}>
-        <DialogContent className="min-w-0 max-h-[90vh] max-w-lg overflow-x-hidden overflow-y-auto">
+        <DialogContent className="min-w-0 max-w-lg">
           <DialogHeader>
             <DialogTitle>{t.security.recoveryCodesTitle}</DialogTitle>
             <DialogDescription>{t.security.recoveryCodesDescription}</DialogDescription>
           </DialogHeader>
+          <DialogBody>
           {recoveryCodes ? (
             <div className="min-w-0 space-y-5">
               <Alert variant="warning">
@@ -392,6 +395,7 @@ export function SecurityPage() {
               <CopyableCode value={recoveryCodes.join("\n")} label={t.security.recoveryCodesCopyLabel} />
             </div>
           ) : null}
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={downloadRecoveryCodes}>
               <Download /> {t.security.downloadRecoveryCodes}
