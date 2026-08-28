@@ -766,6 +766,106 @@ export const cancelBucketBackup = async (bucketId: string, transferId: string) =
     ),
   );
 
+// Gateway-wide backup history (/api/backups). The bucket-scoped calls above
+// only ever see one bucket; these answer "what has been backed up anywhere,
+// and where did each object end up".
+
+export interface BackupHistoryItem extends BackupTransfer {
+  bucketName: string;
+  accountEmail: string;
+  startedAt: string | null;
+  updatedAt: string;
+}
+
+/** How many ledger lines the run still owns. A later run that re-copied the
+ *  same object takes its line over, so this can sit below the run's own
+ *  counters — the detail view says so rather than looking like lost rows. */
+export interface BackupHistoryDetail extends BackupHistoryItem {
+  ledger: { copied: number; failed: number };
+}
+
+export interface BackupObjectItem {
+  objectId: string;
+  objectKey: string;
+  objectEtag: string;
+  status: "copied" | "failed";
+  destinationFileId: string | null;
+  attempts: number;
+  lastError: string | null;
+  updatedAt: string;
+}
+
+export interface BackupAccountSummary {
+  backupAccountId: string;
+  email: string;
+  accountStatus: BackupAccount["status"];
+  runs: number;
+  activeRuns: number;
+  lastRunAt: string | null;
+  lastStatus: BackupTransferStatus | null;
+  copiedTotal: number;
+  skippedTotal: number;
+  failedTotal: number;
+  objectsOnRecord: number;
+}
+
+export interface BackupSummary {
+  totals: {
+    accounts: number;
+    runs: number;
+    activeRuns: number;
+    copied: number;
+    skipped: number;
+    failed: number;
+    objectsOnRecord: number;
+  };
+  accounts: BackupAccountSummary[];
+}
+
+export interface BackupHistoryFilters {
+  accountId?: string;
+  bucketId?: string;
+  status?: BackupTransferStatus;
+  before?: string | null;
+  limit?: number;
+}
+
+function historyQuery(filters: BackupHistoryFilters): string {
+  const params = new URLSearchParams();
+  if (filters.accountId) params.set("accountId", filters.accountId);
+  if (filters.bucketId) params.set("bucketId", filters.bucketId);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.before) params.set("before", filters.before);
+  if (filters.limit) params.set("limit", String(filters.limit));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export const listBackupHistory = async (filters: BackupHistoryFilters = {}) =>
+  unwrap<{ items: BackupHistoryItem[]; nextBefore: string | null }>(
+    await fetch(`/api/backups${historyQuery(filters)}`),
+  );
+
+export const getBackupSummary = async () =>
+  unwrap<BackupSummary>(await fetch("/api/backups/summary"));
+
+export const getBackupRun = async (transferId: string) =>
+  unwrap<BackupHistoryDetail>(await fetch(`/api/backups/${encodeURIComponent(transferId)}`));
+
+export const listBackupRunObjects = async (
+  transferId: string,
+  options: { status?: "copied" | "failed"; before?: string | null; limit?: number } = {},
+) => {
+  const params = new URLSearchParams();
+  if (options.status) params.set("status", options.status);
+  if (options.before) params.set("before", options.before);
+  if (options.limit) params.set("limit", String(options.limit));
+  const query = params.toString();
+  return unwrap<{ items: BackupObjectItem[]; nextBefore: string | null }>(
+    await fetch(`/api/backups/${encodeURIComponent(transferId)}/objects${query ? `?${query}` : ""}`),
+  );
+};
+
 // Login-time 2FA verification (/auth/mfa/*, deliberately outside /api/* —
 // see server routes/mfa-auth.ts). getMfaLoginStatus also refreshes the
 // module-level csrfToken since the normal /api/me bootstrap never succeeds

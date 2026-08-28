@@ -24,6 +24,22 @@ function pageFiles(): string[] {
   return readdirSync(dir).filter((f) => f.endsWith(".tsx"));
 }
 
+/**
+ * Every file that opens a dialog, wherever it lives. Dialogs started out only
+ * in pages/, but a page large enough to split puts its dialog in a shared
+ * component instead -- and that must not be how a call site slips out from
+ * under this contract. components/ui/ is excluded: those files are the
+ * primitives being asserted about above, not call sites.
+ */
+function dialogCallSiteFiles(): string[] {
+  const root = new URL("../../apps/web/src/", import.meta.url).pathname;
+  const candidates = [
+    ...readdirSync(`${root}pages/`).filter((f) => f.endsWith(".tsx")).map((f) => `pages/${f}`),
+    ...readdirSync(`${root}components/`).filter((f) => f.endsWith(".tsx")).map((f) => `components/${f}`),
+  ];
+  return candidates.filter((file) => readSource(file).includes("<DialogContent") || readSource(file).includes("<AlertDialogContent"));
+}
+
 const COMPONENTS: string[] = ["components/ui/dialog.tsx", "components/ui/alert-dialog.tsx"];
 
 describe("dialog components", () => {
@@ -63,16 +79,16 @@ describe("dialog components", () => {
 });
 
 describe("dialog call sites", () => {
-  test.each(pageFiles())("%s does not cap or scroll a dialog by hand", (file) => {
-    const source = readSource(`pages/${file}`);
+  test.each(dialogCallSiteFiles())("%s does not cap or scroll a dialog by hand", (file) => {
+    const source = readSource(file);
     const offenders = [...source.matchAll(/<(?:Alert)?DialogContent className="([^"]*)"/g)]
       .map((m) => m[1]!)
       .filter((cn) => /\bmax-h-\[|\boverflow-y-auto\b/.test(cn));
     expect(offenders).toEqual([]);
   });
 
-  test.each(pageFiles())("%s closes every DialogBody it opens", (file) => {
-    const source = readSource(`pages/${file}`);
+  test.each(dialogCallSiteFiles())("%s closes every DialogBody it opens", (file) => {
+    const source = readSource(file);
     const opened = source.match(/<(?:Alert)?DialogBody[\s>]/g)?.length ?? 0;
     const closed = source.match(/<\/(?:Alert)?DialogBody>/g)?.length ?? 0;
     expect(closed).toBe(opened);
@@ -86,8 +102,8 @@ describe("dialog call sites", () => {
     // The tag cannot be matched with [^>]* because an inline arrow handler
     // contains a `>`; read the className attribute out of the tag instead.
     const forms: Array<{ file: string; className: string }> = [];
-    for (const file of pageFiles()) {
-      const source = readSource(`pages/${file}`);
+    for (const file of dialogCallSiteFiles()) {
+      const source = readSource(file);
       for (const match of source.matchAll(/<(?:Alert)?DialogContent[^>]*?>\s*<form/g)) {
         const tag = source.slice(match.index + match[0].length, match.index + match[0].length + 400);
         forms.push({ file, className: /className="([^"]*)"/.exec(tag)?.[1] ?? "" });

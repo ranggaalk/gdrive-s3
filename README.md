@@ -105,6 +105,11 @@ folder of their own on that account, source files are never modified, and a
 durable per-object ledger means repeat runs skip anything unchanged. The
 design is deliberately scheduler-ready.
 
+The Backup page reports on that ledger: totals across the gateway, a rollup per
+destination account, and a filterable history of every run from every bucket.
+Opening a run shows what it did to each individual object — copied or failed,
+how many attempts, the error text, and the Drive file the copy landed in.
+
 ### Admin settings
 
 Google OAuth client credentials and the Drive root folder name are editable at

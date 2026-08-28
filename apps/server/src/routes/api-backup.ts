@@ -4,8 +4,18 @@
 import type { AppContext } from "../context.ts";
 import type { SessionRow } from "../db/repositories/sessions.ts";
 import type { BackupAccountRow } from "../db/repositories/backup-accounts.ts";
-import type { BackupTransferRow } from "../db/repositories/backup-transfers.ts";
-import { BackupAlreadyActiveError } from "../db/repositories/backup-transfers.ts";
+import type {
+  BackupObjectStatus,
+  BackupObjectStatusRow,
+  BackupTransferHistoryRow,
+  BackupTransferRow,
+  BackupTransferStatus,
+} from "../db/repositories/backup-transfers.ts";
+import {
+  BackupAlreadyActiveError,
+  encodeHistoryCursor,
+  parseHistoryCursor,
+} from "../db/repositories/backup-transfers.ts";
 import { BackupTransferInvalidError, BackupTransferService } from "../services/backup-transfer-service.ts";
 import { apiError, mapBodyReadError, ok, readJson } from "./api-helpers.ts";
 
@@ -147,5 +157,174 @@ export async function handleBucketBackups(
     if (!changed) return apiError("BACKUP_TERMINAL", "Backup sudah selesai.", 409, requestId);
     return ok({ cancelled: true }, requestId);
   }
+  return apiError("NOT_FOUND", "Endpoint tidak ditemukan.", 404, requestId);
+}
+
+// ---------------------------------------------------------------------------
+// /api/backups — history across every bucket, and the detail behind one run.
+//
+// The per-bucket endpoints above answer "what happened to this bucket"; these
+// answer "what has this gateway backed up, and where did each object land".
+// Every query is scoped by backup_transfers.user_id, so a run is only ever
+// visible to the owner who started it.
+
+const TRANSFER_STATUSES: readonly BackupTransferStatus[] = [
+  "queued",
+  "running",
+  "cancel_requested",
+  "completed",
+  "cancelled",
+  "failed",
+];
+
+const DEFAULT_HISTORY_LIMIT = 25;
+const MAX_HISTORY_LIMIT = 100;
+
+function readLimit(url: URL): number {
+  const raw = Number(url.searchParams.get("limit"));
+  if (!Number.isFinite(raw) || raw < 1) return DEFAULT_HISTORY_LIMIT;
+  return Math.min(Math.floor(raw), MAX_HISTORY_LIMIT);
+}
+
+function historyView(t: BackupTransferHistoryRow) {
+  return {
+    ...transferView(t),
+    bucketName: t.bucket_name,
+    accountEmail: t.account_email,
+    startedAt: t.started_at,
+    updatedAt: t.updated_at,
+  };
+}
+
+function ledgerView(row: BackupObjectStatusRow) {
+  return {
+    objectId: row.object_id,
+    objectKey: row.object_key,
+    objectEtag: row.object_etag,
+    status: row.status,
+    destinationFileId: row.destination_file_id,
+    attempts: row.attempts,
+    lastError: row.last_error,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function handleBackupHistory(
+  ctx: AppContext,
+  req: Request,
+  session: SessionRow,
+  requestId: string,
+  rest: string,
+): Response {
+  if (req.method !== "GET") {
+    return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+  }
+  const userId = session.user_id;
+  const url = new URL(req.url);
+  const segments = rest.replace(/^\//, "").split("/").filter(Boolean);
+
+  if (segments.length === 0) {
+    const status = url.searchParams.get("status");
+    if (status && !TRANSFER_STATUSES.includes(status as BackupTransferStatus)) {
+      return apiError("INVALID", "Status backup tidak dikenal.", 400, requestId);
+    }
+    const limit = readLimit(url);
+    const rows = ctx.repos.backupTransfers.listForUser(userId, {
+      limit,
+      before: parseHistoryCursor(url.searchParams.get("before")),
+      backupAccountId: url.searchParams.get("accountId") ?? undefined,
+      bucketId: url.searchParams.get("bucketId") ?? undefined,
+      status: (status as BackupTransferStatus | null) ?? undefined,
+    });
+    const last = rows[rows.length - 1];
+    return ok(
+      {
+        items: rows.map(historyView),
+        nextBefore:
+          rows.length === limit && last
+            ? encodeHistoryCursor({ at: last.created_at, id: last.id })
+            : null,
+      },
+      requestId,
+    );
+  }
+
+  // Must be matched before the /:id branch, or a run could never be named
+  // "summary" without shadowing it.
+  if (segments.length === 1 && segments[0] === "summary") {
+    const accounts = ctx.repos.backupAccounts.listByOwner(userId);
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    const summaries = ctx.repos.backupTransfers.summarizeByAccount(userId);
+    return ok(
+      {
+        totals: {
+          accounts: accounts.length,
+          runs: summaries.reduce((sum, s) => sum + s.runs, 0),
+          activeRuns: summaries.reduce((sum, s) => sum + s.active_runs, 0),
+          copied: summaries.reduce((sum, s) => sum + s.copied_total, 0),
+          skipped: summaries.reduce((sum, s) => sum + s.skipped_total, 0),
+          failed: summaries.reduce((sum, s) => sum + s.failed_total, 0),
+          objectsOnRecord: summaries.reduce((sum, s) => sum + s.objects_on_record, 0),
+        },
+        accounts: summaries.map((s) => ({
+          backupAccountId: s.backup_account_id,
+          email: byId.get(s.backup_account_id)?.email ?? s.backup_account_id,
+          accountStatus: byId.get(s.backup_account_id)?.status ?? "error",
+          runs: s.runs,
+          activeRuns: s.active_runs,
+          lastRunAt: s.last_run_at,
+          lastStatus: s.last_status,
+          copiedTotal: s.copied_total,
+          skippedTotal: s.skipped_total,
+          failedTotal: s.failed_total,
+          objectsOnRecord: s.objects_on_record,
+        })),
+      },
+      requestId,
+    );
+  }
+
+  const transferId = segments[0]!;
+  const transfer = ctx.repos.backupTransfers.findOwnedHistory(userId, transferId);
+  if (!transfer) return apiError("NOT_FOUND", "Backup tidak ditemukan.", 404, requestId);
+
+  if (segments.length === 1) {
+    const ledger = ctx.repos.backupTransfers.countTransferObjects(transferId);
+    return ok(
+      {
+        ...historyView(transfer),
+        // What the ledger still attributes to this run. A later run that
+        // re-copied the same object takes its line over, so an older run's
+        // ledger counts legitimately fall below its own counters.
+        ledger: { copied: ledger.copied, failed: ledger.failed },
+      },
+      requestId,
+    );
+  }
+
+  if (segments.length === 2 && segments[1] === "objects") {
+    const status = url.searchParams.get("status");
+    if (status && status !== "copied" && status !== "failed") {
+      return apiError("INVALID", "Status objek backup tidak dikenal.", 400, requestId);
+    }
+    const limit = readLimit(url);
+    const rows = ctx.repos.backupTransfers.listTransferObjects(transferId, {
+      limit,
+      before: parseHistoryCursor(url.searchParams.get("before")),
+      status: (status as BackupObjectStatus | null) ?? undefined,
+    });
+    const last = rows[rows.length - 1];
+    return ok(
+      {
+        items: rows.map(ledgerView),
+        nextBefore:
+          rows.length === limit && last
+            ? encodeHistoryCursor({ at: last.updated_at, id: last.object_id })
+            : null,
+      },
+      requestId,
+    );
+  }
+
   return apiError("NOT_FOUND", "Endpoint tidak ditemukan.", 404, requestId);
 }
