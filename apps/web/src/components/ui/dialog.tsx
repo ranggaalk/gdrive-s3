@@ -25,7 +25,15 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg grid-cols-[minmax(0,1fr)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-xl",
+        // A column with a viewport-bounded height. Without the cap a tall
+        // dialog grows past the top and bottom of the screen -- and because it
+        // is `fixed`, the overflow cannot be scrolled to at all, so the header
+        // is unreachable and the footer buttons sit below the fold.
+        //
+        // Wrap the long part in <DialogBody> to keep the header and footer
+        // pinned and scroll only the middle. Dialogs that do not are still
+        // safe: the whole panel scrolls instead of being clipped.
+        "fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-lg border bg-background p-6 shadow-xl [&>*]:min-w-0",
         className,
       )}
       {...props}
@@ -41,10 +49,20 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col space-y-1.5 text-left", className)} {...props} />
+  <div className={cn("flex shrink-0 flex-col space-y-1.5 text-left", className)} {...props} />
 );
+
+/**
+ * The scrolling middle of a dialog. `min-h-0` is what lets it shrink below its
+ * content so the footer stays on screen; the negative margin puts the
+ * scrollbar against the panel edge while keeping the text padded.
+ */
+const DialogBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn("-mx-6 min-h-0 flex-1 overflow-y-auto px-6", className)} {...props} />
+);
+
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)} {...props} />
+  <div className={cn("flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)} {...props} />
 );
 
 const DialogTitle = React.forwardRef<
@@ -63,4 +81,4 @@ const DialogDescription = React.forwardRef<
 ));
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
-export { Dialog, DialogPortal, DialogOverlay, DialogClose, DialogTrigger, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription };
+export { Dialog, DialogPortal, DialogOverlay, DialogClose, DialogTrigger, DialogContent, DialogHeader, DialogBody, DialogFooter, DialogTitle, DialogDescription };

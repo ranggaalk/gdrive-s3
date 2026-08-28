@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
@@ -148,7 +148,7 @@ export function CredentialsPage() {
       )}
 
       <Dialog open={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); } }}>
-        <DialogContent><form onSubmit={(event) => void doCreate(event)} className="space-y-5"><DialogHeader><DialogTitle>{t.credentials.createDialogTitle}</DialogTitle><DialogDescription>{t.credentials.createDialogDescription}</DialogDescription></DialogHeader>{formError ? <ErrorAlert message={formError} /> : null}<div className="space-y-2"><Label htmlFor="credential-label">{t.credentials.labelField}</Label><Input id="credential-label" maxLength={100} value={label} onChange={(event) => setLabel(event.target.value)} autoFocus aria-invalid={Boolean(formError)} /></div><DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>{t.common.cancel}</Button><Button type="submit" disabled={!label.trim() || creating}>{creating ? t.credentials.creating : t.credentials.create}</Button></DialogFooter></form></DialogContent>
+        <DialogContent><form onSubmit={(event) => void doCreate(event)} className="flex min-h-0 flex-1 flex-col gap-5"><DialogHeader><DialogTitle>{t.credentials.createDialogTitle}</DialogTitle><DialogDescription>{t.credentials.createDialogDescription}</DialogDescription></DialogHeader>{formError ? <ErrorAlert message={formError} /> : null}<div className="space-y-2"><Label htmlFor="credential-label">{t.credentials.labelField}</Label><Input id="credential-label" maxLength={100} value={label} onChange={(event) => setLabel(event.target.value)} autoFocus aria-invalid={Boolean(formError)} /></div><DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>{t.common.cancel}</Button><Button type="submit" disabled={!label.trim() || creating}>{creating ? t.credentials.creating : t.credentials.create}</Button></DialogFooter></form></DialogContent>
       </Dialog>
 
       <AlertDialog open={Boolean(pending)} onOpenChange={(open) => { if (!open && !acting) setPending(null); }}>
@@ -156,9 +156,9 @@ export function CredentialsPage() {
       </AlertDialog>
 
       <Dialog open={Boolean(created)} onOpenChange={(open) => { if (!open) setCreated(null); }}>
-        <DialogContent className="min-w-0 max-h-[90vh] max-w-2xl overflow-x-hidden overflow-y-auto">
+        <DialogContent className="min-w-0 max-w-2xl">
           <DialogHeader><DialogTitle>{secretTitle ?? t.credentials.createdTitle}</DialogTitle><DialogDescription>{t.credentials.saveDialogDescription}</DialogDescription></DialogHeader>
-          {created ? <div className="min-w-0 space-y-5"><Alert variant="warning"><TriangleAlert /><AlertTitle>{t.credentials.saveSecretNowTitle}</AlertTitle><AlertDescription>{t.credentials.saveSecretNowDescription}</AlertDescription></Alert><div className="grid gap-3 text-sm sm:grid-cols-2"><div><p className="text-muted-foreground">{t.credentials.s3Endpoint}</p><p className="break-all font-mono text-xs">{created.s3Endpoint}</p></div><div><p className="text-muted-foreground">{t.credentials.region}</p><p className="font-mono text-xs">{created.s3Region}</p></div></div><div className="space-y-2"><Label>{t.credentials.accessKeyId}</Label><CopyableCode value={created.accessKeyId} label={t.credentials.accessKeyId} /></div><div className="space-y-2"><Label>{t.credentials.secretAccessKey}</Label><CopyableCode value={created.secretAccessKey} label={t.credentials.secretAccessKey} /></div><div className="space-y-2"><Label>{t.credentials.cliExampleLabel}</Label><CopyableCode value={credentialSetupExample(created, { accessKeyId: created.accessKeyId, secretAccessKey: created.secretAccessKey })} label={t.credentials.cliExampleCopyLabel} /></div></div> : null}
+          <DialogBody>{created ? <div className="min-w-0 space-y-5"><Alert variant="warning"><TriangleAlert /><AlertTitle>{t.credentials.saveSecretNowTitle}</AlertTitle><AlertDescription>{t.credentials.saveSecretNowDescription}</AlertDescription></Alert><div className="grid gap-3 text-sm sm:grid-cols-2"><div><p className="text-muted-foreground">{t.credentials.s3Endpoint}</p><p className="break-all font-mono text-xs">{created.s3Endpoint}</p></div><div><p className="text-muted-foreground">{t.credentials.region}</p><p className="font-mono text-xs">{created.s3Region}</p></div></div><div className="space-y-2"><Label>{t.credentials.accessKeyId}</Label><CopyableCode value={created.accessKeyId} label={t.credentials.accessKeyId} /></div><div className="space-y-2"><Label>{t.credentials.secretAccessKey}</Label><CopyableCode value={created.secretAccessKey} label={t.credentials.secretAccessKey} /></div><div className="space-y-2"><Label>{t.credentials.cliExampleLabel}</Label><CopyableCode value={credentialSetupExample(created, { accessKeyId: created.accessKeyId, secretAccessKey: created.secretAccessKey })} label={t.credentials.cliExampleCopyLabel} /></div></div> : null}</DialogBody>
           <DialogFooter><Button variant="outline" onClick={downloadCredential}><Download /> {t.credentials.downloadAsFile}</Button><Button onClick={() => setCreated(null)}>{t.credentials.done}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
