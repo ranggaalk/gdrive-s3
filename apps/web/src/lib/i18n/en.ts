@@ -803,14 +803,17 @@ export const en: Dictionary = {
     observedSince: (time: string) => `Counting since ${time}`,
     observedScopeNote:
       "If anything else uses the same Google Cloud project, these numbers run lower than Google's own count.",
-    windowLabel: (seconds: number) =>
-      seconds < 60
-        ? `Last ${seconds} seconds`
-        : seconds < 3600
-          ? `Last ${Math.round(seconds / 60)} minutes`
-          : seconds < 86_400
-            ? `Last ${Math.round(seconds / 3600)} hours`
-            : `Last ${Math.round(seconds / 86_400)} days`,
+    windowLabel: (seconds: number) => {
+      // The 60s and 100s windows are named in seconds on purpose: those are the
+      // exact periods Google expresses Drive quotas in, and calling 100s
+      // "2 minutes" both rounds wrong and hides the connection.
+      if (seconds < 120) return `Last ${seconds} seconds`;
+      if (seconds % 3600 === 0) {
+        const hours = seconds / 3600;
+        return hours === 1 ? "Last hour" : `Last ${hours} hours`;
+      }
+      return `Last ${Math.round(seconds / 60)} minutes`;
+    },
     windowRequests: "Requests",
     windowRate: "Rate",
     windowThrottled: "Quota rejections",

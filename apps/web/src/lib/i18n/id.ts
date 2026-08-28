@@ -828,14 +828,14 @@ export const id = {
     observedSince: (time: string) => `Dihitung sejak ${time}`,
     observedScopeNote:
       "Kalau ada aplikasi lain memakai project Google Cloud yang sama, angka di sini lebih rendah daripada yang dihitung Google.",
-    windowLabel: (seconds: number) =>
-      seconds < 60
-        ? `${seconds} detik terakhir`
-        : seconds < 3600
-          ? `${Math.round(seconds / 60)} menit terakhir`
-          : seconds < 86_400
-            ? `${Math.round(seconds / 3600)} jam terakhir`
-            : `${Math.round(seconds / 86_400)} hari terakhir`,
+    windowLabel: (seconds: number) => {
+      // Window 60 dan 100 detik sengaja ditulis dalam detik: itu persis periode
+      // yang dipakai Google untuk kuota Drive. Menyebut 100 detik sebagai
+      // "2 menit" salah bulat sekaligus menghilangkan kaitannya.
+      if (seconds < 120) return `${seconds} detik terakhir`;
+      if (seconds % 3600 === 0) return `${seconds / 3600} jam terakhir`;
+      return `${Math.round(seconds / 60)} menit terakhir`;
+    },
     windowRequests: "Permintaan",
     windowRate: "Laju",
     windowThrottled: "Ditolak kuota",
