@@ -267,7 +267,9 @@ export function BackupAccountsPage() {
                   accounts.find((a) => a.id === accountFilter)?.email ?? accountFilter,
                 )}
               </AlertTitle>
-              <AlertDescription>
+              {/* AlertTitle's own mb-1 is sized for a paragraph; a button
+                  needs more room than that. */}
+              <AlertDescription className="mt-2">
                 <Button size="sm" variant="outline" onClick={() => setAccountFilter(ALL_ACCOUNTS)}>
                   {t.backup.clearAccountFilter}
                 </Button>
