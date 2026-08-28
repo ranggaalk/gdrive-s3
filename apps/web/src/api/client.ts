@@ -331,6 +331,20 @@ export interface BucketAccessConfig {
   isPublic: boolean;
   defaultSseAlgorithm: SseAlgorithm | null;
   defaultKmsKeyId: string | null;
+  versioning: BucketVersioning;
+  /** How many superseded versions and delete markers the bucket holds. */
+  retainedVersions: number;
+}
+
+export type BucketVersioning = "Disabled" | "Enabled" | "Suspended";
+
+export interface ObjectVersion {
+  versionId: string;
+  isLatest: boolean;
+  isDeleteMarker: boolean;
+  size: number;
+  etag: string | null;
+  lastModified: string;
 }
 
 export interface KmsKey {
@@ -410,11 +424,32 @@ export const updateBucketAccess = async (
     policy?: string | null;
     defaultSseAlgorithm?: SseAlgorithm | null;
     defaultKmsKeyId?: string | null;
+    versioning?: Exclude<BucketVersioning, "Disabled">;
   },
 ) => unwrap<BucketAccessConfig>(await fetch(
   `/api/buckets/${encodeURIComponent(bucketId)}/access`,
   mutate("PUT", changes),
 ));
+
+export const listObjectVersions = async (bucketId: string, objectId: string) =>
+  unwrap<ObjectVersion[]>(await fetch(
+    `/api/buckets/${encodeURIComponent(bucketId)}/objects/${encodeURIComponent(objectId)}/versions`,
+  ));
+
+export const deleteObjectVersion = async (
+  bucketId: string,
+  objectId: string,
+  versionId: string,
+) => unwrap(await fetch(
+  `/api/buckets/${encodeURIComponent(bucketId)}/objects/${encodeURIComponent(objectId)}/versions/${encodeURIComponent(versionId)}`,
+  mutate("DELETE"),
+));
+
+export const pruneBucketVersions = async (bucketId: string) =>
+  unwrap<{ removed: number }>(await fetch(
+    `/api/buckets/${encodeURIComponent(bucketId)}/versions`,
+    mutate("DELETE"),
+  ));
 
 export const listKmsKeys = async () =>
   unwrap<KmsKey[]>(await fetch("/api/security/kms"));
