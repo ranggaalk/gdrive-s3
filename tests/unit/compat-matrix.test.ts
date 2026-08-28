@@ -58,10 +58,6 @@ describe("S3 compatibility matrix", () => {
     });
   });
 
-  test("keeps explicitly out-of-scope S3 features unsupported", () => {
-    const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row.status]));
-
-  });
 
   test("virtual-hosted style bucket endpoint is supported with unit evidence", () => {
     const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row]));
@@ -77,6 +73,21 @@ describe("S3 compatibility matrix", () => {
       status: "supported",
       verifiedBy: ["unit"],
     });
+  });
+
+  test("ranged and cross-user copy is supported with unit evidence", () => {
+    const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row]));
+    expect(byFeature.get("CopyObject with byte range / cross-user")).toMatchObject({
+      status: "supported",
+      verifiedBy: ["unit"],
+    });
+  });
+
+  test("every row now carries evidence, with nothing left unsupported", () => {
+    // The six-stage compatibility push is complete; a future row added as
+    // unsupported should make this fail loudly rather than pass unnoticed.
+    const unsupported = COMPAT_MATRIX.filter((row) => row.status === "unsupported");
+    expect(unsupported).toEqual([]);
   });
 
   test("object lock is supported with unit evidence", () => {

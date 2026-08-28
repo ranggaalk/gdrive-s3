@@ -44,6 +44,7 @@ import { KmsKeysRepository } from "./db/repositories/kms-keys.ts";
 import { ObjectVersionsRepository } from "./db/repositories/object-versions.ts";
 import { ObjectEncryptionRepository } from "./db/repositories/object-encryption.ts";
 import { KmsService } from "./security/kms.ts";
+import { ObjectCopyService } from "./services/object-copy-service.ts";
 import { PresignedUrlService } from "./services/presigned-url-service.ts";
 
 export interface AppContext {
@@ -89,6 +90,7 @@ export interface AppContext {
   bucketAccess: BucketAccessService;
   authorization: AuthorizationService;
   kms: KmsService;
+  objectCopyService: ObjectCopyService;
   credentialService: CredentialService;
   publicLinkService: PublicLinkService;
   presignedUrlService: PresignedUrlService;
@@ -162,7 +164,7 @@ export function createContext(
   );
   const credentialService = new CredentialService(credentials, config, db, audit);
 
-  return {
+  const ctx: AppContext = {
     config,
     db,
     log,
@@ -219,5 +221,10 @@ export function createContext(
     rateLimits: new RateLimits(config),
     loginFlows: new Map(),
     backupLinkFlows: new Map(),
+    // Assigned below: this service takes the completed context, which does not
+    // exist until the literal is built.
+    objectCopyService: undefined as unknown as ObjectCopyService,
   };
+  ctx.objectCopyService = new ObjectCopyService(ctx);
+  return ctx;
 }

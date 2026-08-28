@@ -12,7 +12,7 @@ namespace honest.
 ![Language](https://img.shields.io/badge/language-TypeScript-3178C6?style=flat-square)
 ![Frontend](https://img.shields.io/badge/frontend-React%2018-61DAFB?style=flat-square)
 ![Storage](https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-289%20passing-16a34a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-650%20passing-16a34a?style=flat-square)
 
 </div>
 
@@ -56,12 +56,19 @@ Viewer/Editor access.
 | **Scoped login** | Google OAuth gated by Workspace domain and/or an explicit email allowlist, so personal Gmail can be admitted deliberately. |
 | **Secrets at rest** | Refresh tokens, TOTP secrets, and backups are AES-256-GCM encrypted with per-context AAD. Recovery codes are stored only as hashes. |
 | **Request hardening** | Session and CSRF protection, SigV4 header plus presigned-query auth, security headers, bounded request bodies, and per-scope rate limits. |
+| **Encryption at rest** | Optional server-side encryption per bucket or per object: SSE-S3, SSE-KMS with your own customer master keys, or SSE-C. Ranged reads stay cheap, since the cipher is seekable. |
+| **Retention** | Object Lock in GOVERNANCE or COMPLIANCE mode, plus Legal Hold. A COMPLIANCE lock cannot be lifted by anyone, including the bucket owner. |
 
 ### S3 data plane
 
 - Path-style CRUD, `ListObjectsV2`, bulk delete, byte-range GET, and
   conditional GET (`If-Match`, `If-None-Match`, `If-Modified-Since`).
-- Full multipart upload lifecycle plus `CopyObject`.
+- Full multipart upload lifecycle, `CopyObject`, and `UploadPartCopy` — copies
+  may be ranged, conditional, versioned, or across two different owners.
+- Object versioning with delete markers and undelete.
+- ACLs and bucket policies, including anonymous public access when a policy
+  or ACL grants it (and `S3_ALLOW_ANONYMOUS=false` to forbid it outright).
+- SigV4, SigV4A, presigned URLs, and PresignedPost browser form uploads.
 - Optional virtual-hosted addressing (`{bucket}.{domain}`) alongside the
   always-on path-style default.
 - Streaming resumable uploads, atomic overwrite, a durable cleanup queue, and
@@ -70,7 +77,13 @@ Viewer/Editor access.
 ### Dashboard
 
 - **Objects and buckets:** streaming upload, preview, download, delete,
-  temporary presigned links, and revocable public links.
+  temporary presigned links, revocable public links, browser upload forms,
+  cross-bucket copy, and per-object version history.
+- **Access control:** canned ACLs and a bucket policy editor, with a badge on
+  any bucket reachable by the anonymous public.
+- **Encryption keys:** create, rotate, and disable customer master keys.
+  Rotation never strands data — objects record the key version they were
+  written under.
 - **Credentials:** create, atomic rotate, revoke, and permanently delete
   (revoked keys only), with a one-time download of the new secret.
 - **Drive import:** copy an existing Google Drive folder tree into a bucket as
@@ -97,23 +110,32 @@ new environment variables.
 
 ## Compatibility
 
-This is **not** a complete Amazon S3 implementation. The dashboard ships an
-evidence-based compatibility matrix where every "supported" row is backed by a
-passing test, so nothing is marked supported on faith.
+This is not a reimplementation of all of Amazon S3, but every feature listed
+below is backed by a passing test — the dashboard ships an evidence-based
+compatibility matrix, and a row cannot be marked supported without naming the
+test that proves it.
 
-| Supported | Not supported |
+| Area | Supported |
 |---|---|
-| Path-style (default) and virtual-hosted (opt-in) endpoints | Cross-user `CopyObject` between unrelated My Drive accounts |
-| Core object CRUD, `ListObjectsV2`, byte-range and conditional GET | |
-| Multipart upload, `CopyObject` (same actor) | |
-| Object Lock and Legal Hold | |
-| SigV4 header and presigned-query auth | |
-| Object versioning with delete markers | |
-| SigV4A (`AWS4-ECDSA-P256-SHA256`), header and presigned-query | |
-| PresignedPost browser form uploads | |
-| ACL and bucket policy, including anonymous public access | |
-| Server-side encryption: SSE-S3, SSE-KMS, and SSE-C | |
-| AWS CLI, rclone, and MinIO `mc` smoke suites | |
+| **Addressing** | Path-style (default) and virtual-hosted (opt-in) endpoints |
+| **Objects** | Core CRUD, `ListObjectsV2`, byte-range and conditional GET |
+| **Multipart** | Full lifecycle, plus `UploadPartCopy` from a byte range |
+| **Copy** | `CopyObject` including ranged, conditional, versioned, and cross-user copies |
+| **Auth** | SigV4 header and presigned-query, SigV4A (`AWS4-ECDSA-P256-SHA256`), PresignedPost browser forms |
+| **Access control** | ACLs and bucket policies, including anonymous public access |
+| **Encryption** | SSE-S3, SSE-KMS with local customer master keys, and SSE-C |
+| **Versioning** | Object versions, delete markers, and undelete |
+| **Retention** | Object Lock (GOVERNANCE and COMPLIANCE) and Legal Hold |
+| **Clients** | AWS CLI, rclone, and MinIO `mc` smoke suites |
+
+Known divergences from S3, all deliberate:
+
+- Bucket names are unique **per user**, not globally. An anonymous request to a
+  name two owners share is refused rather than resolved to a guess.
+- The ETag of an encrypted object stays the MD5 of its plaintext, where S3
+  returns an opaque value.
+- SSE-C multipart uploads are rejected: the customer key is never stored, and
+  `CompleteMultipartUpload` carries no header to resupply it.
 
 Open the dashboard Overview page for the live matrix with test evidence behind
 each row.

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Activity, ArrowDownToLine, ArrowLeft, CloudDownload, Eye, FileCode2, Files, Folder, HardDriveDownload, History, Link2, Plus, Search, Trash2 } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowLeft, CloudDownload, Copy, Eye, FileCode2, Files, Folder, HardDriveDownload, History, Link2, Plus, Search, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -33,8 +33,10 @@ import {
   cancelDriveImport,
   createDriveImport,
   createPresignedLink,
+  copyObjectTo,
   createPresignedPost,
   deleteObjectVersion,
+  listBuckets,
   getDriveImport,
   listObjectVersions,
   createPublicLink,
@@ -178,6 +180,11 @@ export function ObjectsPage({
   const [uploadFormExpires, setUploadFormExpires] = useState(3600);
   const [uploadForm, setUploadForm] = useState<PresignedPostForm | null>(null);
   const [uploadFormBusy, setUploadFormBusy] = useState(false);
+  const [copyTarget, setCopyTarget] = useState<ObjectItem | null>(null);
+  const [copyBuckets, setCopyBuckets] = useState<Bucket[]>([]);
+  const [copyBucketId, setCopyBucketId] = useState("");
+  const [copyKey, setCopyKey] = useState("");
+  const [copyBusy, setCopyBusy] = useState(false);
   const [versionTarget, setVersionTarget] = useState<ObjectItem | null>(null);
   const [versions, setVersions] = useState<ObjectVersion[]>([]);
   const [versionBusy, setVersionBusy] = useState(false);
@@ -424,6 +431,39 @@ export function ObjectsPage({
     finally { setLinkBusy(false); }
   };
 
+  const openCopy = async (object: ObjectItem) => {
+    setCopyTarget(object);
+    setCopyKey(object.key);
+    setCopyBusy(true);
+    setError(null);
+    try {
+      const all = await listBuckets();
+      // Only somewhere the caller can actually write, and not back into the
+      // bucket they are already looking at.
+      const targets = all.filter((b) => b.id !== bucket.id && b.effectiveRole !== "viewer");
+      setCopyBuckets(targets);
+      setCopyBucketId(targets[0]?.id ?? "");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setCopyBusy(false);
+    }
+  };
+
+  const doCopy = async () => {
+    if (!copyTarget || !copyBucketId || !copyKey.trim()) return;
+    setCopyBusy(true);
+    try {
+      await copyObjectTo(bucket.id, copyTarget.id, copyBucketId, copyKey.trim());
+      toast.success(t.toast.objectCopied);
+      setCopyTarget(null);
+    } catch (cause) {
+      toast.fromError(t.toast.objectCopyFailed, cause);
+    } finally {
+      setCopyBusy(false);
+    }
+  };
+
   const openVersions = async (object: ObjectItem) => {
     setVersionTarget(object);
     setVersions([]);
@@ -539,7 +579,7 @@ export function ObjectsPage({
       {importIssues.length ? <Table><TableHeader><TableRow><TableHead>{t.objects.issueKey}</TableHead><TableHead>{t.objects.issueStatus}</TableHead><TableHead>{t.objects.issueReason}</TableHead></TableRow></TableHeader><TableBody>{importIssues.map((issue) => <TableRow key={issue.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{issue.key}</TableRowHeader><TableCell>{issue.status}</TableCell><TableCell>{issue.reason ?? "-"}</TableCell></TableRow>)}</TableBody></Table> : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><form onSubmit={search} role="search" className="flex flex-1 gap-2"><Input placeholder={t.objects.filterPlaceholder} value={prefix} onChange={(event) => setPrefix(event.target.value)} aria-label={t.objects.filterAriaLabel} /><Button type="submit" variant="outline" disabled={loading}><Search /> <span className="hidden sm:inline">{t.objects.search}</span></Button></form><div className="flex gap-2">{owner ? <Button variant="outline" onClick={() => void openImport()}><CloudDownload /> {t.objects.importFromDrive}</Button> : null}{owner ? <Button variant="outline" onClick={() => void openBackup()}><HardDriveDownload /> {t.backup.button}</Button> : null}{writable ? <Button variant="outline" onClick={() => void openUploadForm()}><FileCode2 /> {t.objects.uploadFormAction}</Button> : null}{writable ? <Button onClick={() => setShowUpload(true)}><Plus /> {t.objects.upload}</Button> : null}</div></div>
 
-      {loading ? <LoadingState label={t.objects.loading} /> : items.length === 0 ? <EmptyState icon={Files} title={t.objects.emptyTitle} description={writable ? t.objects.emptyDescriptionWritable : t.objects.emptyDescriptionReadonly} /> : <><Table><TableHeader><TableRow><TableHead>{t.objects.tableKey}</TableHead><TableHead>{t.objects.tableSize}</TableHead><TableHead>{t.objects.tableType}</TableHead><TableHead>{t.objects.tableModified}</TableHead><TableHead className="text-right">{t.objects.tableAction}</TableHead></TableRow></TableHeader><TableBody>{items.map((item) => <TableRow key={item.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{item.key}</TableRowHeader><TableCell className="whitespace-nowrap">{humanBytes(item.size)}</TableCell><TableCell className="max-w-48 break-all">{item.contentType}</TableCell><TableCell className="whitespace-nowrap">{new Date(item.lastModified).toLocaleString()}</TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title={t.objects.download} aria-label={t.objects.downloadLabel(item.key)} asChild><a href={objectDownloadUrl(bucket.id, item.id)}><ArrowDownToLine /></a></Button>{isPreviewable(item.contentType) ? <Button size="icon" variant="ghost" title={t.objects.preview} aria-label={t.objects.previewLabel(item.key)} onClick={() => window.open(objectPreviewUrl(bucket.id, item.id), "_blank", "noopener,noreferrer")}><Eye /></Button> : null}{owner ? <Button size="icon" variant="ghost" title={t.objects.publicLink} aria-label={t.objects.publicLinkLabel(item.key)} onClick={() => void openLinks(item)}><Link2 /></Button> : null}{writable ? <Button size="icon" variant="ghost" title={t.objects.versionsTitle} aria-label={t.objects.versionsLabel(item.key)} onClick={() => void openVersions(item)}><History /></Button> : null}{writable ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" title={t.objects.deleteTitle} aria-label={t.objects.deleteLabel(item.key)} onClick={() => setDeleteTarget(item)}><Trash2 /></Button> : null}</div></TableCell></TableRow>)}</TableBody></Table>{nextAfter ? <div className="flex justify-center"><Button variant="outline" disabled={loadingMore} onClick={() => void more()}>{loadingMore ? t.common.loadingMore : t.common.loadMore}</Button></div> : null}</>}
+      {loading ? <LoadingState label={t.objects.loading} /> : items.length === 0 ? <EmptyState icon={Files} title={t.objects.emptyTitle} description={writable ? t.objects.emptyDescriptionWritable : t.objects.emptyDescriptionReadonly} /> : <><Table><TableHeader><TableRow><TableHead>{t.objects.tableKey}</TableHead><TableHead>{t.objects.tableSize}</TableHead><TableHead>{t.objects.tableType}</TableHead><TableHead>{t.objects.tableModified}</TableHead><TableHead className="text-right">{t.objects.tableAction}</TableHead></TableRow></TableHeader><TableBody>{items.map((item) => <TableRow key={item.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{item.key}</TableRowHeader><TableCell className="whitespace-nowrap">{humanBytes(item.size)}</TableCell><TableCell className="max-w-48 break-all">{item.contentType}</TableCell><TableCell className="whitespace-nowrap">{new Date(item.lastModified).toLocaleString()}</TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title={t.objects.download} aria-label={t.objects.downloadLabel(item.key)} asChild><a href={objectDownloadUrl(bucket.id, item.id)}><ArrowDownToLine /></a></Button>{isPreviewable(item.contentType) ? <Button size="icon" variant="ghost" title={t.objects.preview} aria-label={t.objects.previewLabel(item.key)} onClick={() => window.open(objectPreviewUrl(bucket.id, item.id), "_blank", "noopener,noreferrer")}><Eye /></Button> : null}{owner ? <Button size="icon" variant="ghost" title={t.objects.publicLink} aria-label={t.objects.publicLinkLabel(item.key)} onClick={() => void openLinks(item)}><Link2 /></Button> : null}{writable ? <Button size="icon" variant="ghost" title={t.objects.copyTitle} aria-label={t.objects.copyLabel(item.key)} onClick={() => void openCopy(item)}><Copy /></Button> : null}{writable ? <Button size="icon" variant="ghost" title={t.objects.versionsTitle} aria-label={t.objects.versionsLabel(item.key)} onClick={() => void openVersions(item)}><History /></Button> : null}{writable ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" title={t.objects.deleteTitle} aria-label={t.objects.deleteLabel(item.key)} onClick={() => setDeleteTarget(item)}><Trash2 /></Button> : null}</div></TableCell></TableRow>)}</TableBody></Table>{nextAfter ? <div className="flex justify-center"><Button variant="outline" disabled={loadingMore} onClick={() => void more()}>{loadingMore ? t.common.loadingMore : t.common.loadMore}</Button></div> : null}</>}
       </>}
 
       <Dialog open={showImport} onOpenChange={(open) => { if (!importBusy) setShowImport(open); }}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{t.objects.importDialogTitle}</DialogTitle><DialogDescription>{t.objects.importDialogDescription}</DialogDescription></DialogHeader><div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>{t.objects.locationLabel}</Label><Select value={importKind} options={importKindOptions} onValueChange={(kind) => { setImportKind(kind); const driveId = kind === "shared_drive" ? sharedDrives[0]?.id ?? "" : ""; setImportDriveId(driveId); setFolderStack([]); setSelectedFolder(null); if (kind === "shared_drive" && !driveId) { setDriveFolders([]); setSelectedFolder(null); } else { void browseFolders(kind, driveId, []); } }} />{noSharedDrives ? <p className="text-xs text-muted-foreground">{t.objects.noSharedDriveAccessible}</p> : null}</div>{importKind === "shared_drive" ? <div className="space-y-2"><Label>{t.objects.sharedDriveLabel}</Label><Select value={importDriveId} options={sharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} placeholder={t.objects.pickSharedDrive} onValueChange={(driveId) => { setImportDriveId(driveId); setFolderStack([]); setSelectedFolder(null); void browseFolders("shared_drive", driveId, []); }} /></div> : null}</div><div className="flex flex-wrap items-center gap-2 text-sm"><Button size="sm" variant="ghost" disabled={folderStack.length === 0 || importBusy} onClick={() => { const stack = folderStack.slice(0, -1); setFolderStack(stack); setSelectedFolder(null); void browseFolders(importKind, importDriveId, stack); }}>{t.objects.up}</Button><span className="text-muted-foreground">/{folderStack.map((folder) => folder.name).join("/")}</span></div><div className="max-h-72 space-y-1 overflow-y-auto rounded-md border p-2">{importBusy ? <LoadingState label={t.objects.loadingTraffic} /> : driveFolders.length === 0 ? <p className="p-4 text-sm text-muted-foreground">{t.objects.noSubfolders}</p> : driveFolders.map((folder) => <div key={folder.id} className={`flex items-center justify-between rounded-md p-2 ${selectedFolder?.id === folder.id ? "bg-muted" : ""}`}><button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setSelectedFolder(folder)}><Folder className="size-4 shrink-0" /><span className="truncate">{folder.name}</span></button><Button size="sm" variant="ghost" onClick={() => { const stack = [...folderStack, folder]; setFolderStack(stack); setSelectedFolder(null); void browseFolders(importKind, importDriveId, stack); }}>{t.objects.open}</Button></div>)}</div>{selectedFolder ? <Alert><AlertTitle>{t.objects.folderSelectedTitle}</AlertTitle><AlertDescription>{selectedFolder.name}</AlertDescription></Alert> : null}</div><DialogFooter><Button variant="outline" disabled={importBusy} onClick={() => setShowImport(false)}>{t.common.cancel}</Button><Button disabled={!selectedFolder || importBusy || (importKind === "shared_drive" && !importDriveId)} onClick={() => void startImport()}>{importBusy ? t.objects.preparing : t.objects.startImport}</Button></DialogFooter></DialogContent></Dialog>
@@ -709,6 +749,54 @@ export function ObjectsPage({
           <DialogFooter>
             <Button onClick={() => { setShowUploadForm(false); setUploadForm(null); }} disabled={uploadFormBusy}>
               {t.credentials.done}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(copyTarget)} onOpenChange={(open) => { if (!open && !copyBusy) setCopyTarget(null); }}>
+        <DialogContent className="min-w-0 max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t.objects.copyTitle}</DialogTitle>
+            <DialogDescription className="break-all">
+              <span className="font-mono">{copyTarget?.key}</span> — {t.objects.copyDialogDescription}
+            </DialogDescription>
+          </DialogHeader>
+          {copyBuckets.length === 0 && !copyBusy ? (
+            <Alert>
+              <AlertTitle>{t.objects.copyNoTargets}</AlertTitle>
+            </Alert>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>{t.objects.copyTargetBucket}</Label>
+                <Select
+                  value={copyBucketId}
+                  onValueChange={setCopyBucketId}
+                  ariaLabel={t.objects.copyTargetBucket}
+                  options={copyBuckets.map((b) => ({ value: b.id, label: b.name }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="copy-key">{t.objects.copyTargetKey}</Label>
+                <Input
+                  id="copy-key"
+                  value={copyKey}
+                  maxLength={1024}
+                  onChange={(event) => setCopyKey(event.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={copyBusy} onClick={() => setCopyTarget(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              disabled={copyBusy || !copyBucketId || !copyKey.trim()}
+              onClick={() => void doCopy()}
+            >
+              {copyBusy ? t.objects.copying : t.objects.copyAction}
             </Button>
           </DialogFooter>
         </DialogContent>
