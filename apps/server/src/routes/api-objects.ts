@@ -121,6 +121,69 @@ export async function handleObjects(
 
   const action = segments[1];
 
+  if (action === "versions") {
+    if (segments.length === 2 && req.method === "GET") {
+      const versions = ctx.repos.objectVersions.listForKey(bucket.id, object.object_key);
+      return ok(
+        [
+          // The current version lives in `objects`, so it is prepended rather
+          // than read from the versions table.
+          {
+            versionId: object.version_id,
+            isLatest: true,
+            isDeleteMarker: false,
+            size: object.size_bytes,
+            etag: object.etag,
+            lastModified: object.last_modified_at,
+          },
+          ...versions.map((version) => ({
+            versionId: version.version_id,
+            isLatest: version.is_latest === 1,
+            isDeleteMarker: version.is_delete_marker === 1,
+            size: version.size_bytes,
+            etag: version.etag,
+            lastModified: version.last_modified_at,
+          })),
+        ],
+        requestId,
+      );
+    }
+
+    const versionId = segments[2];
+    if (segments.length === 3 && versionId && req.method === "DELETE") {
+      if (bucket.effective_role === "viewer") {
+        return apiError("ACCESS_DENIED", "Akses bucket ditolak.", 403, requestId);
+      }
+      const removed = ctx.repos.objectVersions.find(bucket.id, object.object_key, versionId);
+      if (!removed) return apiError("NOT_FOUND", "Versi tidak ditemukan.", 404, requestId);
+      ctx.repos.objectVersions.delete(bucket.id, object.object_key, versionId);
+      // A retained version's bytes are reachable only through its row, so
+      // removing it must release the Drive file.
+      if (removed.drive_file_id) {
+        ctx.repos.pendingCleanup.enqueue({
+          userId: bucket.user_id,
+          resourceType: "drive_file",
+          resourceId: removed.drive_file_id,
+          reason: "object_version_delete",
+          driveTargetId: bucket.drive_target_id,
+        });
+      }
+      ctx.repos.audit.record({
+        userId,
+        action: "object.version.delete",
+        bucketName: bucket.name,
+        bucketId,
+        objectKey: object.object_key,
+        statusCode: 200,
+        requestId,
+        detail: { versionId },
+      });
+      return ok({ versionId, deleted: true }, requestId);
+    }
+
+    return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+  }
+
   if (segments.length === 2 && action === "presigned-links" && req.method === "POST") {
     if (bucket.effective_role !== "owner") {
       return apiError("ACCESS_DENIED", "Hanya pemilik bucket dapat membuat public link.", 403, requestId);

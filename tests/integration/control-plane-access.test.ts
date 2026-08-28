@@ -55,7 +55,9 @@ describe("control-plane bucket access configuration", () => {
     const { api, bucketId } = await setup();
     const res = await api(`/api/buckets/${bucketId}/access`);
     expect(res.status).toBe(200);
-    expect(unwrap<Record<string, unknown>>(await res.json())).toEqual({
+    // Asserts the access-control defaults specifically, rather than the exact
+    // object shape, so later stages can add fields without breaking this.
+    expect(unwrap<Record<string, unknown>>(await res.json())).toMatchObject({
       acl: "private",
       policy: null,
       policyUpdatedAt: null,

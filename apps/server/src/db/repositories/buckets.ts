@@ -5,6 +5,7 @@ import { newBucketId, nowIso } from "../../util/ids.ts";
 
 export type BucketStatus = "creating" | "active" | "deleting" | "error";
 export type BucketEffectiveRole = "owner" | "editor" | "viewer";
+export type BucketVersioning = "Disabled" | "Enabled" | "Suspended";
 
 export type BucketAclName =
   | "private"
@@ -23,6 +24,7 @@ export interface BucketRow {
   acl: BucketAclName;
   default_sse_algorithm: "AES256" | "aws:kms" | null;
   default_kms_key_id: string | null;
+  versioning: BucketVersioning;
   created_at: string;
   updated_at: string;
 }
@@ -171,6 +173,14 @@ export class BucketsRepository {
           ORDER BY b.created_at ASC`,
       )
       .all(name);
+  }
+
+  setVersioning(bucketId: string, versioning: BucketVersioning): boolean {
+    return (
+      this.db
+        .query("UPDATE buckets SET versioning = ?, updated_at = ? WHERE id = ?")
+        .run(versioning, nowIso(), bucketId).changes > 0
+    );
   }
 
   setDefaultEncryption(

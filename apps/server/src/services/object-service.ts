@@ -9,6 +9,8 @@ import type { ObjectMetadataHeaders } from "../s3/metadata.ts";
 import { parseRange } from "../s3/range.ts";
 import type { AppContext } from "../context.ts";
 import { EncryptionService, type EncryptionPlan } from "./encryption-service.ts";
+import { newVersionId } from "../db/repositories/object-versions.ts";
+import type { ObjectEncryptionRow } from "../db/repositories/object-encryption.ts";
 
 export class ObjectAccessError extends Error {}
 export class ObjectNotFoundError extends Error {}
@@ -27,6 +29,10 @@ export interface ObjectUploadInput {
   acl?: string;
   /** Server-side encryption to apply, or null/undefined for plaintext. */
   encryption?: EncryptionPlan | null;
+  /** Bucket versioning mode at the time of the write. */
+  versioning?: "Disabled" | "Enabled" | "Suspended";
+  /** Version id for the new object. */
+  versionId?: string;
   signal?: AbortSignal;
   verify?: (result: StreamingUploadResult) => void;
   ifAbsent?: boolean;
@@ -44,6 +50,12 @@ export interface ObjectDownloadInput {
   signal?: AbortSignal;
   /** SSE-C key supplied by the caller, required for objects written with one. */
   customerKey?: { key: Buffer; keyMd5: string } | null;
+  /** Set when reading an archived version, which by definition has no row in
+   *  `objects` to check freshness against. */
+  skipCurrentCheck?: boolean;
+  /** Encryption metadata for an archived version, which is stored on the
+   *  version row rather than in object_encryption. */
+  encryptionOverride?: ObjectEncryptionRow | null;
 }
 
 export interface ObjectDownloadResult {
@@ -135,9 +147,14 @@ export class ObjectService {
         });
         const committed = this.app.repos.objects.commitStagedObject(staging.id, {
           ifAbsent: input.ifAbsent,
+          versioning: input.versioning,
+          versionId: input.versionId,
         });
         uploadedDriveFileId = null;
+        // The repository decides whether the previous row was retained; if it
+        // was, its Drive file still backs that version and must survive.
         if (
+          !committed.archivedPrevious &&
           committed.previous &&
           committed.previous.drive_file_id !== result.uploaded.driveFileId
         ) {
@@ -182,14 +199,17 @@ export class ObjectService {
 
   async download(input: ObjectDownloadInput): Promise<ObjectDownloadResult> {
     await this.verifyAccess(input.actorUserId, input.bucket, false, input.signal);
-    const current = this.app.repos.objects.findActiveByIdInBucket(
-      input.bucket.id,
-      input.object.id,
-    );
-    if (!current || current.drive_file_id !== input.object.drive_file_id) {
-      throw new ObjectNotFoundError();
+    let object = input.object;
+    if (!input.skipCurrentCheck) {
+      const current = this.app.repos.objects.findActiveByIdInBucket(
+        input.bucket.id,
+        input.object.id,
+      );
+      if (!current || current.drive_file_id !== input.object.drive_file_id) {
+        throw new ObjectNotFoundError();
+      }
+      object = current;
     }
-    const object = current;
     const parsedRange = parseRange(input.range, object.size_bytes);
     const slot = await this.app.driveLimits.download(input.actorUserId, input.signal);
     let upstream: Response;
@@ -226,7 +246,10 @@ export class ObjectService {
     // Decrypt on the way out. CTR is seekable, so a ranged read only needs the
     // counter advanced to the range start — the object is never fetched whole
     // just to serve a slice of it.
-    const encryption = this.app.repos.objectEncryption.find(object.id);
+    const encryption =
+      input.encryptionOverride !== undefined
+        ? input.encryptionOverride
+        : this.app.repos.objectEncryption.find(object.id);
     let body = wrapBody(upstream, slot);
     if (encryption && body) {
       const decrypt = new EncryptionService(this.app).decryptorFor({
@@ -247,13 +270,21 @@ export class ObjectService {
     };
   }
 
+  /**
+   * Delete an object.
+   *
+   * With versioning enabled this is not a deletion at all: the current row is
+   * archived and a delete marker takes its place, so the bytes survive and the
+   * key simply stops resolving. `deleteMarkerVersionId` is returned so the
+   * caller can report `x-amz-version-id` and `x-amz-delete-marker`.
+   */
   async delete(input: {
     actorUserId: string;
     bucket: AccessibleBucketRow;
     object: ObjectRow;
     reason: string;
     signal?: AbortSignal;
-  }): Promise<ObjectRow | null> {
+  }): Promise<{ removed: ObjectRow | null; deleteMarkerVersionId: string | null }> {
     await this.verifyAccess(input.actorUserId, input.bucket, true, input.signal);
     const current = this.app.repos.objects.findActiveByIdInBucket(
       input.bucket.id,
@@ -262,6 +293,54 @@ export class ObjectService {
     if (!current || current.drive_file_id !== input.object.drive_file_id) {
       throw new ObjectNotFoundError();
     }
+
+    const versioning = input.bucket.versioning;
+    if (versioning === "Enabled" || versioning === "Suspended") {
+      // Suspended still inserts a marker — the key must stop resolving — but
+      // it uses the 'null' version id and replaces any existing null version,
+      // exactly as a suspended write does.
+      const markerVersionId = versioning === "Enabled" ? newVersionId() : "null";
+      const retainCurrent = versioning === "Enabled" || current.version_id !== "null";
+
+      if (retainCurrent) {
+        const encryption = this.app.repos.objectEncryption.find(current.id);
+        this.app.repos.objectVersions.archive({ object: current, encryption });
+      }
+      this.app.repos.objectVersions.clearLatest(input.bucket.id, current.object_key);
+      // A null marker would collide with an earlier null version row, so clear
+      // it first; under suspension that row is the one being replaced anyway.
+      if (markerVersionId === "null") {
+        this.app.repos.objectVersions.delete(input.bucket.id, current.object_key, "null");
+      }
+      this.app.repos.objectVersions.insertDeleteMarker({
+        bucketId: input.bucket.id,
+        objectKey: current.object_key,
+        versionId: markerVersionId,
+      });
+
+      // Drop only the namespace row. When the version was retained its Drive
+      // file backs that version; when it was not, the bytes are unreachable
+      // and must be released.
+      this.app.repos.objects.deleteByKey(input.bucket.id, current.object_key);
+      if (!retainCurrent) {
+        this.app.repos.pendingCleanup.enqueue({
+          userId: input.bucket.user_id,
+          resourceType: "drive_file",
+          resourceId: current.drive_file_id,
+          reason: input.reason,
+          driveTargetId: input.bucket.drive_target_id,
+        });
+        await this.drainDriveFileNow(
+          input.actorUserId,
+          input.bucket.user_id,
+          current.drive_file_id,
+          this.app.bucketAccess.operationTarget(input.bucket),
+          input.signal,
+        );
+      }
+      return { removed: current, deleteMarkerVersionId: markerVersionId };
+    }
+
     const removed = this.app.repos.objects.deleteAndQueueCleanup({
       userId: input.bucket.user_id,
       bucketId: input.bucket.id,
@@ -278,7 +357,7 @@ export class ObjectService {
         input.signal,
       );
     }
-    return removed;
+    return { removed, deleteMarkerVersionId: null };
   }
 
   private async verifyAccess(

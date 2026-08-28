@@ -24,10 +24,12 @@ import {
   updateBucketAccess,
   updateBucketMember,
   listKmsKeys,
+  pruneBucketVersions,
   type Bucket,
   type BucketAccessConfig,
   type BucketAcl,
   type BucketMember,
+  type BucketVersioning,
   type KmsKey,
   type SseAlgorithm,
   type SharedDriveSummary,
@@ -116,6 +118,9 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const [sseDraft, setSseDraft] = useState<SseAlgorithm | "none">("none");
   const [sseKeyDraft, setSseKeyDraft] = useState("");
   const [kmsKeys, setKmsKeys] = useState<KmsKey[]>([]);
+  const [versioningDraft, setVersioningDraft] = useState<BucketVersioning>("Disabled");
+  const [confirmPrune, setConfirmPrune] = useState(false);
+  const [pruning, setPruning] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -203,9 +208,25 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       setAclDraft(accessConfig.acl);
       setPolicyDraft(accessConfig.policy ? prettyJson(accessConfig.policy) : "");
       setKmsKeys(keys);
+      setVersioningDraft(accessConfig.versioning);
       setSseDraft(accessConfig.defaultSseAlgorithm ?? "none");
       setSseKeyDraft(accessConfig.defaultKmsKeyId ?? keys.find((k) => k.status === "active")?.id ?? "");
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const doPruneVersions = async () => {
+    if (!accessBucket) return;
+    setPruning(true);
+    try {
+      await pruneBucketVersions(accessBucket.id);
+      setAccess(await getBucketAccess(accessBucket.id));
+      toast.success(t.toast.versionsPruned);
+    } catch (cause) {
+      toast.fromError(t.toast.versionsFailed, cause);
+    } finally {
+      setPruning(false);
+      setConfirmPrune(false);
+    }
   };
 
   const saveAccess = async () => {
@@ -228,12 +249,16 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
         policy: trimmed === "" ? null : trimmed,
         defaultSseAlgorithm: sseDraft === "none" ? null : sseDraft,
         ...(sseDraft === "aws:kms" ? { defaultKmsKeyId: sseKeyDraft } : {}),
+        // Disabled is not a value S3 accepts once versioning has been turned
+        // on, so it is only ever sent as Enabled or Suspended.
+        ...(versioningDraft === "Disabled" ? {} : { versioning: versioningDraft }),
       });
       setAccess(updated);
       setAclDraft(updated.acl);
       setPolicyDraft(updated.policy ? prettyJson(updated.policy) : "");
       setSseDraft(updated.defaultSseAlgorithm ?? "none");
       setSseKeyDraft(updated.defaultKmsKeyId ?? "");
+      setVersioningDraft(updated.versioning);
       toast.success(t.toast.accessSaved);
     } catch (e) {
       setPolicyError(e instanceof Error ? e.message : String(e));
@@ -331,6 +356,36 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
               <p className="text-xs text-muted-foreground">{t.buckets.aclHelp}</p>
             </div>
             <div className="space-y-2">
+              <Label htmlFor="bucket-versioning">{t.buckets.versioningLabel}</Label>
+              <Select
+                value={versioningDraft}
+                onValueChange={(value) => setVersioningDraft(value as BucketVersioning)}
+                ariaLabel={t.buckets.versioningLabel}
+                options={[
+                  {
+                    value: "Disabled",
+                    label: t.buckets.versioningDisabled,
+                    // S3 has no path back to Disabled once versioning is on.
+                    disabled: access ? access.versioning !== "Disabled" : false,
+                  },
+                  { value: "Enabled", label: t.buckets.versioningEnabled },
+                  { value: "Suspended", label: t.buckets.versioningSuspended },
+                ]}
+              />
+              <p className="text-xs text-muted-foreground">{t.buckets.versioningHelp}</p>
+              {access && access.retainedVersions > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {t.buckets.versioningRetained(access.retainedVersions)} · {t.buckets.versioningStorageHint}
+                  </span>
+                  <Button size="sm" variant="outline" disabled={pruning} onClick={() => setConfirmPrune(true)}>
+                    {pruning ? t.buckets.pruning : t.buckets.pruneVersions}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="bucket-encryption">{t.buckets.encryptionLabel}</Label>
               <Select
                 value={sseDraft}
@@ -387,6 +442,25 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
         ) : (
         <><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><div className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</div></>)}</DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmPrune} onOpenChange={(open) => { if (!pruning) setConfirmPrune(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.buckets.pruneConfirmTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{t.buckets.pruneConfirmDescription}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pruning}>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pruning}
+              onClick={(event) => { event.preventDefault(); void doPruneVersions(); }}
+            >
+              {pruning ? t.buckets.pruning : t.buckets.pruneVersions}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.buckets.deleteBucketConfirmTitle(pendingDelete?.name ?? "")}</AlertDialogTitle><AlertDialogDescription>{t.buckets.deleteBucketConfirmDescription(pendingDelete?.storageDisplayName ?? "")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={(event) => { event.preventDefault(); void doDelete(); }}>{deleting ? t.buckets.deleting : t.buckets.delete}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>

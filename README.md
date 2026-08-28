@@ -103,10 +103,11 @@ passing test, so nothing is marked supported on faith.
 
 | Supported | Not supported |
 |---|---|
-| Path-style (default) and virtual-hosted (opt-in) endpoints | Object versioning |
-| Core object CRUD, `ListObjectsV2`, byte-range and conditional GET | Object Lock and Legal Hold |
-| Multipart upload, `CopyObject` (same actor) | Cross-user `CopyObject` between unrelated My Drive accounts |
+| Path-style (default) and virtual-hosted (opt-in) endpoints | Object Lock and Legal Hold |
+| Core object CRUD, `ListObjectsV2`, byte-range and conditional GET | Cross-user `CopyObject` between unrelated My Drive accounts |
+| Multipart upload, `CopyObject` (same actor) | |
 | SigV4 header and presigned-query auth | |
+| Object versioning with delete markers | |
 | SigV4A (`AWS4-ECDSA-P256-SHA256`), header and presigned-query | |
 | PresignedPost browser form uploads | |
 | ACL and bucket policy, including anonymous public access | |

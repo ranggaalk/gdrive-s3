@@ -305,6 +305,8 @@ export async function handleBuckets(
           isPublic: ctx.authorization.isPublic(bucket),
           defaultSseAlgorithm: bucket.default_sse_algorithm,
           defaultKmsKeyId: bucket.default_kms_key_id,
+          versioning: bucket.versioning,
+          retainedVersions: ctx.repos.objectVersions.countForBucket(bucket.id),
         },
         requestId,
       );
@@ -318,6 +320,7 @@ export async function handleBuckets(
           policy?: unknown;
           defaultSseAlgorithm?: unknown;
           defaultKmsKeyId?: unknown;
+          versioning?: unknown;
         }>(ctx, req);
       } catch (error) {
         const mapped = mapBodyReadError(error, requestId);
@@ -384,6 +387,25 @@ export async function handleBuckets(
         }
       }
 
+      // Versioning. Once on, S3 has no way back to Disabled — Suspended is
+      // the off switch, and it keeps existing versions.
+      if (body?.versioning !== undefined) {
+        const versioning = body.versioning;
+        if (versioning !== "Enabled" && versioning !== "Suspended") {
+          return apiError("INVALID", "Versioning harus Enabled atau Suspended.", 400, requestId);
+        }
+        ctx.repos.buckets.setVersioning(bucket.id, versioning);
+        ctx.repos.audit.record({
+          userId,
+          action: "bucket.versioning.update",
+          bucketName: bucket.name,
+          bucketId: bucket.id,
+          statusCode: 200,
+          requestId,
+          detail: { versioning },
+        });
+      }
+
       // Default encryption. null clears it; absent leaves it alone.
       if (body?.defaultSseAlgorithm !== undefined) {
         const algorithm = body.defaultSseAlgorithm;
@@ -427,12 +449,45 @@ export async function handleBuckets(
           isPublic: ctx.authorization.isPublic(updated),
           defaultSseAlgorithm: updated.default_sse_algorithm,
           defaultKmsKeyId: updated.default_kms_key_id,
+          versioning: updated.versioning,
+          retainedVersions: ctx.repos.objectVersions.countForBucket(updated.id),
         },
         requestId,
       );
     }
 
     return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+  }
+
+  if (segments[1] === "versions" && segments.length === 2 && req.method === "DELETE") {
+    const bucket = ctx.bucketAccess.findById(userId, bucketId, "owner");
+    if (!bucket) return apiError("NOT_FOUND", "Bucket tidak ditemukan.", 404, requestId);
+
+    // Retained versions keep Drive files alive, so an operator needs a way to
+    // reclaim that space without deleting them one by one.
+    const stale = ctx.repos.objectVersions.listNonCurrent(bucket.id);
+    for (const version of stale) {
+      if (version.drive_file_id) {
+        ctx.repos.pendingCleanup.enqueue({
+          userId: bucket.user_id,
+          resourceType: "drive_file",
+          resourceId: version.drive_file_id,
+          reason: "version_prune",
+          driveTargetId: bucket.drive_target_id,
+        });
+      }
+      ctx.repos.objectVersions.delete(bucket.id, version.object_key, version.version_id);
+    }
+    ctx.repos.audit.record({
+      userId,
+      action: "bucket.versions.prune",
+      bucketName: bucket.name,
+      bucketId: bucket.id,
+      statusCode: 200,
+      requestId,
+      detail: { removed: stale.length },
+    });
+    return ok({ removed: stale.length }, requestId);
   }
 
   if (segments[1] === "traffic") {

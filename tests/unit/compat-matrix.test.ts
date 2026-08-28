@@ -60,7 +60,6 @@ describe("S3 compatibility matrix", () => {
 
   test("keeps explicitly out-of-scope S3 features unsupported", () => {
     const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row.status]));
-    expect(byFeature.get("Object versioning")).toBe("unsupported");
     expect(byFeature.get("Object Lock / Legal Hold")).toBe("unsupported");
 
   });
@@ -76,6 +75,14 @@ describe("S3 compatibility matrix", () => {
   test("ACL and bucket policy are supported with unit evidence", () => {
     const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row]));
     expect(byFeature.get("ACL & Bucket Policy")).toMatchObject({
+      status: "supported",
+      verifiedBy: ["unit"],
+    });
+  });
+
+  test("object versioning is supported with unit evidence", () => {
+    const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row]));
+    expect(byFeature.get("Object versioning")).toMatchObject({
       status: "supported",
       verifiedBy: ["unit"],
     });

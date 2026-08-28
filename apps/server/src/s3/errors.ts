@@ -45,6 +45,10 @@ const CODES = {
   },
   MalformedPolicy: { status: 400, message: "The policy you provided was not well formed." },
   NoSuchBucketPolicy: { status: 404, message: "The bucket policy does not exist." },
+  NoSuchVersion: {
+    status: 404,
+    message: "The specified version does not exist.",
+  },
   MalformedXML: {
     status: 400,
     message: "The XML you provided was not well formed or did not validate against the schema.",

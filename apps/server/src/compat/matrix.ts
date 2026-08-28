@@ -68,7 +68,16 @@ export const COMPAT_MATRIX: readonly CompatRow[] = [
     verifiedBy: ["mc"],
     notes: "Diverifikasi via scripts/compat-mc.sh (create, signed streaming upload, list, download, delete) dengan RELEASE.2025-08-13T08-35-41Z.",
   },
-  { feature: "Object versioning", status: "unsupported" },
+  {
+    feature: "Object versioning",
+    status: "supported",
+    verifiedBy: ["unit"],
+    notes:
+      "GET/PUT ?versioning, ListObjectVersions (?versions) dengan key/version-id " +
+      "marker, ?versionId pada GET/HEAD/DELETE, delete marker, dan undelete. " +
+      "Suspended menulis version id 'null' tanpa menghapus versi lama. " +
+      "Bucket Disabled berperilaku persis seperti sebelumnya.",
+  },
   { feature: "Object Lock / Legal Hold", status: "unsupported" },
   {
     feature: "ACL & Bucket Policy",
