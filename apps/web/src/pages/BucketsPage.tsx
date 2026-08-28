@@ -23,10 +23,13 @@ import {
   removeBucketMember,
   updateBucketAccess,
   updateBucketMember,
+  listKmsKeys,
   type Bucket,
   type BucketAccessConfig,
   type BucketAcl,
   type BucketMember,
+  type KmsKey,
+  type SseAlgorithm,
   type SharedDriveSummary,
   type StorageKind,
 } from "../api/client.ts";
@@ -110,6 +113,9 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   const [policyDraft, setPolicyDraft] = useState("");
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [accessBusy, setAccessBusy] = useState(false);
+  const [sseDraft, setSseDraft] = useState<SseAlgorithm | "none">("none");
+  const [sseKeyDraft, setSseKeyDraft] = useState("");
+  const [kmsKeys, setKmsKeys] = useState<KmsKey[]>([]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -187,14 +193,18 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
     setPolicyError(null);
     setError(null);
     try {
-      const [memberRows, accessConfig] = await Promise.all([
+      const [memberRows, accessConfig, keys] = await Promise.all([
         listBucketMembers(bucket.id),
         getBucketAccess(bucket.id),
+        listKmsKeys().catch(() => [] as KmsKey[]),
       ]);
       setMembers(memberRows);
       setAccess(accessConfig);
       setAclDraft(accessConfig.acl);
       setPolicyDraft(accessConfig.policy ? prettyJson(accessConfig.policy) : "");
+      setKmsKeys(keys);
+      setSseDraft(accessConfig.defaultSseAlgorithm ?? "none");
+      setSseKeyDraft(accessConfig.defaultKmsKeyId ?? keys.find((k) => k.status === "active")?.id ?? "");
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
 
@@ -216,10 +226,14 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
       const updated = await updateBucketAccess(accessBucket.id, {
         acl: aclDraft,
         policy: trimmed === "" ? null : trimmed,
+        defaultSseAlgorithm: sseDraft === "none" ? null : sseDraft,
+        ...(sseDraft === "aws:kms" ? { defaultKmsKeyId: sseKeyDraft } : {}),
       });
       setAccess(updated);
       setAclDraft(updated.acl);
       setPolicyDraft(updated.policy ? prettyJson(updated.policy) : "");
+      setSseDraft(updated.defaultSseAlgorithm ?? "none");
+      setSseKeyDraft(updated.defaultKmsKeyId ?? "");
       toast.success(t.toast.accessSaved);
     } catch (e) {
       setPolicyError(e instanceof Error ? e.message : String(e));
@@ -316,6 +330,37 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
               />
               <p className="text-xs text-muted-foreground">{t.buckets.aclHelp}</p>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="bucket-encryption">{t.buckets.encryptionLabel}</Label>
+              <Select
+                value={sseDraft}
+                onValueChange={(value) => setSseDraft(value as SseAlgorithm | "none")}
+                ariaLabel={t.buckets.encryptionLabel}
+                options={[
+                  { value: "none", label: t.buckets.encryptionNone },
+                  { value: "AES256", label: t.buckets.encryptionSseS3 },
+                  { value: "aws:kms", label: t.buckets.encryptionSseKms, disabled: kmsKeys.length === 0 },
+                ]}
+              />
+              <p className="text-xs text-muted-foreground">{t.buckets.encryptionHelp}</p>
+              {sseDraft === "aws:kms" ? (
+                kmsKeys.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t.buckets.encryptionNoKeys}</p>
+                ) : (
+                  <Select
+                    value={sseKeyDraft}
+                    onValueChange={setSseKeyDraft}
+                    ariaLabel={t.buckets.encryptionKeyLabel}
+                    options={kmsKeys.map((key) => ({
+                      value: key.id,
+                      label: `${key.alias} · v${key.version}`,
+                      disabled: key.status !== "active",
+                    }))}
+                  />
+                )
+              ) : null}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="bucket-policy">{t.buckets.policyLabel}</Label>
               <textarea

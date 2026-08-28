@@ -81,6 +81,14 @@ describe("S3 compatibility matrix", () => {
     });
   });
 
+  test("server-side encryption is supported with unit evidence", () => {
+    const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row]));
+    expect(byFeature.get("SSE-KMS / Server-side encryption")).toMatchObject({
+      status: "supported",
+      verifiedBy: ["unit"],
+    });
+  });
+
   test("SigV4A and PresignedPost are tracked as separate supported rows", () => {
     const byFeature = new Map(COMPAT_MATRIX.map((row) => [row.feature, row]));
     expect(byFeature.get("SigV4A (AWS4-ECDSA-P256-SHA256)")).toMatchObject({

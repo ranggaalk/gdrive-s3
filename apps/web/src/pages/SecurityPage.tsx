@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
-import { Download, RotateCcw, ShieldCheck, ShieldOff, TriangleAlert } from "lucide-react";
+import { Download, KeyRound, RotateCcw, ShieldCheck, ShieldOff, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,11 @@ import {
   getTotpStatus,
   regenerateRecoveryCodes,
   startTotpSetup,
+  createKmsKey,
+  listKmsKeys,
+  rotateKmsKey,
+  setKmsKeyStatus,
+  type KmsKey,
   type TotpStatus,
 } from "../api/client.ts";
 
@@ -43,6 +48,11 @@ export function SecurityPage() {
 
   // Disable / regenerate confirmation dialog (both require re-proving 2FA).
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+
+  // Customer master keys for server-side encryption.
+  const [kmsKeys, setKmsKeys] = useState<KmsKey[]>([]);
+  const [kmsAlias, setKmsAlias] = useState("");
+  const [kmsBusy, setKmsBusy] = useState(false);
   const [confirmCode, setConfirmCode] = useState("");
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -50,13 +60,57 @@ export function SecurityPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      setStatus(await getTotpStatus());
+      const [totp, keys] = await Promise.all([getTotpStatus(), listKmsKeys()]);
+      setStatus(totp);
+      setKmsKeys(keys);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const addKmsKey = async (event: FormEvent) => {
+    event.preventDefault();
+    const alias = kmsAlias.trim();
+    if (!alias || kmsBusy) return;
+    setKmsBusy(true);
+    try {
+      await createKmsKey(alias);
+      setKmsKeys(await listKmsKeys());
+      setKmsAlias("");
+      toast.success(t.toast.kmsKeyCreated);
+    } catch (cause) {
+      toast.fromError(t.toast.kmsFailed, cause);
+    } finally {
+      setKmsBusy(false);
+    }
+  };
+
+  const doRotateKey = async (key: KmsKey) => {
+    setKmsBusy(true);
+    try {
+      await rotateKmsKey(key.id);
+      setKmsKeys(await listKmsKeys());
+      toast.success(t.toast.kmsKeyRotated);
+    } catch (cause) {
+      toast.fromError(t.toast.kmsFailed, cause);
+    } finally {
+      setKmsBusy(false);
+    }
+  };
+
+  const toggleKeyStatus = async (key: KmsKey) => {
+    setKmsBusy(true);
+    try {
+      await setKmsKeyStatus(key.id, key.status === "active" ? "disabled" : "active");
+      setKmsKeys(await listKmsKeys());
+    } catch (cause) {
+      toast.fromError(t.toast.kmsFailed, cause);
+    } finally {
+      setKmsBusy(false);
+    }
+  };
 
   useEffect(() => { void load(); }, [load]);
 
@@ -346,6 +400,65 @@ export function SecurityPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="size-5 text-primary" /> {t.security.kmsTitle}
+          </CardTitle>
+          <CardDescription>{t.security.kmsDescription}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => void addKmsKey(event)}>
+            <div className="min-w-52 flex-1 space-y-2">
+              <Label htmlFor="kms-alias">{t.security.kmsAliasLabel}</Label>
+              <Input
+                id="kms-alias"
+                value={kmsAlias}
+                maxLength={128}
+                placeholder={t.security.kmsAliasPlaceholder}
+                onChange={(event) => setKmsAlias(event.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={!kmsAlias.trim() || kmsBusy}>
+              {kmsBusy ? t.security.kmsCreating : t.security.kmsCreate}
+            </Button>
+          </form>
+
+          {kmsKeys.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t.security.kmsEmpty}</p>
+          ) : (
+            <div className="space-y-2">
+              {kmsKeys.map((key) => (
+                <div key={key.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-medium">{key.alias}</p>
+                      <Badge variant={key.status === "active" ? "success" : "secondary"}>
+                        {key.status === "active" ? t.security.kmsStatusActive : t.security.kmsStatusDisabled}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t.security.kmsVersion(key.version)} · {t.security.kmsObjectCount(key.objectCount)}
+                      {key.rotatedAt ? ` · ${new Date(key.rotatedAt).toLocaleString()}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={kmsBusy} onClick={() => void doRotateKey(key)}>
+                      <RotateCcw /> {kmsBusy ? t.security.kmsRotating : t.security.kmsRotate}
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={kmsBusy} onClick={() => void toggleKeyStatus(key)}>
+                      {key.status === "active" ? t.security.kmsDisable : t.security.kmsEnable}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">{t.security.kmsRotateHint}</p>
+              <p className="text-xs text-muted-foreground">{t.security.kmsDisabledHint}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
