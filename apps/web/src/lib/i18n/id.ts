@@ -67,6 +67,13 @@ export const id = {
   },
 
   login: {
+    tagline: "Storage S3 di atas Google Drive",
+    description: "Masuk dengan akun Google Anda untuk mengelola bucket, objek, dan access key.",
+    featureStorage: "Bucket tersimpan di My Drive atau Shared Drive Anda sendiri",
+    featureSecurity: "Dilindungi autentikasi dua faktor dan enkripsi di sisi server",
+    featureCompat: "Kompatibel dengan AWS CLI, SDK, rclone, dan MinIO mc",
+    accessNote: "Akses dibatasi pada domain Google Workspace dan daftar email yang diizinkan.",
+    switchLanguage: (label: string) => `Ganti bahasa ke ${label}`,
     loginFailedTitle: "Login gagal",
     loginFailedMessage: "Google tidak dapat menyelesaikan proses masuk. Silakan coba lagi.",
     loginButton: "Masuk dengan Google",

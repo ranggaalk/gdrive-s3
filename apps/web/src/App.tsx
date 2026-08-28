@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, BookOpen, Gauge, HardDrive, HardDriveDownload, KeyRound, LogIn, PackageOpen, RefreshCw, Settings } from "lucide-react";
+import { Activity, BookOpen, Gauge, HardDriveDownload, KeyRound, PackageOpen, RefreshCw, Settings } from "lucide-react";
 import { getBucket, getMe, MfaRequiredError, type Me, type Bucket } from "./api/client.ts";
 import { AppShell, type NavigationItem } from "@/components/app-shell";
 import { ErrorAlert, LoadingState, Spinner } from "@/components/feedback";
@@ -23,46 +23,7 @@ import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { BackupAccountsPage } from "./pages/BackupAccountsPage.tsx";
 import { SecurityPage } from "./pages/SecurityPage.tsx";
 import { MfaVerifyPage } from "./pages/MfaVerifyPage.tsx";
-
-function LoginPage() {
-  const { t, locale } = useLocale();
-  const params = new URLSearchParams(window.location.search);
-  const loginError = params.get("login_error");
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-primary/10 via-background to-background p-4">
-      <Card className="w-full max-w-lg shadow-xl">
-        <CardHeader className="items-center text-center">
-          <div className="mb-3 rounded-2xl bg-primary p-3 text-primary-foreground shadow-lg shadow-primary/20">
-            <HardDrive className="size-8" aria-hidden="true" />
-          </div>
-          <CardTitle className="text-2xl">{t.nav.appName}</CardTitle>
-          <CardDescription className="max-w-md text-base">
-            {locale === "en" ? (
-              <>
-                Buckets can be stored in your personal <strong className="text-foreground">My Drive</strong> or your
-                organization's Google <strong className="text-foreground">Shared Drive</strong>. Sign-in is only
-                allowed for your organization's Google Workspace domain.
-              </>
-            ) : (
-              <>
-                Bucket dapat disimpan di <strong className="text-foreground">My Drive</strong> pribadi atau Google{" "}
-                <strong className="text-foreground">Shared Drive</strong> organisasi. Masuk hanya diizinkan untuk
-                domain Google Workspace organisasi Anda.
-              </>
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {loginError ? <ErrorAlert title={t.login.loginFailedTitle} message={t.login.loginFailedMessage} /> : null}
-          <Button asChild size="lg" className="w-full">
-            <a href="/auth/google/start"><LogIn /> {t.login.loginButton}</a>
-          </Button>
-        </CardContent>
-      </Card>
-    </main>
-  );
-}
+import { LoginPage } from "./pages/LoginPage.tsx";
 
 export function App() {
   const { t } = useLocale();

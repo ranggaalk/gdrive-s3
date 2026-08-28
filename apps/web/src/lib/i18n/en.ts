@@ -69,6 +69,13 @@ export const en: Dictionary = {
   },
 
   login: {
+    tagline: "S3 storage on top of Google Drive",
+    description: "Sign in with your Google account to manage buckets, objects, and access keys.",
+    featureStorage: "Buckets live in your own My Drive or Shared Drive",
+    featureSecurity: "Protected by two-factor authentication and encryption at rest",
+    featureCompat: "Works with the AWS CLI, SDKs, rclone, and MinIO mc",
+    accessNote: "Access is limited to your Google Workspace domain and the allowed email list.",
+    switchLanguage: (label: string) => `Switch language to ${label}`,
     loginFailedTitle: "Login failed",
     loginFailedMessage: "Google couldn't complete the sign-in. Please try again.",
     loginButton: "Sign in with Google",
