@@ -145,6 +145,86 @@ export interface AuditItem {
   createdAt: string;
 }
 
+export type DriveCallKind = "api" | "upload" | "download";
+
+export interface DriveQuotaWindow {
+  windowSeconds: number;
+  requests: number;
+  throttled: number;
+  errors: number;
+  byKind: Record<DriveCallKind, number>;
+  perMinute: number;
+}
+
+export interface DriveThrottleEvent {
+  at: string;
+  userId: string | null;
+  kind: DriveCallKind;
+  status: number;
+  reason: string | null;
+  retryAfterMs: number | null;
+}
+
+export interface DriveQuotaUser {
+  userId: string;
+  email: string | null;
+  requestsLastHour: number;
+  throttledLastHour: number;
+  lastCallAt: string;
+}
+
+export interface DriveQuotaRow {
+  metric: string;
+  displayName: string;
+  unit: string;
+  limit: number | null;
+  /** null when Google reported no usage for this limit — never an estimate. */
+  consumed: number | null;
+  remaining: number | null;
+  usedRatio: number | null;
+  consumedAt: string | null;
+  scope: "project" | "user" | "other";
+}
+
+export interface DriveQuota {
+  observed: {
+    since: string;
+    totalRequests: number;
+    totalThrottled: number;
+    windows: DriveQuotaWindow[];
+    recentThrottles: DriveThrottleEvent[];
+    users: DriveQuotaUser[];
+    usersTracked: number;
+  };
+  concurrency: {
+    uploadsPerUser: number;
+    downloadsPerUser: number;
+    apiRequestsPerUser: number;
+    retryMaxAttempts: number;
+  };
+  storage: {
+    limitBytes: number | null;
+    usageBytes: number;
+    usageInDriveBytes: number;
+    usageInDriveTrashBytes: number;
+    emailAddress: string | null;
+    remainingBytes: number | null;
+    usedRatio: number | null;
+  } | null;
+  storageError: string | null;
+  live:
+    | { configured: boolean; error: string; rows?: undefined }
+    | {
+        configured: true;
+        projectId: string;
+        rows: DriveQuotaRow[];
+        sampledAt: string | null;
+        fetchedAt: string;
+        error?: undefined;
+      };
+  canSeeUsers: boolean;
+}
+
 let csrfToken: string | null = null;
 
 /**
@@ -226,6 +306,7 @@ export async function getMe(): Promise<Me | null> {
 }
 
 export const getDriveStatus = async () => unwrap<DriveStatus>(await fetch("/api/drive/status"));
+export const getDriveQuota = async () => unwrap<DriveQuota>(await fetch("/api/drive/quota"));
 export const reconnectDrive = async () =>
   unwrap(await fetch("/api/drive/reconnect", mutate("POST")));
 

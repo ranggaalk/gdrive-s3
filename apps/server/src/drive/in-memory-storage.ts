@@ -22,6 +22,8 @@ import type {
   GetDriveSourceItemInput,
   ListDriveChildrenInput,
   DriveSourceItem,
+  StorageQuotaInput,
+  DriveStorageQuota,
 } from "./storage.ts";
 
 interface StoredBlob {
@@ -81,6 +83,23 @@ export class InMemoryDriveStorage implements DriveStorage {
    * was actually stored — encrypted-at-rest claims are worth nothing if only
    * the response headers are checked.
    */
+  /** Storage quota tests can steer; defaults to a 15 GB consumer account. */
+  storageQuota: DriveStorageQuota = {
+    limitBytes: 15 * 1024 ** 3,
+    usageBytes: 0,
+    usageInDriveBytes: 0,
+    usageInDriveTrashBytes: 0,
+    emailAddress: null,
+  };
+
+  async getStorageQuota(_input: StorageQuotaInput): Promise<DriveStorageQuota> {
+    // Usage tracks the bytes this fake is actually holding, so a test that
+    // uploads can assert the number moved.
+    const stored = [...this.blobs.values()].reduce((sum, blob) => sum + blob.bytes.length, 0);
+    return { ...this.storageQuota, usageBytes: this.storageQuota.usageBytes + stored,
+      usageInDriveBytes: this.storageQuota.usageInDriveBytes + stored };
+  }
+
   contentOf(driveFileId: string): Uint8Array {
     const blob = this.blobs.get(driveFileId);
     if (!blob) throw new Error(`no blob for ${driveFileId}`);

@@ -38,6 +38,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       redirectUri: "http://localhost/cb",
       driveScope: "https://www.googleapis.com/auth/drive",
     },
+    driveQuota: { projectId: "", serviceAccount: null, cacheSeconds: 60 },
     masterEncryptionKey: Buffer.alloc(32, 5),
     sessionSecret: Buffer.alloc(32, 6),
     sqlitePath: ":memory:",

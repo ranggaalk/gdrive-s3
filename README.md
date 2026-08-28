@@ -39,6 +39,7 @@ Viewer/Editor access.
 - [Quick start](#quick-start)
 - [Google OAuth setup](#google-oauth-setup)
 - [Optional: virtual-hosted endpoint](#optional-virtual-hosted-endpoint)
+- [Drive API quota](#drive-api-quota)
 - [Dashboard](#dashboard)
 - [Quality gates](#quality-gates)
 - [Production deployment](#production-deployment)
@@ -88,6 +89,8 @@ Viewer/Editor access.
   (revoked keys only), with a one-time download of the new secret.
 - **Drive import:** copy an existing Google Drive folder tree into a bucket as
   a one-time, read-only snapshot.
+- **Drive API quota:** how much Google Drive API quota is left, read live from
+  Google rather than estimated, alongside the calls this gateway actually made.
 - **Traffic charts:** bandwidth, request count, and error count over 1h, 24h,
   or 7d, refreshing every 15s, both dashboard-wide and per bucket.
 - **Activity log:** cursor-paginated audit trail of control-plane actions.
@@ -224,11 +227,58 @@ This needs a wildcard DNS record and a wildcard (or SAN) TLS certificate for
 `*.storage.example.com` at your reverse proxy. Leave the variable unset to
 disable virtual-hosted addressing entirely.
 
+## Drive API quota
+
+The **Quota** page answers "how much Google Drive API can this gateway still
+use?" without guessing. It reports three things, kept separate because they
+have different sources and different trustworthiness.
+
+**Live request quota — from Google.** Drive API responses carry no rate-limit
+headers, so the remaining request quota cannot be inferred from a Drive call.
+It is read instead from the Google Cloud project that owns your OAuth client:
+Service Usage supplies the configured limit, Cloud Monitoring supplies the
+consumption, and remaining is the difference. Both numbers come from Google.
+Where Monitoring reports nothing for a limit, the row reads *Unknown* rather
+than showing an estimate.
+
+This needs a read-only credential, separate from the user OAuth flow:
+
+1. In the project that owns `GOOGLE_CLIENT_ID`, enable the **Service Usage
+   API** and the **Cloud Monitoring API**.
+2. Create a service account with the **Monitoring Viewer** and **Service Usage
+   Consumer** roles. Both are read-only; neither can touch Drive data.
+3. Set `GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON` (raw or base64 JSON) or
+   `GOOGLE_QUOTA_SERVICE_ACCOUNT_FILE`, then restart.
+
+Without it the page still works — it just says live quota is unconfigured
+instead of inventing a remaining figure. Quota samples are cached for
+`GOOGLE_QUOTA_CACHE_SECONDS` (default 60), because Cloud Monitoring only
+publishes new numbers once a minute and enforces quotas of its own. Google
+publishes those samples a few minutes late, so each row carries the timestamp
+of the sample it came from.
+
+**Observed usage — measured here.** Every HTTP call this gateway makes to
+Google is counted as it happens, split by metadata/upload/download and
+bucketed into 60s, 100s, 10m, 1h, and 24h windows. The 60s and 100s windows
+match the two periods Google expresses Drive quotas in. Throttles are counted
+separately from ordinary errors, and the last 50 rejections are listed with
+the reason and `Retry-After` Google returned. These counters live in memory
+only — bounded ring buffers, nothing written to the database — so they reset
+on restart and cover this gateway's traffic alone. If anything else uses the
+same Cloud project, they run lower than Google's own count.
+
+**Storage quota — from Drive.** The one quota Google does report on a Drive
+call (`about.get`): bytes used, remaining, and in trash for the signed-in
+account.
+
+The per-user breakdown is admin-only, since it shows how busy other people
+have been. Everything else is visible to any signed-in user.
+
 ## Dashboard
 
 Dashboard sections are plain paths (`/buckets`, `/buckets/:id`, `/credentials`,
-`/activity`, `/documentation`, `/backup`, `/security`, `/settings`) rather than
-query strings. Those names are reserved: `util/bucket-name.ts` rejects them as
+`/activity`, `/documentation`, `/backup`, `/quota`, `/security`, `/settings`)
+rather than query strings. Those names are reserved: `util/bucket-name.ts` rejects them as
 bucket names, so a dashboard route can never collide with a real S3 bucket.
 
 ### Object sharing

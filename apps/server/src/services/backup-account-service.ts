@@ -4,6 +4,7 @@
 import type { AccessibleBucketRow } from "../db/repositories/buckets.ts";
 import type { BackupAccountRow } from "../db/repositories/backup-accounts.ts";
 import { DriveClient } from "../drive/client.ts";
+import { meteredFetch } from "../drive/metered-fetch.ts";
 import { exchangeCode, verifyLinkedAccountIdToken } from "../auth/google-oauth.ts";
 import { sealToString, aad } from "../security/encryption.ts";
 import { newBackupAccountId } from "../util/ids.ts";
@@ -59,15 +60,22 @@ export class BackupAccountService {
     return this.ctx.repos.backupAccounts.listByOwner(ownerUserId);
   }
 
-  private async client(accountId: string, signal?: AbortSignal): Promise<DriveClient> {
-    const token = await this.ctx.backupTokenProvider.getAccessToken(accountId, signal);
-    return new DriveClient(token, this.ctx.config.driveRetryMaxAttempts);
+  private async client(account: BackupAccountRow, signal?: AbortSignal): Promise<DriveClient> {
+    const token = await this.ctx.backupTokenProvider.getAccessToken(account.id, signal);
+    // Backup accounts are separate Google accounts but share this gateway's
+    // OAuth client, so their calls draw on the same project request quota and
+    // are metered against the owner who linked them.
+    return new DriveClient(
+      token,
+      this.ctx.config.driveRetryMaxAttempts,
+      meteredFetch(this.ctx.driveQuotaMeter, account.owner_user_id),
+    );
   }
 
   /** Idempotently ensure the destination's root folder exists; cached on the account row. */
   async ensureRootFolder(account: BackupAccountRow, signal?: AbortSignal): Promise<string> {
     if (account.root_folder_id) return account.root_folder_id;
-    const client = await this.client(account.id, signal);
+    const client = await this.client(account, signal);
     const marker = `backup-root:${account.id}`;
     const existing = await client.findByAppProperty(MARKER_KEY, marker, signal);
     if (existing) {
@@ -91,7 +99,7 @@ export class BackupAccountService {
     rootFolderId: string,
     signal?: AbortSignal,
   ): Promise<string> {
-    const client = await this.client(account.id, signal);
+    const client = await this.client(account, signal);
     const marker = `backup-bucket:${account.id}:${bucket.id}`;
     const existing = await client.findByAppProperty(MARKER_KEY, marker, signal, undefined, rootFolderId);
     if (existing) return existing.id;

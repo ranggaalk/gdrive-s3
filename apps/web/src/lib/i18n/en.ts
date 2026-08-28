@@ -160,6 +160,7 @@ export const en: Dictionary = {
     buckets: "Buckets",
     credentials: "S3 Credentials",
     backup: "Backup",
+    quota: "API Quota",
     activity: "Activity",
     documentation: "Documentation",
     settings: "Settings",
@@ -756,6 +757,98 @@ export const en: Dictionary = {
     sessionExpiredTitle: "Session expired",
     sessionExpiredDescription: "Your login session has expired. Please sign in again.",
     backToLogin: "Back to login",
+  },
+
+  quota: {
+    pageTitle: "Drive API quota",
+    loading: "Loading quota",
+    refresh: "Refresh",
+    refreshing: "Refreshing…",
+    loadFailed: "Couldn't load the Drive quota.",
+
+    liveTitle: "Request quota (live from Google)",
+    liveDescription:
+      "Limits and usage read straight from your Google Cloud project, not estimated.",
+    liveProject: (projectId: string) => `Project ${projectId}`,
+    liveSampledAt: (time: string) => `Google sampled at ${time}`,
+    liveLagNote:
+      "Google publishes quota figures a few minutes late, so the newest sample can trail current traffic.",
+    liveTableMetric: "Metric",
+    liveTableScope: "Scope",
+    liveTableLimit: "Limit",
+    liveTableConsumed: "Used",
+    liveTableRemaining: "Remaining",
+    scopeProject: "Per project",
+    scopeUser: "Per user",
+    scopeOther: "Other",
+    unlimited: "Unlimited",
+    unknown: "Unknown",
+    unknownHint:
+      "Google reported no usage for this limit. The figure is left blank rather than guessed.",
+    perMinuteUnit: (value: number) => `${value.toLocaleString("en-US")}/min`,
+
+    notConfiguredTitle: "Live quota isn't configured",
+    notConfiguredBody:
+      "Drive API responses carry no quota headers, so the remaining request quota can only be read from the Google Cloud project that owns this OAuth client.",
+    notConfiguredSteps: [
+      "Enable the Service Usage API and the Cloud Monitoring API on that project.",
+      "Create a service account with the Monitoring Viewer and Service Usage Consumer roles.",
+      "Set GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON (or _FILE) and restart the gateway.",
+    ],
+    liveFailedTitle: "Live quota couldn't be read",
+
+    observedTitle: "Observed on this gateway",
+    observedDescription:
+      "Counted from every call actually sent to Google, not estimated. Covers this gateway's traffic only.",
+    observedSince: (time: string) => `Counting since ${time}`,
+    observedScopeNote:
+      "If anything else uses the same Google Cloud project, these numbers run lower than Google's own count.",
+    windowLabel: (seconds: number) =>
+      seconds < 60
+        ? `Last ${seconds} seconds`
+        : seconds < 3600
+          ? `Last ${Math.round(seconds / 60)} minutes`
+          : seconds < 86_400
+            ? `Last ${Math.round(seconds / 3600)} hours`
+            : `Last ${Math.round(seconds / 86_400)} days`,
+    windowRequests: "Requests",
+    windowRate: "Rate",
+    windowThrottled: "Quota rejections",
+    windowErrors: "Other errors",
+    kindApi: "Metadata",
+    kindUpload: "Upload",
+    kindDownload: "Download",
+
+    throttleTitle: "Recent quota rejections",
+    throttleDescription: "When Google actually turned a request away for rate limiting.",
+    throttleEmpty: "No request has been rejected for quota yet.",
+    throttleRetryAfter: (seconds: number) => `Google asked to wait ${seconds}s`,
+    throttleNoRetryAfter: "No Retry-After",
+
+    usersTitle: "Usage per user (last hour)",
+    usersDescription: "Visible to admins only.",
+    usersEmpty: "No Drive activity in the last hour.",
+    usersTableUser: "User",
+    usersTableRequests: "Requests",
+    usersTableThrottled: "Rejected",
+    usersTableLast: "Last call",
+
+    storageTitle: "Drive storage quota",
+    storageDescription: "Read straight from your Google Drive account.",
+    storageUsed: "Used",
+    storageRemaining: "Remaining",
+    storageLimit: "Total",
+    storageTrash: "In trash",
+    storageUnlimited: "This account has no storage limit.",
+    storageFailed: (reason: string) => `Storage quota unavailable: ${reason}`,
+
+    concurrencyTitle: "This gateway's own limits",
+    concurrencyDescription:
+      "Applied before a request reaches Google, so one user cannot drain the shared quota.",
+    concurrencyUploads: "Concurrent uploads per user",
+    concurrencyDownloads: "Concurrent downloads per user",
+    concurrencyApi: "Concurrent API calls per user",
+    concurrencyRetries: "Maximum retry attempts",
   },
 
   security: {

@@ -1,6 +1,13 @@
 // Startup configuration. Every env var is validated here; the process must
 // refuse to boot with an invalid security configuration (AGENTS.md §6, §20).
 
+import { readFileSync } from "node:fs";
+import {
+  parseServiceAccountKey,
+  ServiceAccountError,
+  type ServiceAccountKey,
+} from "./auth/google-service-account.ts";
+
 export type DeleteMode = "trash" | "permanent";
 
 export interface AppConfig {
@@ -21,6 +28,18 @@ export interface AppConfig {
     clientSecret: string;
     redirectUri: string;
     driveScope: string;
+  };
+
+  /**
+   * Optional read-only Google Cloud credential used to read the Drive API's
+   * live request quota. Without it the dashboard still reports the usage this
+   * gateway observes, but cannot show Google's own limit or remaining figure —
+   * Drive API responses carry no quota headers to infer it from.
+   */
+  driveQuota: {
+    projectId: string;
+    serviceAccount: ServiceAccountKey | null;
+    cacheSeconds: number;
   };
 
   // Lowercased emails granted admin access (e.g. the Settings page that can
@@ -197,6 +216,70 @@ function validateEndpointUrl(value: string, key: string): string {
   return url.origin;
 }
 
+function loadDriveQuotaConfig(
+  env: Record<string, string | undefined>,
+): AppConfig["driveQuota"] {
+  const inline = optional(env, "GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON", "");
+  const file = optional(env, "GOOGLE_QUOTA_SERVICE_ACCOUNT_FILE", "");
+  const cacheSeconds = parseIntStrict(
+    optional(env, "GOOGLE_QUOTA_CACHE_SECONDS", "60"),
+    "GOOGLE_QUOTA_CACHE_SECONDS",
+  );
+  if (cacheSeconds < 10) {
+    // Cloud Monitoring publishes quota samples once a minute and enforces
+    // quotas of its own; polling it faster buys nothing.
+    throw new ConfigError("GOOGLE_QUOTA_CACHE_SECONDS must be >= 10");
+  }
+
+  if (inline !== "" && file !== "") {
+    throw new ConfigError(
+      "Set only one of GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON or GOOGLE_QUOTA_SERVICE_ACCOUNT_FILE",
+    );
+  }
+
+  let raw = inline;
+  if (file !== "") {
+    try {
+      raw = readFileSync(file, "utf8");
+    } catch (error) {
+      throw new ConfigError(
+        `GOOGLE_QUOTA_SERVICE_ACCOUNT_FILE could not be read: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  let serviceAccount: ServiceAccountKey | null = null;
+  if (raw !== "") {
+    try {
+      serviceAccount = parseServiceAccountKey(raw);
+    } catch (error) {
+      throw new ConfigError(
+        error instanceof ServiceAccountError
+          ? `Invalid quota service account key: ${error.message}`
+          : `Invalid quota service account key`,
+      );
+    }
+  }
+
+  // The key file names its own project, so only ask for the id when it is
+  // absent or the quota lives in a different project.
+  const projectId = optional(env, "GOOGLE_QUOTA_PROJECT_ID", serviceAccount?.projectId ?? "");
+  if (projectId !== "" && serviceAccount === null) {
+    throw new ConfigError(
+      "GOOGLE_QUOTA_PROJECT_ID needs GOOGLE_QUOTA_SERVICE_ACCOUNT_JSON or _FILE to read quota with",
+    );
+  }
+  if (serviceAccount !== null && projectId === "") {
+    throw new ConfigError(
+      "Set GOOGLE_QUOTA_PROJECT_ID: the quota service account key does not name a project",
+    );
+  }
+
+  return { projectId, serviceAccount, cacheSeconds };
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
   const nodeEnvRaw = optional(env, "NODE_ENV", "development");
   if (!["development", "production", "test"].includes(nodeEnvRaw)) {
@@ -237,6 +320,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         "https://www.googleapis.com/auth/drive",
       ),
     },
+
+    driveQuota: loadDriveQuotaConfig(env),
 
     adminEmails: parseAllowedEmails(optional(env, "ADMIN_EMAILS", "")),
 

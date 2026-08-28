@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, BookOpen, Gauge, HardDriveDownload, KeyRound, PackageOpen, RefreshCw, Settings } from "lucide-react";
+import { Activity, BookOpen, Gauge, HardDriveDownload, KeyRound, PackageOpen, RefreshCw, Settings, Signal } from "lucide-react";
 import { getBucket, getMe, MfaRequiredError, type Me, type Bucket } from "./api/client.ts";
 import { AppShell, type NavigationItem } from "@/components/app-shell";
 import { ErrorAlert, LoadingState, Spinner } from "@/components/feedback";
@@ -22,6 +22,7 @@ import { DocsPage } from "./pages/DocsPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { BackupAccountsPage } from "./pages/BackupAccountsPage.tsx";
 import { SecurityPage } from "./pages/SecurityPage.tsx";
+import { DriveQuotaPage } from "./pages/DriveQuotaPage.tsx";
 import { MfaVerifyPage } from "./pages/MfaVerifyPage.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 
@@ -46,6 +47,7 @@ export function App() {
     activity: t.nav.activity,
     documentation: t.nav.documentation,
     backup: t.nav.backup,
+    quota: t.nav.quota,
     settings: t.nav.settings,
     security: t.nav.security,
   };
@@ -55,6 +57,7 @@ export function App() {
     { id: "buckets", name: t.nav.buckets, icon: PackageOpen },
     { id: "credentials", name: t.nav.credentials, icon: KeyRound },
     { id: "backup", name: t.nav.backup, icon: HardDriveDownload },
+    { id: "quota", name: t.nav.quota, icon: Signal },
     { id: "activity", name: t.nav.activity, icon: Activity },
     { id: "documentation", name: t.nav.documentation, icon: BookOpen },
   ];
@@ -181,6 +184,7 @@ export function App() {
         />
       ) : null}
       {route.kind === "section" && route.page === "backup" ? <BackupAccountsPage /> : null}
+      {route.kind === "section" && route.page === "quota" ? <DriveQuotaPage /> : null}
       {route.kind === "section" && route.page === "settings" ? <SettingsPage /> : null}
       {route.kind === "section" && route.page === "security" ? <SecurityPage /> : null}
       {route.kind === "bucket" &&

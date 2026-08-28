@@ -4,11 +4,13 @@
 // GoogleDriveStorage (thin wrapper over DriveClient + TokenProvider) and the
 // InMemoryDriveStorage used by integration/compat tests.
 
-import { DriveClient } from "./client.ts";
+import { DriveClient, type DriveStorageQuota } from "./client.ts";
 import { TokenProvider } from "./oauth-token.ts";
 import { DriveRootsRepository } from "../db/repositories/drive-roots.ts";
 import { DriveError } from "./errors.ts";
 import type { DriveLimits } from "./limits.ts";
+import type { DriveQuotaMeter } from "./quota-meter.ts";
+import { meteredFetch } from "./metered-fetch.ts";
 import type { RuntimeSettingsService } from "../services/runtime-settings-service.ts";
 
 export type DriveOperationTarget =
@@ -174,6 +176,13 @@ export interface BeginResumableUploadInput {
   signal?: AbortSignal;
 }
 
+export interface StorageQuotaInput {
+  userId: string;
+  signal?: AbortSignal;
+}
+
+export type { DriveStorageQuota } from "./client.ts";
+
 export interface DriveStorage {
   listSharedDrives(input: ListSharedDrivesInput): Promise<SharedDriveListPage>;
   validateSharedDrive(input: ValidateSharedDriveInput): Promise<SharedDriveSummary | null>;
@@ -187,6 +196,7 @@ export interface DriveStorage {
   headObject(input: HeadObjectInput): Promise<HeadObjectResult | null>;
   beginResumableUpload(input: BeginResumableUploadInput): Promise<ResumableSession>;
   uploadResumableChunk(input: UploadResumableChunkInput): Promise<ResumableProgress>;
+  getStorageQuota(input: StorageQuotaInput): Promise<DriveStorageQuota>;
 }
 
 /** Production implementation backed by Google Drive REST. */
@@ -197,11 +207,16 @@ export class GoogleDriveStorage implements DriveStorage {
     private readonly runtimeSettings: RuntimeSettingsService,
     private readonly limits: DriveLimits | null = null,
     private readonly retryMaxAttempts = 5,
+    private readonly meter: DriveQuotaMeter | null = null,
   ) {}
 
   private async client(userId: string, signal?: AbortSignal): Promise<DriveClient> {
     const token = await this.tokens.getAccessToken(userId, signal);
-    return new DriveClient(token, this.retryMaxAttempts);
+    // Metering wraps fetch rather than the client, so every call the client
+    // makes is counted — including upload chunks and media downloads, which
+    // do not go through the retrying request() path.
+    const fetcher = this.meter ? meteredFetch(this.meter, userId) : fetch;
+    return new DriveClient(token, this.retryMaxAttempts, fetcher);
   }
 
   /**
@@ -254,6 +269,10 @@ export class GoogleDriveStorage implements DriveStorage {
       client.getFile(input.fileId, input.signal, this.sharedContext(input.target)),
     );
     return file ? this.sourceItem(file) : null;
+  }
+
+  async getStorageQuota(input: StorageQuotaInput): Promise<DriveStorageQuota> {
+    return this.run(input.userId, input.signal, (client) => client.getStorageQuota(input.signal));
   }
 
   async listChildren(input: ListDriveChildrenInput): Promise<DriveSourcePage> {

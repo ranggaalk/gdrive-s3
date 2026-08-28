@@ -15,6 +15,7 @@ import { TokenRevokedError } from "../drive/oauth-token.ts";
 import { compatMatrix } from "../compat/matrix.ts";
 import { hasRequiredScopes } from "../auth/google-oauth.ts";
 import { handleDriveFolders } from "./api-drive-imports.ts";
+import { handleDriveQuota } from "./api-drive-quota.ts";
 
 export async function handleApi(
   ctx: AppContext,
@@ -62,6 +63,10 @@ export async function handleApi(
       },
       requestId,
     );
+  }
+
+  if (path === "/api/drive/quota") {
+    return handleDriveQuota(ctx, req, session, requestId);
   }
 
   if (path === "/api/drive/folders") {

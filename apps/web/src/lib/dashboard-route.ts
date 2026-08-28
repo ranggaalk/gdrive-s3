@@ -5,6 +5,7 @@ export type DashboardSection =
   | "activity"
   | "documentation"
   | "backup"
+  | "quota"
   | "settings"
   | "security";
 
@@ -19,6 +20,7 @@ const SECTIONS = new Set<DashboardSection>([
   "activity",
   "documentation",
   "backup",
+  "quota",
   "settings",
   "security",
 ]);
