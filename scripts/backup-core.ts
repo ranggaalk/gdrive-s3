@@ -339,6 +339,7 @@ const SEALED_COLUMNS = [
   { table: "oauth_accounts", id: "user_id", column: "encrypted_refresh_token", aad: aad.oauthRefreshToken },
   { table: "s3_credentials", id: "id", column: "encrypted_secret_key", aad: aad.s3Secret },
   { table: "backup_accounts", id: "id", column: "encrypted_refresh_token", aad: aad.backupRefreshToken },
+  { table: "backup_accounts", id: "id", column: "encrypted_secret", aad: aad.backupDestinationSecret },
   { table: "totp_secrets", id: "user_id", column: "encrypted_secret", aad: aad.totpSecret },
   { table: "kms_keys", id: "id", column: "encrypted_material", aad: aad.kmsKey },
 ] as const;
@@ -346,13 +347,18 @@ const SEALED_COLUMNS = [
 function assertKeyOpensSecrets(db: Database, key: Buffer): void {
   let sampled = 0;
   for (const sealed of SEALED_COLUMNS) {
-    const exists = db
-      .query<{ found: number }, [string]>("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?")
-      .get(sealed.table);
-    if (!exists) continue;
+    // A database from before a migration may lack the table or the column.
+    const columns = db
+      .query<{ name: string }, []>(`SELECT name FROM pragma_table_info('${sealed.table}')`)
+      .all()
+      .map((row) => row.name);
+    if (!columns.includes(sealed.column)) continue;
+    // Empty and NULL mean "no secret here" (an S3 destination's refresh-token
+    // column, any other destination's secret), not an unreadable one.
     const rows = db
       .query<{ id: string; value: string }, []>(
-        `SELECT ${sealed.id} AS id, ${sealed.column} AS value FROM ${sealed.table} LIMIT 3`,
+        `SELECT ${sealed.id} AS id, ${sealed.column} AS value FROM ${sealed.table}
+          WHERE ${sealed.column} IS NOT NULL AND ${sealed.column} != '' LIMIT 3`,
       )
       .all();
     for (const row of rows) {

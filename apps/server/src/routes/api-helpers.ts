@@ -15,13 +15,19 @@ export function ok(data: unknown, requestId: string, status = 200): Response {
   return json({ data, requestId }, status);
 }
 
+/**
+ * `detail` carries what the server alone knows -- a remote service's own
+ * error, a field that failed validation. The dashboard shows its localized
+ * text for `code` and, beneath it, this verbatim.
+ */
 export function apiError(
   code: string,
   message: string,
   status: number,
   requestId: string,
+  detail?: string,
 ): Response {
-  return json({ error: { code, message }, requestId }, status);
+  return json({ error: { code, message, ...(detail ? { detail } : {}) }, requestId }, status);
 }
 
 export interface Authed {

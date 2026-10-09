@@ -89,6 +89,7 @@ export const aad = {
   s3Secret: (credentialId: string) => `s3-secret:${credentialId}`,
   appSetting: (key: string) => `app-setting:${key}`,
   backupRefreshToken: (backupAccountId: string) => `backup-refresh-token:${backupAccountId}`,
+  backupDestinationSecret: (backupAccountId: string) => `backup-destination-secret:${backupAccountId}`,
   totpSecret: (userId: string) => `totp-secret:${userId}`,
   kmsKey: (kmsKeyId: string) => `kms-key:${kmsKeyId}`,
   // The version is bound in so a data key wrapped under one CMK version can

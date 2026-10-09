@@ -126,6 +126,11 @@ Recommended production overrides:
   [README](../README.md#virtual-hosted-style-endpoint-optional).
 - Set `RATE_LIMIT_*` thresholds appropriate to your workload.
 
+Backup destinations beyond Drive: S3-compatible destinations need no
+configuration. rclone destinations need `INSTALL_RCLONE=true` at image build
+time, an `rclone.conf`, and `BACKUP_RCLONE_REMOTES`; see
+[OPERATIONS](OPERATIONS.md#9-backup-destinations-s3-and-rclone).
+
 The gateway refuses to start if any of these hold: `NODE_ENV=production` and
 `S3_REQUIRE_TLS=false`, `APP_ORIGIN` is `http://`, or any secret is not the
 required length. Fix the environment before restarting; do not lower the

@@ -61,7 +61,7 @@ export class BackupTokenProvider {
         expiresAtMs: Date.now() + res.expires_in * 1000,
       };
       this.cache.set(backupAccountId, token);
-      this.accounts.markRefreshed(backupAccountId);
+      this.accounts.markActive(backupAccountId);
       return token.accessToken;
     } catch (err) {
       const revoked = (err as Error & { revoked?: boolean }).revoked;

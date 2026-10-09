@@ -1,5 +1,5 @@
-// /api/backup-accounts (link management) and bucket-scoped
-// /api/buckets/:id/backups (manual transfer runs).
+// /api/backup-accounts (backup destinations: Drive links, S3 buckets, rclone
+// remotes) and bucket-scoped /api/buckets/:id/backups (manual transfer runs).
 
 import type { AppContext } from "../context.ts";
 import type { SessionRow } from "../db/repositories/sessions.ts";
@@ -17,17 +17,87 @@ import {
   parseHistoryCursor,
 } from "../db/repositories/backup-transfers.ts";
 import { BackupTransferInvalidError, BackupTransferService } from "../services/backup-transfer-service.ts";
+import {
+  BackupDestinationService,
+  DestinationCheckError,
+  DestinationNotFoundError,
+} from "../services/backup-destination-service.ts";
+import { DestinationInputError, readRcloneConfig, readS3Config } from "../backup/destination-config.ts";
 import { apiError, mapBodyReadError, ok, readJson } from "./api-helpers.ts";
+
+/** Enough of an access key id to recognise it, not to reuse it. */
+function maskAccessKeyId(id: string): string {
+  return id.length <= 8 ? "••••" : `${id.slice(0, 4)}…${id.slice(-4)}`;
+}
+
+/** The non-secret settings, for display. Never the secret key. */
+function destinationConfigView(a: BackupAccountRow) {
+  if (a.kind === "s3") {
+    const config = readS3Config(a.config_json);
+    return {
+      endpoint: config.endpoint,
+      region: config.region,
+      bucket: config.bucket,
+      prefix: config.prefix,
+      forcePathStyle: config.forcePathStyle,
+      storageClass: config.storageClass,
+      accessKeyId: maskAccessKeyId(config.accessKeyId),
+    };
+  }
+  if (a.kind === "rclone") return readRcloneConfig(a.config_json);
+  return null;
+}
 
 function accountView(a: BackupAccountRow) {
   return {
     id: a.id,
+    kind: a.kind,
+    label: a.email,
+    // Kept for older clients; for a non-Drive destination it is the label.
     email: a.email,
+    config: destinationConfigView(a),
     status: a.status,
     lastError: a.last_error,
     lastUsedAt: a.last_used_at,
     createdAt: a.created_at,
   };
+}
+
+/** Maps the destination service's failures to responses; null if the error
+ *  is not one of its own. */
+function destinationError(error: unknown, requestId: string): Response | null {
+  if (error instanceof DestinationInputError) {
+    return apiError(
+      "INVALID_BACKUP_DESTINATION",
+      "Pengaturan tujuan backup tidak valid.",
+      400,
+      requestId,
+      error.message,
+    );
+  }
+  if (error instanceof DestinationCheckError) {
+    return apiError(
+      "BACKUP_DESTINATION_UNREACHABLE",
+      "Tujuan backup menolak atau tidak menjawab uji tulis.",
+      422,
+      requestId,
+      error.message,
+    );
+  }
+  if (error instanceof DestinationNotFoundError) {
+    return apiError("NOT_FOUND", "Akun backup tidak ditemukan.", 404, requestId);
+  }
+  return null;
+}
+
+async function readBody(ctx: AppContext, req: Request, requestId: string): Promise<{ body: unknown } | Response> {
+  try {
+    return { body: await readJson<unknown>(ctx, req) };
+  } catch (error) {
+    const mapped = mapBodyReadError(error, requestId);
+    if (mapped) return mapped;
+    throw error;
+  }
 }
 
 export async function handleBackupAccounts(
@@ -39,15 +109,81 @@ export async function handleBackupAccounts(
 ): Promise<Response> {
   const userId = session.user_id;
 
+  const destinations = new BackupDestinationService(ctx);
+
   if (rest === "" || rest === "/") {
     if (req.method === "GET") {
       return ok(ctx.repos.backupAccounts.listByOwner(userId).map(accountView), requestId);
+    }
+    if (req.method === "POST") {
+      const read = await readBody(ctx, req, requestId);
+      if (read instanceof Response) return read;
+      try {
+        const account = await destinations.create(userId, read.body, req.signal);
+        ctx.repos.audit.record({
+          userId,
+          action: "backup.account.create",
+          requestId,
+          statusCode: 201,
+          detail: { backupAccountId: account.id, kind: account.kind },
+        });
+        return ok(accountView(account), requestId, 201);
+      } catch (error) {
+        const mapped = destinationError(error, requestId);
+        if (mapped) return mapped;
+        throw error;
+      }
     }
     return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
   }
 
   const segments = rest.replace(/^\//, "").split("/");
   const id = segments[0]!;
+
+  // Matched before the /:id branches; destination ids all start with "bac_".
+  if (segments.length === 1 && id === "options") {
+    if (req.method !== "GET") return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+    return ok(destinations.options(), requestId);
+  }
+
+  if (segments.length === 1 && req.method === "PATCH") {
+    const read = await readBody(ctx, req, requestId);
+    if (read instanceof Response) return read;
+    try {
+      const { account, rotatedCredentials } = await destinations.update(userId, id, read.body, req.signal);
+      ctx.repos.audit.record({
+        userId,
+        action: "backup.account.update",
+        requestId,
+        statusCode: 200,
+        detail: { backupAccountId: id, rotatedCredentials },
+      });
+      return ok(accountView(account), requestId);
+    } catch (error) {
+      const mapped = destinationError(error, requestId);
+      if (mapped) return mapped;
+      throw error;
+    }
+  }
+
+  if (segments.length === 2 && segments[1] === "test" && req.method === "POST") {
+    try {
+      const { account, error } = await destinations.test(userId, id, req.signal);
+      ctx.repos.audit.record({
+        userId,
+        action: "backup.account.test",
+        requestId,
+        statusCode: 200,
+        detail: { backupAccountId: id, healthy: error === null },
+      });
+      return ok({ healthy: error === null, error, account: accountView(account) }, requestId);
+    } catch (error) {
+      const mapped = destinationError(error, requestId);
+      if (mapped) return mapped;
+      throw error;
+    }
+  }
+
   if (segments.length === 1 && req.method === "DELETE") {
     const deleted = ctx.repos.backupAccounts.delete(userId, id);
     if (!deleted) return apiError("NOT_FOUND", "Akun backup tidak ditemukan.", 404, requestId);
@@ -191,6 +327,8 @@ function historyView(t: BackupTransferHistoryRow) {
     ...transferView(t),
     bucketName: t.bucket_name,
     accountEmail: t.account_email,
+    accountLabel: t.account_email,
+    accountKind: t.account_kind,
     startedAt: t.started_at,
     updatedAt: t.updated_at,
   };
@@ -269,6 +407,8 @@ export function handleBackupHistory(
         accounts: summaries.map((s) => ({
           backupAccountId: s.backup_account_id,
           email: byId.get(s.backup_account_id)?.email ?? s.backup_account_id,
+          label: byId.get(s.backup_account_id)?.email ?? s.backup_account_id,
+          kind: byId.get(s.backup_account_id)?.kind ?? "drive",
           accountStatus: byId.get(s.backup_account_id)?.status ?? "error",
           runs: s.runs,
           activeRuns: s.active_runs,

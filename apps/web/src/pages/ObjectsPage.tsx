@@ -317,7 +317,9 @@ export function ObjectsPage({
       const [accounts, transfers] = await Promise.all([listBackupAccounts(), listBucketBackups(bucket.id)]);
       setBackupAccounts(accounts);
       setBackupTransfers(transfers);
-      setBackupAccountId((current) => (current ? current : accounts.find((a) => a.status === "active")?.id ?? ""));
+      setBackupAccountId((current) =>
+        current ? current : accounts.find((a) => a.status === "active" || a.kind !== "drive")?.id ?? "",
+      );
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBackupBusy(false); }
   };
@@ -860,11 +862,17 @@ export function ObjectsPage({
                     value={backupAccountId}
                     onValueChange={setBackupAccountId}
                     placeholder={t.backup.pickAccount}
-                    options={backupAccounts.map((account) => ({
-                      value: account.id,
-                      label: account.status === "active" ? account.email : `${account.email}${t.backup.needsReauthSuffix}`,
-                      disabled: account.status !== "active",
-                    }))}
+                    options={backupAccounts.map((account) => {
+                      const kind =
+                        account.kind === "s3" ? t.backup.kindS3 : account.kind === "rclone" ? t.backup.kindRclone : t.backup.kindDrive;
+                      // A Drive account that lost its grant cannot run until it is
+                      // reconnected; an S3 or rclone destination in error is
+                      // retried by the run itself.
+                      const blocked = account.kind === "drive" && account.status !== "active";
+                      const suffix =
+                        account.status === "active" ? "" : blocked ? t.backup.needsReauthSuffix : t.backup.errorSuffix;
+                      return { value: account.id, label: `${account.label} · ${kind}${suffix}`, disabled: blocked };
+                    })}
                   />
                   <div className="flex justify-end">
                     <Button
@@ -894,7 +902,7 @@ export function ObjectsPage({
                       return (
                         <div key={transfer.id} className="space-y-1 rounded-xl border p-3 text-sm">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="truncate font-medium">{account?.email ?? transfer.backupAccountId}</span>
+                            <span className="truncate font-medium">{account?.label ?? transfer.backupAccountId}</span>
                             <div className="flex items-center gap-2">
                               <Chip size="sm" color={color} variant={color === "default" ? "secondary" : "soft"}>{BACKUP_STATUS_LABEL[transfer.status]}</Chip>
                               {isActive ? (

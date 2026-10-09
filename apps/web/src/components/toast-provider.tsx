@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Toast, toast as heroToast } from "@heroui/react";
+import { errorText } from "../api/client.ts";
 
 export type ToastVariant = "success" | "error" | "warning" | "info";
 
@@ -59,7 +60,7 @@ const api: ToastApi = {
   fromError: (title, cause) =>
     show({
       title,
-      description: cause instanceof Error ? cause.message : String(cause),
+      description: errorText(cause),
       variant: "error",
     }),
 };

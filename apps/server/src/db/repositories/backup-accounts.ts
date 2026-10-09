@@ -1,18 +1,27 @@
-// Linked secondary Google Drive accounts used as manual backup destinations.
-// Deliberately separate from oauth_accounts: this is not a login identity,
-// just a Drive grant a bucket owner controls.
+// Backup destinations: linked secondary Google Drive accounts, S3-compatible
+// buckets, and operator-defined rclone remotes. Deliberately separate from
+// oauth_accounts: none of these is a login identity, just a place a bucket
+// owner sends copies to.
+//
+// The table predates the non-Drive kinds and keeps its name (see
+// 0016_backup_destinations.sql); for those rows `email` holds the display label.
 
 import type { Database } from "bun:sqlite";
 import { nowIso } from "../../util/ids.ts";
 
 export type BackupAccountStatus = "active" | "reauthorization_required" | "error";
+export type BackupDestinationKind = "drive" | "s3" | "rclone";
 
 export interface BackupAccountRow {
   id: string;
   owner_user_id: string;
+  kind: BackupDestinationKind;
+  /** The Google account for a Drive destination; the label for the others. */
   email: string;
   encrypted_refresh_token: string;
   granted_scopes: string;
+  config_json: string;
+  encrypted_secret: string | null;
   root_folder_id: string | null;
   status: BackupAccountStatus;
   last_error: string | null;
@@ -67,6 +76,59 @@ export class BackupAccountsRepository {
     return this.findById(id)!;
   }
 
+  /** An S3 or rclone destination. Only created once a connection test has
+   *  passed, so it starts out active. */
+  createDestination(input: {
+    id: string;
+    ownerUserId: string;
+    kind: Exclude<BackupDestinationKind, "drive">;
+    label: string;
+    configJson: string;
+    encryptedSecret: string | null;
+  }): BackupAccountRow {
+    const now = nowIso();
+    this.db
+      .query(
+        `INSERT INTO backup_accounts
+           (id, owner_user_id, kind, email, encrypted_refresh_token, granted_scopes,
+            config_json, encrypted_secret, status, last_used_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, '', '', ?, ?, 'active', ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.ownerUserId,
+        input.kind,
+        input.label,
+        input.configJson,
+        input.encryptedSecret,
+        now,
+        now,
+        now,
+      );
+    return this.findById(input.id)!;
+  }
+
+  /** Label and credentials only: a destination's location never changes in
+   *  place, or the ledger would claim copies that are not at the new one. */
+  updateDestination(
+    id: string,
+    input: { label?: string; configJson?: string; encryptedSecret?: string },
+  ): void {
+    const current = this.findById(id);
+    if (!current) return;
+    this.db
+      .query(
+        "UPDATE backup_accounts SET email = ?, config_json = ?, encrypted_secret = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(
+        input.label ?? current.email,
+        input.configJson ?? current.config_json,
+        input.encryptedSecret ?? current.encrypted_secret,
+        nowIso(),
+        id,
+      );
+  }
+
   /** null clears the cache, so the next ensure re-resolves or recreates the
    *  folder rather than uploading into an id that no longer exists. */
   setRootFolder(id: string, rootFolderId: string | null): void {
@@ -75,7 +137,9 @@ export class BackupAccountsRepository {
       .run(rootFolderId, nowIso(), id);
   }
 
-  markRefreshed(id: string): void {
+  /** The destination answered: a Drive token refreshed, or an S3/rclone
+   *  connection test passed. */
+  markActive(id: string): void {
     const now = nowIso();
     this.db
       .query(
@@ -88,7 +152,7 @@ export class BackupAccountsRepository {
     const now = nowIso();
     this.db
       .query("UPDATE backup_accounts SET status = ?, last_error = ?, updated_at = ? WHERE id = ?")
-      .run(status, error, now, id);
+      .run(status, error.slice(0, 500), now, id);
   }
 
   delete(ownerUserId: string, id: string): boolean {

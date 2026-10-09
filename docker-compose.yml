@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # true bundles rclone, for rclone backup destinations.
+        INSTALL_RCLONE: ${INSTALL_RCLONE:-false}
     image: drives3-gateway:local
     restart: unless-stopped
     env_file:
@@ -20,6 +23,9 @@ services:
       - "127.0.0.1:8787:8787"
     volumes:
       - ./data:/app/data
+      # For rclone backup destinations: rclone.conf in ./rclone, owned by uid
+      # 1010, then RCLONE_CONFIG=/app/rclone/rclone.conf in .env.
+      # - ./rclone:/app/rclone
     healthcheck:
       test:
         - "CMD-SHELL"
