@@ -3,8 +3,7 @@ import { Activity, BookOpen, Gauge, HardDriveDownload, KeyRound, PackageOpen, Re
 import { getBucket, getMe, MfaRequiredError, type Me, type Bucket } from "./api/client.ts";
 import { AppShell, type NavigationItem } from "@/components/app-shell";
 import { ErrorAlert, LoadingState, Spinner } from "@/components/feedback";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button, Card } from "@heroui/react";
 import { useLocale } from "@/components/locale-provider";
 import {
   dashboardRouteUrl,
@@ -132,18 +131,18 @@ export function App() {
   }, [me, route, bucketLoadAttempt]);
 
   if (loading) {
-    return <main className="flex min-h-screen items-center justify-center"><Spinner className="text-primary" label={t.login.loadingSession} /></main>;
+    return <main className="flex min-h-screen items-center justify-center"><Spinner className="text-accent" label={t.login.loadingSession} /></main>;
   }
 
   if (bootstrapError) {
     return (
       <main className="flex min-h-screen items-center justify-center p-4">
         <Card className="w-full max-w-lg">
-          <CardHeader><CardTitle>{t.login.dashboardUnavailableTitle}</CardTitle><CardDescription>{t.login.dashboardUnavailableDescription}</CardDescription></CardHeader>
-          <CardContent className="space-y-4">
+          <Card.Header><Card.Title>{t.login.dashboardUnavailableTitle}</Card.Title><Card.Description>{t.login.dashboardUnavailableDescription}</Card.Description></Card.Header>
+          <Card.Content className="space-y-4">
             <ErrorAlert message={bootstrapError} />
-            <Button onClick={() => void load()}><RefreshCw /> {t.common.retry}</Button>
-          </CardContent>
+            <Button className="w-fit" onPress={() => void load()}><RefreshCw /> {t.common.retry}</Button>
+          </Card.Content>
         </Card>
       </main>
     );
@@ -195,8 +194,8 @@ export function App() {
         <div className="space-y-4">
           <ErrorAlert title={t.login.bucketUnavailableTitle} message={bucketError} />
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => setBucketLoadAttempt((attempt) => attempt + 1)}><RefreshCw /> {t.common.retry}</Button>
-            <Button variant="outline" onClick={() => navigateSection("buckets")}>{t.login.backToBuckets}</Button>
+            <Button onPress={() => setBucketLoadAttempt((attempt) => attempt + 1)}><RefreshCw /> {t.common.retry}</Button>
+            <Button variant="outline" onPress={() => navigateSection("buckets")}>{t.login.backToBuckets}</Button>
           </div>
         </div>
       ) : null}

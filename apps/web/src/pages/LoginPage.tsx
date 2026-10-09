@@ -1,5 +1,5 @@
 import { HardDrive, Moon, ShieldCheck, Sun, Terminal } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@heroui/react";
 import { ErrorAlert } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
 import { useTheme } from "@/components/theme-provider";
@@ -18,7 +18,7 @@ function GoogleMark() {
     <svg
       viewBox="0 0 24 24"
       aria-hidden="true"
-      // Inline size beats the Button's own [&_svg]:size-4 rule without
+      // Inline size beats the button's own svg sizing rule without
       // depending on which class lands later in the generated stylesheet.
       style={{ width: "1.125rem", height: "1.125rem" }}
     >
@@ -46,7 +46,7 @@ export function LoginPage() {
       {/* Ambient wash: a soft accent bloom over a faint grid, kept well below
           the content so it reads as depth rather than decoration. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/2 top-0 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/20 blur-3xl" />
+        <div className="absolute left-1/2 top-0 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/20 blur-3xl" />
         <div
           className="absolute inset-0 opacity-[0.04] dark:opacity-[0.07]"
           style={{
@@ -60,7 +60,7 @@ export function LoginPage() {
       </div>
 
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-        <div className="flex items-center gap-0.5 rounded-full bg-muted p-1">
+        <div className="flex items-center gap-0.5 rounded-full bg-default p-1">
           {LOCALES.map((option) => (
             <button
               key={option.id}
@@ -71,8 +71,8 @@ export function LoginPage() {
               className={cn(
                 "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
                 locale === option.id
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-surface text-foreground shadow-xs"
+                  : "text-muted hover:text-foreground",
               )}
             >
               {option.short}
@@ -80,35 +80,34 @@ export function LoginPage() {
           ))}
         </div>
         <Button
-          type="button"
-          size="icon"
+          isIconOnly
           variant="ghost"
           className="rounded-full"
           aria-label={resolvedTheme === "dark" ? t.nav.lightMode : t.nav.darkMode}
-          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+          onPress={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
         >
           {resolvedTheme === "dark" ? <Sun /> : <Moon />}
         </Button>
       </div>
 
       <section className="relative w-full max-w-md">
-        <div className="rounded-2xl border bg-card/80 p-8 shadow-xl shadow-foreground/5 backdrop-blur-sm sm:p-10">
+        <div className="rounded-3xl bg-surface/80 p-8 shadow-overlay backdrop-blur-sm sm:p-10">
           <div className="flex flex-col items-center text-center">
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25">
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-linear-to-br from-accent to-accent/80 text-accent-foreground shadow-lg shadow-accent/25">
               <HardDrive className="size-7" aria-hidden="true" />
             </span>
             <h1 className="mt-5 text-2xl font-bold tracking-tight">{t.nav.appName}</h1>
-            <p className="mt-1.5 text-sm font-medium text-primary">{t.login.tagline}</p>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{t.login.description}</p>
+            <p className="mt-1.5 text-sm font-medium text-accent">{t.login.tagline}</p>
+            <p className="mt-3 text-sm leading-relaxed text-muted">{t.login.description}</p>
           </div>
 
-          <ul className="mt-7 grid gap-3 border-y py-6">
+          <ul className="mt-7 grid gap-3 border-y border-separator py-6">
             {features.map(({ icon: Icon, text }) => (
               <li key={text} className="flex items-start gap-3 text-sm">
-                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent-soft-foreground">
                   <Icon className="size-3.5" aria-hidden="true" />
                 </span>
-                <span className="text-muted-foreground">{text}</span>
+                <span className="text-muted">{text}</span>
               </li>
             ))}
           </ul>
@@ -117,18 +116,19 @@ export function LoginPage() {
             {loginError ? (
               <ErrorAlert title={t.login.loginFailedTitle} message={t.login.loginFailedMessage} />
             ) : null}
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="h-12 w-full gap-3 bg-card text-base font-semibold hover:bg-accent"
+            <a
+              href="/auth/google/start"
+              className={buttonVariants({
+                variant: "outline",
+                size: "lg",
+                fullWidth: true,
+                className: "h-12 gap-3 bg-surface text-base font-semibold hover:bg-default",
+              })}
             >
-              <a href="/auth/google/start">
-                <GoogleMark />
-                {t.login.loginButton}
-              </a>
-            </Button>
-            <p className="text-center text-xs leading-relaxed text-muted-foreground">
+              <GoogleMark />
+              {t.login.loginButton}
+            </a>
+            <p className="text-center text-xs leading-relaxed text-muted">
               {t.login.accessNote}
             </p>
           </div>

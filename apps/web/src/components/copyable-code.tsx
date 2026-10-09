@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@heroui/react";
 import { useLocale } from "@/components/locale-provider";
 import { useToast } from "@/components/toast-provider";
 import { cn } from "@/lib/utils";
@@ -30,17 +30,17 @@ export function CopyableCode({
   };
 
   return (
-    <div className={cn("relative w-full min-w-0 overflow-hidden rounded-md border bg-neutral-950 text-neutral-50", className)}>
+    <div className={cn("relative w-full min-w-0 overflow-hidden rounded-xl border bg-neutral-950 text-neutral-50", className)}>
       <pre className="min-w-0 whitespace-pre-wrap break-all p-4 pr-14 text-xs leading-6">
         <code>{value}</code>
       </pre>
       <Button
-        type="button"
-        size="icon"
+        isIconOnly
+        size="sm"
         variant="ghost"
         className="absolute right-2 top-2 text-neutral-300 hover:bg-white/10 hover:text-white"
         aria-label={status === "copied" ? t.copy.copiedLabel(label) : t.copy.copyLabel(label)}
-        onClick={copy}
+        onPress={() => void copy()}
       >
         {status === "copied" ? <Check /> : <Copy />}
       </Button>

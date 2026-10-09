@@ -8,29 +8,8 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CheckCircle2, FileWarning, History, RefreshCw } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { Alert, Button, Chip, Label, Modal, Table } from "@heroui/react";
 import { Select } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableRowHeader,
-} from "@/components/ui/table";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
 import {
@@ -68,15 +47,16 @@ export function useBackupStatusLabels() {
     cancelled: t.backup.statusCancelled,
     failed: t.backup.statusFailed,
   };
-  const variant: Record<BackupTransferStatus, "default" | "secondary" | "success" | "destructive" | "warning"> = {
-    queued: "secondary",
-    running: "default",
+  // Chip colours, rendered with variant="soft".
+  const color: Record<BackupTransferStatus, "default" | "accent" | "success" | "warning" | "danger"> = {
+    queued: "default",
+    running: "accent",
     cancel_requested: "warning",
     completed: "success",
-    cancelled: "secondary",
-    failed: "destructive",
+    cancelled: "default",
+    failed: "danger",
   };
-  return { label, variant };
+  return { label, color };
 }
 
 export function BackupHistory({
@@ -149,50 +129,44 @@ export function BackupHistory({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{t.backup.historyTitle}</h2>
-          <p className="text-sm text-muted-foreground">{t.backup.historyDescription}</p>
+          <p className="text-sm text-muted">{t.backup.historyDescription}</p>
         </div>
-        <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+        <Button variant="outline" size="sm" isDisabled={loading} onPress={() => void load()}>
           <RefreshCw className={loading ? "animate-spin" : ""} /> {t.backup.historyRefresh}
         </Button>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-2">
-          <Label>{t.backup.filterAccountLabel}</Label>
-          <Select
-            value={accountFilter}
-            onValueChange={onAccountFilterChange}
-            options={[
-              { value: ALL, label: t.backup.filterAll },
-              ...accounts.map((account) => ({ value: account.id, label: account.email })),
-            ]}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>{t.backup.filterBucketLabel}</Label>
-          <Select
-            value={bucketFilter}
-            onValueChange={setBucketFilter}
-            options={[
-              { value: ALL, label: t.backup.filterAll },
-              ...buckets.map((bucket) => ({ value: bucket.id, label: bucket.name })),
-            ]}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>{t.backup.filterStatusLabel}</Label>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value as StatusFilter)}
-            options={[
-              { value: ALL, label: t.backup.filterAll },
-              ...(Object.keys(status.label) as BackupTransferStatus[]).map((key) => ({
-                value: key,
-                label: status.label[key],
-              })),
-            ]}
-          />
-        </div>
+        <Select
+          label={t.backup.filterAccountLabel}
+          value={accountFilter}
+          onValueChange={onAccountFilterChange}
+          options={[
+            { value: ALL, label: t.backup.filterAll },
+            ...accounts.map((account) => ({ value: account.id, label: account.email })),
+          ]}
+        />
+        <Select
+          label={t.backup.filterBucketLabel}
+          value={bucketFilter}
+          onValueChange={setBucketFilter}
+          options={[
+            { value: ALL, label: t.backup.filterAll },
+            ...buckets.map((bucket) => ({ value: bucket.id, label: bucket.name })),
+          ]}
+        />
+        <Select
+          label={t.backup.filterStatusLabel}
+          value={statusFilter}
+          onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+          options={[
+            { value: ALL, label: t.backup.filterAll },
+            ...(Object.keys(status.label) as BackupTransferStatus[]).map((key) => ({
+              value: key,
+              label: status.label[key],
+            })),
+          ]}
+        />
       </div>
 
       {error ? <ErrorAlert message={error} /> : null}
@@ -201,7 +175,7 @@ export function BackupHistory({
         <LoadingState label={t.backup.historyLoading} />
       ) : items.length === 0 ? (
         filtered ? (
-          <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-2xl border p-6 text-center text-sm text-muted">
             {t.backup.historyFilteredEmpty}
           </p>
         ) : (
@@ -213,50 +187,50 @@ export function BackupHistory({
         )
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t.backup.tableTime}</TableHead>
-                  <TableHead>{t.backup.tableBucket}</TableHead>
-                  <TableHead>{t.backup.tableDestination}</TableHead>
-                  <TableHead>{t.backup.tableStatus}</TableHead>
-                  <TableHead>{t.backup.tableResult}</TableHead>
-                  <TableHead className="text-right">{t.backup.tableActions}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((run) => (
-                  <TableRow key={run.id}>
-                    <TableRowHeader className="whitespace-nowrap font-normal">
-                      {new Date(run.createdAt).toLocaleString()}
-                    </TableRowHeader>
-                    <TableCell className="max-w-40 truncate">{run.bucketName}</TableCell>
-                    <TableCell className="max-w-56 truncate">{run.accountEmail}</TableCell>
-                    <TableCell>
-                      <Badge variant={status.variant[run.status]}>{status.label[run.status]}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {t.backup.progressSummary({
-                        copied: run.copied,
-                        skipped: run.skipped,
-                        failed: run.failed,
-                        total: run.total,
-                      })}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" variant="ghost" onClick={() => setOpenRunId(run.id)}>
-                        {t.backup.viewDetail}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <Table>
+            <Table.ScrollContainer>
+              <Table.Content aria-label={t.backup.historyTitle}>
+                <Table.Header>
+                  <Table.Column isRowHeader>{t.backup.tableTime}</Table.Column>
+                  <Table.Column>{t.backup.tableBucket}</Table.Column>
+                  <Table.Column>{t.backup.tableDestination}</Table.Column>
+                  <Table.Column>{t.backup.tableStatus}</Table.Column>
+                  <Table.Column>{t.backup.tableResult}</Table.Column>
+                  <Table.Column className="text-end">{t.backup.tableActions}</Table.Column>
+                </Table.Header>
+                <Table.Body>
+                  {items.map((run) => (
+                    <Table.Row key={run.id} id={run.id}>
+                      <Table.Cell className="whitespace-nowrap">
+                        {new Date(run.createdAt).toLocaleString()}
+                      </Table.Cell>
+                      <Table.Cell className="max-w-40 truncate">{run.bucketName}</Table.Cell>
+                      <Table.Cell className="max-w-56 truncate">{run.accountEmail}</Table.Cell>
+                      <Table.Cell>
+                        <Chip color={status.color[run.status]} variant="soft" size="sm">{status.label[run.status]}</Chip>
+                      </Table.Cell>
+                      <Table.Cell className="text-sm text-muted">
+                        {t.backup.progressSummary({
+                          copied: run.copied,
+                          skipped: run.skipped,
+                          failed: run.failed,
+                          total: run.total,
+                        })}
+                      </Table.Cell>
+                      <Table.Cell className="text-end">
+                        <Button size="sm" variant="ghost" onPress={() => setOpenRunId(run.id)}>
+                          {t.backup.viewDetail}
+                        </Button>
+                      </Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table.Content>
+            </Table.ScrollContainer>
+          </Table>
           {nextBefore ? (
             <div className="flex justify-center">
-              <Button variant="outline" disabled={loadingMore} onClick={() => void loadMore()}>
+              <Button variant="outline" isDisabled={loadingMore} onPress={() => void loadMore()}>
                 {loadingMore ? t.common.loadingMore : t.common.loadMore}
               </Button>
             </div>
@@ -341,150 +315,157 @@ function BackupRunDialog({ runId, onClose }: { runId: string | null; onClose: ()
   const recorded = run ? run.copied + run.failed : 0;
 
   return (
-    <Dialog open={Boolean(runId)} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{t.backup.detailTitle}</DialogTitle>
-          <DialogDescription className="break-all">
-            {run ? `${run.bucketName} → ${run.accountEmail}` : t.backup.detailLoading}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody className="space-y-4">
-          {error ? <ErrorAlert message={error} /> : null}
-          {loading || !run ? (
-            <LoadingState label={t.backup.detailLoading} />
-          ) : (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <Field label={t.backup.tableStatus}>
-                  <Badge variant={status.variant[run.status]}>{status.label[run.status]}</Badge>
-                </Field>
-                <Field label={t.backup.detailStarted}>
-                  {run.startedAt ? new Date(run.startedAt).toLocaleString() : t.backup.detailNotStarted}
-                </Field>
-                <Field label={t.backup.detailFinished}>
-                  {run.completedAt ? new Date(run.completedAt).toLocaleString() : t.backup.detailStillRunning}
-                </Field>
-                <Field label={t.backup.detailDuration}>
-                  {elapsed === null ? t.backup.detailStillRunning : t.backup.durationLabel(elapsed)}
-                </Field>
-                <Field label={t.backup.tableResult} className="sm:col-span-2">
-                  {t.backup.progressSummary({
-                    copied: run.copied,
-                    skipped: run.skipped,
-                    failed: run.failed,
-                    total: run.total,
-                  })}
-                </Field>
-              </div>
-
-              {run.lastError ? <ErrorAlert message={run.lastError} /> : null}
-
-              {ledgerTotal < recorded ? (
-                <Alert>
-                  <FileWarning />
-                  <AlertTitle>{t.backup.ledgerNoteTitle}</AlertTitle>
-                  <AlertDescription>
-                    {t.backup.ledgerNote({ owned: ledgerTotal, recorded })}
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Label>{t.backup.objectsLabel}</Label>
-                  <div className="flex gap-1">
-                    {(["all", "copied", "failed"] as const).map((option) => (
-                      <Button
-                        key={option}
-                        size="sm"
-                        variant={objectFilter === option ? "default" : "ghost"}
-                        onClick={() => setObjectFilter(option)}
-                      >
-                        {option === "all"
-                          ? t.backup.objectsFilterAll
-                          : option === "copied"
-                            ? t.backup.objectsFilterCopied
-                            : t.backup.objectsFilterFailed}
-                      </Button>
-                    ))}
-                  </div>
+    <Modal.Backdrop isOpen={Boolean(runId)} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <Modal.Container size="lg">
+        <Modal.Dialog className="max-w-3xl">
+          <Modal.CloseTrigger aria-label={t.common.close} />
+          <Modal.Header>
+            <Modal.Heading>{t.backup.detailTitle}</Modal.Heading>
+            <p className="break-all text-sm text-muted">
+              {run ? `${run.bucketName} → ${run.accountEmail}` : t.backup.detailLoading}
+            </p>
+          </Modal.Header>
+          <Modal.Body className="space-y-4 text-foreground">
+            {error ? <ErrorAlert message={error} /> : null}
+            {loading || !run ? (
+              <LoadingState label={t.backup.detailLoading} />
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <Field label={t.backup.tableStatus}>
+                    <Chip color={status.color[run.status]} variant="soft" size="sm">{status.label[run.status]}</Chip>
+                  </Field>
+                  <Field label={t.backup.detailStarted}>
+                    {run.startedAt ? new Date(run.startedAt).toLocaleString() : t.backup.detailNotStarted}
+                  </Field>
+                  <Field label={t.backup.detailFinished}>
+                    {run.completedAt ? new Date(run.completedAt).toLocaleString() : t.backup.detailStillRunning}
+                  </Field>
+                  <Field label={t.backup.detailDuration}>
+                    {elapsed === null ? t.backup.detailStillRunning : t.backup.durationLabel(elapsed)}
+                  </Field>
+                  <Field label={t.backup.tableResult} className="sm:col-span-2">
+                    {t.backup.progressSummary({
+                      copied: run.copied,
+                      skipped: run.skipped,
+                      failed: run.failed,
+                      total: run.total,
+                    })}
+                  </Field>
                 </div>
 
-                {loadingObjects ? (
-                  <LoadingState label={t.backup.objectsLoading} />
-                ) : objects.length === 0 ? (
-                  <p className="rounded-md border p-4 text-sm text-muted-foreground">
-                    {t.backup.objectsEmpty}
-                  </p>
-                ) : (
-                  <>
-                    <div className="max-h-80 overflow-auto rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>{t.backup.objectKey}</TableHead>
-                            <TableHead>{t.backup.objectStatus}</TableHead>
-                            <TableHead className="text-right">{t.backup.objectAttempts}</TableHead>
-                            <TableHead>{t.backup.objectDetail}</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {objects.map((object) => (
-                            <TableRow key={object.objectId}>
-                              <TableRowHeader className="max-w-64 truncate font-normal">
-                                {object.objectKey}
-                              </TableRowHeader>
-                              <TableCell>
-                                {object.status === "copied" ? (
-                                  <Badge variant="success" className="gap-1">
-                                    <CheckCircle2 className="size-3" aria-hidden="true" />
-                                    {t.backup.objectStatusCopied}
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="destructive">{t.backup.objectStatusFailed}</Badge>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">{object.attempts}</TableCell>
-                              <TableCell className="max-w-72 break-words text-xs text-muted-foreground">
-                                {object.status === "failed"
-                                  ? object.lastError
-                                  : object.destinationFileId
-                                    ? t.backup.objectDestinationFile(object.destinationFileId)
-                                    : null}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    {nextBefore ? (
-                      <div className="flex justify-center">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={loadingMore}
-                          onClick={() => void loadMoreObjects()}
-                        >
-                          {loadingMore ? t.common.loadingMore : t.common.loadMore}
-                        </Button>
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
+                {run.lastError ? <ErrorAlert message={run.lastError} /> : null}
 
-              <p className="text-xs text-muted-foreground">
-                {t.backup.detailRunId}: <span className="font-mono break-all">{run.id}</span>
-              </p>
-            </>
-          )}
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t.common.close}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+                {ledgerTotal < recorded ? (
+                  <Alert status="default">
+                    <Alert.Indicator>
+                      <FileWarning />
+                    </Alert.Indicator>
+                    <Alert.Content>
+                      <Alert.Title>{t.backup.ledgerNoteTitle}</Alert.Title>
+                      <Alert.Description>
+                        {t.backup.ledgerNote({ owned: ledgerTotal, recorded })}
+                      </Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                ) : null}
+
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label>{t.backup.objectsLabel}</Label>
+                    <div className="flex gap-1">
+                      {(["all", "copied", "failed"] as const).map((option) => (
+                        <Button
+                          key={option}
+                          size="sm"
+                          variant={objectFilter === option ? "primary" : "ghost"}
+                          onPress={() => setObjectFilter(option)}
+                        >
+                          {option === "all"
+                            ? t.backup.objectsFilterAll
+                            : option === "copied"
+                              ? t.backup.objectsFilterCopied
+                              : t.backup.objectsFilterFailed}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {loadingObjects ? (
+                    <LoadingState label={t.backup.objectsLoading} />
+                  ) : objects.length === 0 ? (
+                    <p className="rounded-xl border p-4 text-sm text-muted">
+                      {t.backup.objectsEmpty}
+                    </p>
+                  ) : (
+                    <>
+                      <Table>
+                        <Table.ScrollContainer className="max-h-80 overflow-y-auto">
+                          <Table.Content aria-label={t.backup.objectsLabel}>
+                            <Table.Header>
+                              <Table.Column isRowHeader>{t.backup.objectKey}</Table.Column>
+                              <Table.Column>{t.backup.objectStatus}</Table.Column>
+                              <Table.Column className="text-end">{t.backup.objectAttempts}</Table.Column>
+                              <Table.Column>{t.backup.objectDetail}</Table.Column>
+                            </Table.Header>
+                            <Table.Body>
+                              {objects.map((object) => (
+                                <Table.Row key={object.objectId} id={object.objectId}>
+                                  <Table.Cell className="max-w-64 truncate">
+                                    {object.objectKey}
+                                  </Table.Cell>
+                                  <Table.Cell>
+                                    {object.status === "copied" ? (
+                                      <Chip color="success" variant="soft" size="sm">
+                                        <CheckCircle2 className="size-3" aria-hidden="true" />
+                                        <Chip.Label>{t.backup.objectStatusCopied}</Chip.Label>
+                                      </Chip>
+                                    ) : (
+                                      <Chip color="danger" variant="soft" size="sm">{t.backup.objectStatusFailed}</Chip>
+                                    )}
+                                  </Table.Cell>
+                                  <Table.Cell className="text-end tabular-nums">{object.attempts}</Table.Cell>
+                                  <Table.Cell className="max-w-72 break-words text-xs text-muted">
+                                    {object.status === "failed"
+                                      ? object.lastError
+                                      : object.destinationFileId
+                                        ? t.backup.objectDestinationFile(object.destinationFileId)
+                                        : null}
+                                  </Table.Cell>
+                                </Table.Row>
+                              ))}
+                            </Table.Body>
+                          </Table.Content>
+                        </Table.ScrollContainer>
+                      </Table>
+                      {nextBefore ? (
+                        <div className="flex justify-center">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            isDisabled={loadingMore}
+                            onPress={() => void loadMoreObjects()}
+                          >
+                            {loadingMore ? t.common.loadingMore : t.common.loadMore}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+
+                <p className="text-xs text-muted">
+                  {t.backup.detailRunId}: <span className="font-mono break-all">{run.id}</span>
+                </p>
+              </>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button slot="close" variant="outline">{t.common.close}</Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   );
 }
 
@@ -498,8 +479,8 @@ function Field({
   className?: string;
 }) {
   return (
-    <div className={`space-y-1 rounded-md border p-3 ${className ?? ""}`}>
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+    <div className={`space-y-1 rounded-xl border p-3 ${className ?? ""}`}>
+      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
       <div className="text-sm">{children}</div>
     </div>
   );

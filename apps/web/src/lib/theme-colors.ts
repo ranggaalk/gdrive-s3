@@ -1,7 +1,5 @@
+/** HSL triples ("217 91% 53%"), written into HeroUI's --accent pair. */
 export type ColorSet = {
-  primary: string;
-  primaryForeground: string;
-  ring: string;
   accent: string;
   accentForeground: string;
 };
@@ -17,28 +15,27 @@ export type ThemeColorPreset = {
 export const DEFAULT_THEME_COLOR_ID = "default";
 export const CUSTOM_THEME_COLOR_ID = "custom";
 
-export const THEME_CSS_VARS = ["--primary", "--primary-foreground", "--ring", "--accent", "--accent-foreground"] as const;
+// HeroUI derives everything else from these two -- --focus defaults to
+// var(--accent), and the hover/soft shades are color-mix()es of it -- so a
+// preset only has to set the brand colour and the text drawn on it.
+export const THEME_CSS_VARS = ["--accent", "--accent-foreground"] as const;
 
-// Kept identical to the un-themed values in index.css, so picking "Default"
-// removes the inline overrides instead of duplicating a value that could drift.
+// "Default" is HeroUI's own accent: picking it removes the inline overrides
+// rather than restating a value that could drift from @heroui/styles.
 export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
   {
     id: "default",
     label: "Biru",
-    swatch: "#2f6fed",
+    swatch: "#0485f7",
+    // Never applied -- "default" clears the overrides -- but kept equal to
+    // HeroUI's accent (the same in both modes) so the preset list reads true.
     light: {
-      primary: "217 91% 53%",
-      primaryForeground: "210 40% 98%",
-      ring: "217 91% 53%",
-      accent: "212 100% 94%",
-      accentForeground: "217 91% 36%",
+      accent: "208 97% 49%",
+      accentForeground: "0 0% 99%",
     },
     dark: {
-      primary: "0 0% 92%",
-      primaryForeground: "0 0% 9%",
-      ring: "0 0% 72%",
-      accent: "0 0% 16%",
-      accentForeground: "0 0% 96%",
+      accent: "208 97% 49%",
+      accentForeground: "0 0% 99%",
     },
   },
   {
@@ -46,18 +43,12 @@ export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
     label: "Hijau",
     swatch: "#178a4c",
     light: {
-      primary: "152 69% 31%",
-      primaryForeground: "150 100% 97%",
-      ring: "152 69% 31%",
-      accent: "152 60% 94%",
-      accentForeground: "152 69% 24%",
+      accent: "152 69% 31%",
+      accentForeground: "150 100% 97%",
     },
     dark: {
-      primary: "152 55% 55%",
-      primaryForeground: "150 40% 8%",
-      ring: "152 55% 55%",
-      accent: "152 40% 16%",
-      accentForeground: "150 70% 88%",
+      accent: "152 55% 55%",
+      accentForeground: "150 40% 8%",
     },
   },
   {
@@ -65,18 +56,12 @@ export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
     label: "Ungu",
     swatch: "#7c3aed",
     light: {
-      primary: "262 83% 58%",
-      primaryForeground: "270 100% 98%",
-      ring: "262 83% 58%",
-      accent: "262 90% 95%",
-      accentForeground: "262 83% 40%",
+      accent: "262 83% 58%",
+      accentForeground: "270 100% 98%",
     },
     dark: {
-      primary: "263 85% 70%",
-      primaryForeground: "270 40% 9%",
-      ring: "263 85% 70%",
-      accent: "262 40% 18%",
-      accentForeground: "263 90% 88%",
+      accent: "263 85% 70%",
+      accentForeground: "270 40% 9%",
     },
   },
   {
@@ -84,18 +69,12 @@ export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
     label: "Merah muda",
     swatch: "#e11d55",
     light: {
-      primary: "347 77% 50%",
-      primaryForeground: "355 100% 97%",
-      ring: "347 77% 50%",
-      accent: "347 90% 95%",
-      accentForeground: "347 77% 36%",
+      accent: "347 77% 50%",
+      accentForeground: "355 100% 97%",
     },
     dark: {
-      primary: "347 80% 68%",
-      primaryForeground: "347 40% 9%",
-      ring: "347 80% 68%",
-      accent: "347 40% 18%",
-      accentForeground: "347 90% 88%",
+      accent: "347 80% 68%",
+      accentForeground: "347 40% 9%",
     },
   },
   {
@@ -103,18 +82,12 @@ export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
     label: "Oranye",
     swatch: "#eb7a11",
     light: {
-      primary: "24 95% 50%",
-      primaryForeground: "24 100% 97%",
-      ring: "24 95% 50%",
-      accent: "24 95% 94%",
-      accentForeground: "24 90% 34%",
+      accent: "24 95% 50%",
+      accentForeground: "24 100% 97%",
     },
     dark: {
-      primary: "24 90% 62%",
-      primaryForeground: "24 40% 9%",
-      ring: "24 90% 62%",
-      accent: "24 40% 16%",
-      accentForeground: "24 90% 86%",
+      accent: "24 90% 62%",
+      accentForeground: "24 40% 9%",
     },
   },
   {
@@ -122,18 +95,12 @@ export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
     label: "Netral",
     swatch: "#28344a",
     light: {
-      primary: "222 47% 20%",
-      primaryForeground: "210 40% 98%",
-      ring: "222 47% 20%",
-      accent: "214 32% 91%",
-      accentForeground: "222 47% 20%",
+      accent: "222 47% 20%",
+      accentForeground: "210 40% 98%",
     },
     dark: {
-      primary: "210 20% 90%",
-      primaryForeground: "222 47% 11%",
-      ring: "210 20% 80%",
-      accent: "215 20% 20%",
-      accentForeground: "210 20% 94%",
+      accent: "210 20% 90%",
+      accentForeground: "222 47% 11%",
     },
   },
 ];
@@ -220,23 +187,15 @@ export function deriveCustomTheme(hex: string): { light: ColorSet; dark: ColorSe
   const sat = clamp(s, 45, 90);
 
   const lightL = clamp(l, 38, 55);
-  const lightAccentFg = clamp(lightL - 12, 20, 40);
   const light: ColorSet = {
-    primary: cssHsl(h, sat, lightL),
-    primaryForeground: foregroundFor(h, sat, lightL),
-    ring: cssHsl(h, sat, lightL),
-    accent: cssHsl(h, clamp(sat, 40, 70), 94),
-    accentForeground: cssHsl(h, sat, lightAccentFg),
+    accent: cssHsl(h, sat, lightL),
+    accentForeground: foregroundFor(h, sat, lightL),
   };
 
   const darkL = clamp(lightL + (100 - lightL) * 0.35, 55, 72);
-  const darkAccentFg = clamp(darkL + 15, 80, 92);
   const dark: ColorSet = {
-    primary: cssHsl(h, sat, darkL),
-    primaryForeground: foregroundFor(h, sat, darkL),
-    ring: cssHsl(h, sat, darkL),
-    accent: cssHsl(h, clamp(sat, 25, 55), 18),
-    accentForeground: cssHsl(h, sat, darkAccentFg),
+    accent: cssHsl(h, sat, darkL),
+    accentForeground: foregroundFor(h, sat, darkL),
   };
 
   return { light, dark };
@@ -260,9 +219,6 @@ export function applyColorTheme(id: string, customHex: string | null, dark: bool
     return;
   }
 
-  root.setProperty("--primary", colors.primary);
-  root.setProperty("--primary-foreground", colors.primaryForeground);
-  root.setProperty("--ring", colors.ring);
-  root.setProperty("--accent", colors.accent);
-  root.setProperty("--accent-foreground", colors.accentForeground);
+  root.setProperty("--accent", `hsl(${colors.accent})`);
+  root.setProperty("--accent-foreground", `hsl(${colors.accentForeground})`);
 }

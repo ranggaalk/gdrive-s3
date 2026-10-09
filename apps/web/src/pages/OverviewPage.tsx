@@ -1,11 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { CheckCircle2, Cloud, CloudOff, Database, PackageOpen, RefreshCw, ShieldAlert } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
+import { Cloud, CloudOff, Database, PackageOpen, RefreshCw, ShieldAlert } from "lucide-react";
+import { Alert, Button, buttonVariants, Card, Chip, Table } from "@heroui/react";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
 import { useToast } from "@/components/toast-provider";
@@ -30,9 +26,9 @@ const OverviewTraffic = lazy(() =>
 export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: () => void }) {
   const { t } = useLocale();
   const toast = useToast();
-  const statusVariant: Record<CompatibilityItem["status"], "success" | "destructive" | "warning"> = {
+  const statusColor: Record<CompatibilityItem["status"], "success" | "danger" | "warning"> = {
     supported: "success",
-    unsupported: "destructive",
+    unsupported: "danger",
     untested: "warning",
   };
   const statusLabel: Record<CompatibilityItem["status"], string> = {
@@ -119,17 +115,17 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
 
   if (loading) return <LoadingState label={t.overview.loading} />;
 
-  type StatTone = "accent" | "success" | "destructive";
+  type StatTone = "accent" | "success" | "danger";
   const TONE_CLASSES: Record<StatTone, { badge: string; icon: string }> = {
-    accent: { badge: "bg-accent", icon: "text-accent-foreground" },
-    success: { badge: "bg-success/10", icon: "text-success" },
-    destructive: { badge: "bg-destructive/10", icon: "text-destructive" },
+    accent: { badge: "bg-accent-soft", icon: "text-accent-soft-foreground" },
+    success: { badge: "bg-success-soft", icon: "text-success" },
+    danger: { badge: "bg-danger-soft", icon: "text-danger" },
   };
 
   const stats: Array<{ label: string; value: number; icon: LucideIcon; tone: StatTone }> = [
     { label: t.overview.statSharedDrive, value: sharedBucketCount, icon: Cloud, tone: "accent" },
     { label: t.overview.statObjects, value: objectCount, icon: PackageOpen, tone: "success" },
-    { label: t.overview.statAccessIssues, value: bucketAccessErrors, icon: ShieldAlert, tone: bucketAccessErrors > 0 ? "destructive" : "success" },
+    { label: t.overview.statAccessIssues, value: bucketAccessErrors, icon: ShieldAlert, tone: bucketAccessErrors > 0 ? "danger" : "success" },
   ];
 
   const compatibility = gateway?.compatibility ?? [];
@@ -142,52 +138,70 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
     <div className="space-y-6">
       {error ? <ErrorAlert message={error} /> : null}
       {reconcileMessage ? (
-        <Alert variant="success"><CheckCircle2 /><AlertTitle>{t.overview.reconcileDoneTitle}</AlertTitle><AlertDescription>{reconcileMessage}</AlertDescription></Alert>
+        <Alert status="success">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{t.overview.reconcileDoneTitle}</Alert.Title>
+            <Alert.Description>{reconcileMessage}</Alert.Description>
+          </Alert.Content>
+        </Alert>
       ) : null}
       {drive?.requiresReauthorization ? (
-        <Alert variant="warning"><RefreshCw /><AlertTitle>{t.overview.reauthTitle}</AlertTitle><AlertDescription className="space-y-3"><p>{t.overview.reauthDescription}</p><Button asChild size="sm" variant="outline"><a href={drive.reauthorizationUrl ?? "/auth/google/start"}>{t.overview.reauthLink}</a></Button></AlertDescription></Alert>
+        <Alert status="warning">
+          <Alert.Indicator><RefreshCw /></Alert.Indicator>
+          <Alert.Content>
+            <Alert.Title>{t.overview.reauthTitle}</Alert.Title>
+            <Alert.Description>{t.overview.reauthDescription}</Alert.Description>
+            <a
+              href={drive.reauthorizationUrl ?? "/auth/google/start"}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3")}
+            >
+              {t.overview.reauthLink}
+            </a>
+          </Alert.Content>
+        </Alert>
       ) : null}
 
       <section aria-label={t.overview.summaryLabel} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Card className="relative overflow-hidden border-transparent bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25">
-          <Database className="pointer-events-none absolute -right-5 -top-5 size-28 text-primary-foreground/10" aria-hidden="true" />
-          <CardHeader className="relative flex-row items-center justify-between space-y-0 pb-2">
-            <CardDescription className="text-primary-foreground/80">{t.overview.statBucket}</CardDescription>
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-foreground/15">
+        <Card className="relative overflow-hidden bg-linear-to-br from-accent to-accent/80 text-accent-foreground shadow-lg shadow-accent/25">
+          <Database className="pointer-events-none absolute -right-5 -top-5 size-28 text-accent-foreground/10" aria-hidden="true" />
+          <Card.Header className="relative flex-row items-center justify-between gap-3">
+            <Card.Description className="text-accent-foreground/80">{t.overview.statBucket}</Card.Description>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-foreground/15">
               <Database className="size-5" aria-hidden="true" />
             </span>
-          </CardHeader>
-          <CardContent className="relative"><p className="text-4xl font-bold tabular-nums">{bucketCount}</p></CardContent>
+          </Card.Header>
+          <Card.Content className="relative"><p className="text-4xl font-bold tabular-nums">{bucketCount}</p></Card.Content>
         </Card>
 
         {stats.map(({ label, value, icon: Icon, tone }) => (
-          <Card key={label} className="border-border/60 shadow-sm transition-shadow hover:shadow-md">
-            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-              <CardDescription>{label}</CardDescription>
+          <Card key={label}>
+            <Card.Header className="flex-row items-center justify-between gap-3">
+              <Card.Description>{label}</Card.Description>
               <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", TONE_CLASSES[tone].badge)}>
                 <Icon className={cn("size-5", TONE_CLASSES[tone].icon)} aria-hidden="true" />
               </span>
-            </CardHeader>
-            <CardContent><p className="text-3xl font-bold tabular-nums">{value}</p></CardContent>
+            </Card.Header>
+            <Card.Content><p className="text-3xl font-bold tabular-nums">{value}</p></Card.Content>
           </Card>
         ))}
 
-        <Card className="border-border/60 shadow-sm transition-shadow hover:shadow-md">
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardDescription>{t.overview.googleDrive}</CardDescription>
-            <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", drive?.connected ? "bg-success/10" : "bg-destructive/10")}>
-              {drive?.connected ? <Cloud className="size-5 text-success" aria-hidden="true" /> : <CloudOff className="size-5 text-destructive" aria-hidden="true" />}
+        <Card>
+          <Card.Header className="flex-row items-center justify-between gap-3">
+            <Card.Description>{t.overview.googleDrive}</Card.Description>
+            <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", drive?.connected ? "bg-success-soft" : "bg-danger-soft")}>
+              {drive?.connected ? <Cloud className="size-5 text-success" aria-hidden="true" /> : <CloudOff className="size-5 text-danger" aria-hidden="true" />}
             </span>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className={cn("text-2xl font-bold", drive?.connected ? "text-success" : "text-destructive")}>{drive?.connected ? t.overview.connected : t.overview.disconnected}</p>
-            {drive && !drive.connected ? <Button size="sm" variant="outline" disabled={reconnecting} onClick={() => void onReconnect()}><RefreshCw className={reconnecting ? "animate-spin" : ""} />{reconnecting ? t.overview.reconnecting : t.overview.reconnect}</Button> : null}
-          </CardContent>
+          </Card.Header>
+          <Card.Content className="gap-3">
+            <p className={cn("text-2xl font-bold", drive?.connected ? "text-success" : "text-danger")}>{drive?.connected ? t.overview.connected : t.overview.disconnected}</p>
+            {drive && !drive.connected ? <Button size="sm" variant="outline" isDisabled={reconnecting} onPress={() => void onReconnect()}><RefreshCw className={reconnecting ? "animate-spin" : ""} />{reconnecting ? t.overview.reconnecting : t.overview.reconnect}</Button> : null}
+          </Card.Content>
         </Card>
       </section>
 
       <div className="flex justify-end">
-        <Button variant="outline" onClick={() => void onReconcile()} disabled={!drive?.connected || reconciling}>
+        <Button variant="outline" onPress={() => void onReconcile()} isDisabled={!drive?.connected || reconciling}>
           <RefreshCw className={reconciling ? "animate-spin" : ""} />{reconciling ? t.overview.reconciling : t.overview.reconcileButton}
         </Button>
       </div>
@@ -199,64 +213,66 @@ export function OverviewPage({ onViewTrafficDetail }: { onViewTrafficDetail?: ()
       </section>
 
       <Card>
-        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+        <Card.Header className="flex-row flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-1.5">
-            <CardTitle>{t.overview.compatibilityTitle}</CardTitle>
-            <CardDescription>{t.overview.compatibilityDescription}</CardDescription>
+            <Card.Title className="text-base font-semibold">{t.overview.compatibilityTitle}</Card.Title>
+            <Card.Description>{t.overview.compatibilityDescription}</Card.Description>
           </div>
           {compatCounts.total > 0 ? (
-            <Badge variant="secondary" className="shrink-0">
+            <Chip className="shrink-0">
               {t.overview.compatibilitySupportedCount(compatCounts.supported, compatCounts.total)}
-            </Badge>
+            </Chip>
           ) : null}
-        </CardHeader>
-        <CardContent>
+        </Card.Header>
+        <Card.Content>
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t.overview.tableFeature}</TableHead>
-                <TableHead>{t.overview.tableStatus}</TableHead>
-                <TableHead>{t.overview.tableVerifiedBy}</TableHead>
-                <TableHead>{t.overview.tableNotes}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(gateway?.compatibility ?? []).map((item) => {
-                const notes = t.compatNotes[item.feature] ?? item.notes ?? "";
-                return (
-                  <TableRow key={item.feature} className="align-top">
-                    {/* The longest feature name is ~60 characters; without a
-                        floor it wraps to one or two words per line and the
-                        rows stop lining up with each other. */}
-                    <TableRowHeader className="min-w-56 align-top">{item.feature}</TableRowHeader>
-                    <TableCell className="align-top">
-                      <Badge variant={statusVariant[item.status]}>{statusLabel[item.status]}</Badge>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      {item.verifiedBy && item.verifiedBy.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {item.verifiedBy.map((source) => (
-                            <Badge key={source} variant="outline" className="font-mono text-[0.7rem] font-normal">
-                              {source}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    {/* Several notes run to a full paragraph. Capping the
-                        column keeps them from swallowing the row and pushing
-                        the other three columns into a sliver. */}
-                    <TableCell className="max-w-md min-w-64 align-top text-xs leading-relaxed text-muted-foreground">
-                      {notes || "-"}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
+            <Table.ScrollContainer>
+              <Table.Content aria-label={t.overview.compatibilityTitle}>
+                <Table.Header>
+                  <Table.Column isRowHeader>{t.overview.tableFeature}</Table.Column>
+                  <Table.Column>{t.overview.tableStatus}</Table.Column>
+                  <Table.Column>{t.overview.tableVerifiedBy}</Table.Column>
+                  <Table.Column>{t.overview.tableNotes}</Table.Column>
+                </Table.Header>
+                <Table.Body>
+                  {compatibility.map((item) => {
+                    const notes = t.compatNotes[item.feature] ?? item.notes ?? "";
+                    return (
+                      <Table.Row key={item.feature} id={item.feature}>
+                        {/* The longest feature name is ~60 characters; without a
+                            floor it wraps to one or two words per line and the
+                            rows stop lining up with each other. */}
+                        <Table.Cell className="min-w-56 align-top font-medium">{item.feature}</Table.Cell>
+                        <Table.Cell className="align-top">
+                          <Chip color={statusColor[item.status]} variant="soft">{statusLabel[item.status]}</Chip>
+                        </Table.Cell>
+                        <Table.Cell className="align-top">
+                          {item.verifiedBy && item.verifiedBy.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {item.verifiedBy.map((source) => (
+                                <Chip key={source} variant="tertiary" size="sm" className="border font-mono text-[0.7rem] font-normal">
+                                  {source}
+                                </Chip>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted">-</span>
+                          )}
+                        </Table.Cell>
+                        {/* Several notes run to a full paragraph. Capping the
+                            column keeps them from swallowing the row and pushing
+                            the other three columns into a sliver. */}
+                        <Table.Cell className="max-w-md min-w-64 align-top text-xs leading-relaxed text-muted">
+                          {notes || "-"}
+                        </Table.Cell>
+                      </Table.Row>
+                    );
+                  })}
+                </Table.Body>
+              </Table.Content>
+            </Table.ScrollContainer>
           </Table>
-        </CardContent>
+        </Card.Content>
       </Card>
     </div>
   );

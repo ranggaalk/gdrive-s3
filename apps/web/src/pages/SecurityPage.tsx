@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
 import { Download, KeyRound, RotateCcw, ShieldCheck, ShieldOff, TriangleAlert } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Alert, Button, Card, Chip, Input, InputOTP, Label, Modal, REGEXP_ONLY_DIGITS } from "@heroui/react";
 import { CopyableCode } from "@/components/copyable-code";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
@@ -231,44 +225,44 @@ export function SecurityPage() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShieldCheck className="size-5 text-primary" /> {t.security.cardTitle}
-          </CardTitle>
-          <CardDescription>{t.security.cardDescription}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+        <Card.Header>
+          <Card.Title className="flex items-center gap-2 text-base font-semibold">
+            <ShieldCheck className="size-5 text-accent" /> {t.security.cardTitle}
+          </Card.Title>
+          <Card.Description>{t.security.cardDescription}</Card.Description>
+        </Card.Header>
+        <Card.Content className="space-y-5">
           <div className="flex flex-wrap items-center gap-3">
-            <Badge variant={status.enabled ? "success" : "secondary"}>
-              {status.enabled ? t.security.statusEnabled : t.security.statusDisabled}
-            </Badge>
             {status.enabled ? (
-              <span className="text-sm text-muted-foreground">
+              <Chip color="success" variant="soft">{t.security.statusEnabled}</Chip>
+            ) : (
+              <Chip>{t.security.statusDisabled}</Chip>
+            )}
+            {status.enabled ? (
+              <span className="text-sm text-muted">
                 {t.security.recoveryCodesRemaining(status.recoveryCodesRemaining)}
               </span>
             ) : null}
           </div>
 
           {!status.enabled && !setupInfo ? (
-            <Button onClick={() => void onStartSetup()} disabled={settingUp}>
+            <Button className="w-fit" onPress={() => void onStartSetup()} isDisabled={settingUp}>
               <ShieldCheck /> {t.security.enableButton}
             </Button>
           ) : null}
 
           {status.enabled ? (
-            <div className="flex flex-wrap gap-2 border-t pt-5">
+            <div className="flex flex-wrap gap-2 border-t border-separator pt-5">
               <Button
-                type="button"
                 variant="outline"
-                onClick={() => { setConfirmAction("regenerate"); setConfirmCode(""); setConfirmError(null); }}
+                onPress={() => { setConfirmAction("regenerate"); setConfirmCode(""); setConfirmError(null); }}
               >
                 <RotateCcw /> {t.security.regenerateButton}
               </Button>
               <Button
-                type="button"
                 variant="outline"
-                className="text-destructive hover:text-destructive"
-                onClick={() => { setConfirmAction("disable"); setConfirmCode(""); setConfirmError(null); }}
+                className="text-danger"
+                onPress={() => { setConfirmAction("disable"); setConfirmCode(""); setConfirmError(null); }}
               >
                 <ShieldOff /> {t.security.disableButton}
               </Button>
@@ -276,10 +270,10 @@ export function SecurityPage() {
           ) : null}
 
           {setupInfo ? (
-            <form onSubmit={(event) => void onConfirmSetup(event)} className="space-y-4 border-t pt-5">
+            <form onSubmit={(event) => void onConfirmSetup(event)} className="space-y-4 border-t border-separator pt-5">
               <div>
                 <h3 className="font-medium">{t.security.setupTitle}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{t.security.setupDescription}</p>
+                <p className="mt-1 text-sm text-muted">{t.security.setupDescription}</p>
               </div>
               {qrDataUrl ? (
                 <img
@@ -287,11 +281,11 @@ export function SecurityPage() {
                   alt={t.security.setupTitle}
                   width={220}
                   height={220}
-                  className="rounded-md border bg-white p-2"
+                  className="rounded-xl border bg-white p-2"
                 />
               ) : (
-                <div className="flex size-[220px] items-center justify-center rounded-md border">
-                  <span className="text-xs text-muted-foreground">…</span>
+                <div className="flex size-[220px] items-center justify-center rounded-xl border">
+                  <span className="text-xs text-muted">…</span>
                 </div>
               )}
               <div className="space-y-2">
@@ -301,167 +295,192 @@ export function SecurityPage() {
               {setupError ? <ErrorAlert message={setupError} /> : null}
               <div className="space-y-2">
                 <Label htmlFor="security-setup-code">{t.security.confirmCodeLabel}</Label>
-                <Input
+                {/* Enabling 2FA is proven with an authenticator code only --
+                    recovery codes do not exist yet -- so six digit slots fit. */}
+                <InputOTP
                   id="security-setup-code"
+                  maxLength={6}
+                  pattern={REGEXP_ONLY_DIGITS}
                   value={setupCode}
-                  onChange={(event) => setSetupCode(event.target.value)}
-                  placeholder="123456"
+                  onChange={setSetupCode}
                   autoComplete="one-time-code"
-                  aria-invalid={Boolean(setupError)}
-                />
+                  isInvalid={Boolean(setupError)}
+                >
+                  <InputOTP.Group>
+                    <InputOTP.Slot index={0} />
+                    <InputOTP.Slot index={1} />
+                    <InputOTP.Slot index={2} />
+                  </InputOTP.Group>
+                  <InputOTP.Separator />
+                  <InputOTP.Group>
+                    <InputOTP.Slot index={3} />
+                    <InputOTP.Slot index={4} />
+                    <InputOTP.Slot index={5} />
+                  </InputOTP.Group>
+                </InputOTP>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={!setupCode.trim() || confirming}>
+                <Button type="submit" isDisabled={!setupCode.trim() || confirming}>
                   {confirming ? t.security.confirming : t.security.confirmButton}
                 </Button>
-                <Button type="button" variant="outline" onClick={onCancelSetup} disabled={confirming}>
+                <Button variant="outline" onPress={onCancelSetup} isDisabled={confirming}>
                   {t.security.cancelSetup}
                 </Button>
               </div>
             </form>
           ) : null}
-        </CardContent>
+        </Card.Content>
       </Card>
 
-      <Dialog
-        open={Boolean(confirmAction)}
+      <Modal.Backdrop
+        isOpen={Boolean(confirmAction)}
         onOpenChange={(open) => { if (!open && !confirmBusy) { setConfirmAction(null); setConfirmError(null); } }}
       >
-        <DialogContent>
-          <form onSubmit={(event) => void onConfirmDialogSubmit(event)} className="flex min-h-0 flex-1 flex-col gap-5">
-            <DialogHeader>
-              <DialogTitle>
-                {confirmAction === "disable" ? t.security.disableConfirmTitle : t.security.regenerateConfirmTitle}
-              </DialogTitle>
-              <DialogDescription>
-                {confirmAction === "disable"
-                  ? t.security.disableConfirmDescription
-                  : t.security.regenerateConfirmDescription}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogBody className="space-y-5">
-            {confirmError ? <ErrorAlert message={confirmError} /> : null}
-            <div className="space-y-2">
-              <Label htmlFor="security-confirm-code">{t.security.confirmCodeInputLabel}</Label>
-              <Input
-                id="security-confirm-code"
-                value={confirmCode}
-                onChange={(event) => setConfirmCode(event.target.value)}
-                autoComplete="one-time-code"
-                autoFocus
-                aria-invalid={Boolean(confirmError)}
-              />
-            </div>
-            </DialogBody>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={confirmBusy}
-                onClick={() => { setConfirmAction(null); setConfirmError(null); }}
-              >
-                {t.common.cancel}
-              </Button>
-              <Button
-                type="submit"
-                className={confirmAction === "disable" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
-                disabled={!confirmCode.trim() || confirmBusy}
-              >
-                {confirmBusy
-                  ? t.security.processing
-                  : confirmAction === "disable"
-                    ? t.security.confirmAndDisable
-                    : t.security.confirmAndRegenerate}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+        <Modal.Container size="lg">
+          <Modal.Dialog>
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <form onSubmit={(event) => void onConfirmDialogSubmit(event)} className="flex min-h-0 flex-1 flex-col">
+              <Modal.Header>
+                <Modal.Heading>
+                  {confirmAction === "disable" ? t.security.disableConfirmTitle : t.security.regenerateConfirmTitle}
+                </Modal.Heading>
+                <p className="text-sm text-muted">
+                  {confirmAction === "disable"
+                    ? t.security.disableConfirmDescription
+                    : t.security.regenerateConfirmDescription}
+                </p>
+              </Modal.Header>
+              <Modal.Body className="space-y-5">
+                {confirmError ? <ErrorAlert message={confirmError} /> : null}
+                <div className="space-y-2">
+                  <Label htmlFor="security-confirm-code">{t.security.confirmCodeInputLabel}</Label>
+                  {/* Not InputOTP: a recovery code is accepted here too. */}
+                  <Input
+                    id="security-confirm-code"
+                    fullWidth
+                    value={confirmCode}
+                    onChange={(event) => setConfirmCode(event.target.value)}
+                    autoComplete="one-time-code"
+                    autoFocus
+                    aria-invalid={Boolean(confirmError)}
+                  />
+                </div>
+              </Modal.Body>
+              <Modal.Footer>
+                <Button slot="close" variant="tertiary" isDisabled={confirmBusy}>
+                  {t.common.cancel}
+                </Button>
+                <Button
+                  type="submit"
+                  variant={confirmAction === "disable" ? "danger" : "primary"}
+                  isDisabled={!confirmCode.trim() || confirmBusy}
+                >
+                  {confirmBusy
+                    ? t.security.processing
+                    : confirmAction === "disable"
+                      ? t.security.confirmAndDisable
+                      : t.security.confirmAndRegenerate}
+                </Button>
+              </Modal.Footer>
+            </form>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <Dialog open={Boolean(recoveryCodes)} onOpenChange={(open) => { if (!open) setRecoveryCodes(null); }}>
-        <DialogContent className="min-w-0 max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t.security.recoveryCodesTitle}</DialogTitle>
-            <DialogDescription>{t.security.recoveryCodesDescription}</DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-          {recoveryCodes ? (
-            <div className="min-w-0 space-y-5">
-              <Alert variant="warning">
-                <TriangleAlert />
-                <AlertTitle>{t.security.recoveryCodesTitle}</AlertTitle>
-                <AlertDescription>{t.security.recoveryCodesDescription}</AlertDescription>
-              </Alert>
-              <CopyableCode value={recoveryCodes.join("\n")} label={t.security.recoveryCodesCopyLabel} />
-            </div>
-          ) : null}
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={downloadRecoveryCodes}>
-              <Download /> {t.security.downloadRecoveryCodes}
-            </Button>
-            <Button onClick={() => setRecoveryCodes(null)}>{t.security.done}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal.Backdrop isOpen={Boolean(recoveryCodes)} onOpenChange={(open) => { if (!open) setRecoveryCodes(null); }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog>
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{t.security.recoveryCodesTitle}</Modal.Heading>
+              <p className="text-sm text-muted">{t.security.recoveryCodesDescription}</p>
+            </Modal.Header>
+            <Modal.Body>
+              {recoveryCodes ? (
+                <div className="min-w-0 space-y-5">
+                  <Alert status="warning">
+                    <Alert.Indicator>
+                      <TriangleAlert />
+                    </Alert.Indicator>
+                    <Alert.Content>
+                      <Alert.Title>{t.security.recoveryCodesTitle}</Alert.Title>
+                      <Alert.Description>{t.security.recoveryCodesDescription}</Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                  <CopyableCode value={recoveryCodes.join("\n")} label={t.security.recoveryCodesCopyLabel} />
+                </div>
+              ) : null}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="outline" onPress={downloadRecoveryCodes}>
+                <Download /> {t.security.downloadRecoveryCodes}
+              </Button>
+              <Button slot="close">{t.security.done}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="size-5 text-primary" /> {t.security.kmsTitle}
-          </CardTitle>
-          <CardDescription>{t.security.kmsDescription}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+        <Card.Header>
+          <Card.Title className="flex items-center gap-2 text-base font-semibold">
+            <KeyRound className="size-5 text-accent" /> {t.security.kmsTitle}
+          </Card.Title>
+          <Card.Description>{t.security.kmsDescription}</Card.Description>
+        </Card.Header>
+        <Card.Content className="space-y-5">
           <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => void addKmsKey(event)}>
             <div className="min-w-52 flex-1 space-y-2">
               <Label htmlFor="kms-alias">{t.security.kmsAliasLabel}</Label>
               <Input
                 id="kms-alias"
+                fullWidth
                 value={kmsAlias}
                 maxLength={128}
                 placeholder={t.security.kmsAliasPlaceholder}
                 onChange={(event) => setKmsAlias(event.target.value)}
               />
             </div>
-            <Button type="submit" disabled={!kmsAlias.trim() || kmsBusy}>
+            <Button type="submit" isDisabled={!kmsAlias.trim() || kmsBusy}>
               {kmsBusy ? t.security.kmsCreating : t.security.kmsCreate}
             </Button>
           </form>
 
           {kmsKeys.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t.security.kmsEmpty}</p>
+            <p className="text-sm text-muted">{t.security.kmsEmpty}</p>
           ) : (
             <div className="space-y-2">
               {kmsKeys.map((key) => (
-                <div key={key.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+                <div key={key.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-sm font-medium">{key.alias}</p>
-                      <Badge variant={key.status === "active" ? "success" : "secondary"}>
-                        {key.status === "active" ? t.security.kmsStatusActive : t.security.kmsStatusDisabled}
-                      </Badge>
+                      {key.status === "active" ? (
+                        <Chip size="sm" color="success" variant="soft">{t.security.kmsStatusActive}</Chip>
+                      ) : (
+                        <Chip size="sm">{t.security.kmsStatusDisabled}</Chip>
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted">
                       {t.security.kmsVersion(key.version)} · {t.security.kmsObjectCount(key.objectCount)}
                       {key.rotatedAt ? ` · ${new Date(key.rotatedAt).toLocaleString()}` : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" disabled={kmsBusy} onClick={() => void doRotateKey(key)}>
+                    <Button size="sm" variant="outline" isDisabled={kmsBusy} onPress={() => void doRotateKey(key)}>
                       <RotateCcw /> {kmsBusy ? t.security.kmsRotating : t.security.kmsRotate}
                     </Button>
-                    <Button size="sm" variant="ghost" disabled={kmsBusy} onClick={() => void toggleKeyStatus(key)}>
+                    <Button size="sm" variant="ghost" isDisabled={kmsBusy} onPress={() => void toggleKeyStatus(key)}>
                       {key.status === "active" ? t.security.kmsDisable : t.security.kmsEnable}
                     </Button>
                   </div>
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">{t.security.kmsRotateHint}</p>
-              <p className="text-xs text-muted-foreground">{t.security.kmsDisabledHint}</p>
+              <p className="text-xs text-muted">{t.security.kmsRotateHint}</p>
+              <p className="text-xs text-muted">{t.security.kmsDisabledHint}</p>
             </div>
           )}
-        </CardContent>
+        </Card.Content>
       </Card>
     </div>
   );

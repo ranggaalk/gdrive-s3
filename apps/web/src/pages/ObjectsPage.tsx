@@ -1,23 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Activity, ArrowDownToLine, ArrowLeft, CloudDownload, Copy, Eye, FileCode2, Files, Folder, HardDriveDownload, History, Link2, Plus, Search, Trash2 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Alert, AlertDialog, Button, buttonVariants, Chip, Focusable, Input, Label, Modal, Table, Tooltip } from "@heroui/react";
 import { Select } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
 import { CopyableCode } from "@/components/copyable-code";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
@@ -132,13 +116,13 @@ export function ObjectsPage({
     cancelled: t.backup.statusCancelled,
     failed: t.backup.statusFailed,
   };
-  const BACKUP_STATUS_VARIANT: Record<BackupTransfer["status"], "default" | "secondary" | "success" | "destructive" | "warning"> = {
-    queued: "secondary",
+  const BACKUP_STATUS_COLOR: Record<BackupTransfer["status"], "default" | "success" | "warning" | "danger"> = {
+    queued: "default",
     running: "warning",
     cancel_requested: "warning",
     completed: "success",
-    cancelled: "secondary",
-    failed: "destructive",
+    cancelled: "default",
+    failed: "danger",
   };
   const EXPIRY_OPTIONS = [
     { value: "900", label: t.objects.expiry15m },
@@ -567,312 +551,754 @@ export function ObjectsPage({
 
   return (
     <div className="space-y-6">
-      <div><Button variant="ghost" className="-ml-3" onClick={onBack}><ArrowLeft /> {t.login.backToBuckets}</Button><div className="mt-2 flex flex-wrap items-center gap-2"><h2 className="break-all text-xl font-semibold">{bucket.name}</h2><Badge variant="secondary">{bucket.storageDisplayName}</Badge><Badge variant={bucket.effectiveRole === "viewer" ? "outline" : "default"}>{roleLabel(bucket.effectiveRole)}</Badge></div></div>
-      {bucket.storageStatus !== "active" ? <Alert variant="destructive"><AlertTitle>{t.objects.driveAccessIssueTitle}</AlertTitle><AlertDescription>{t.objects.driveAccessIssueDescription(bucket.storageDisplayName)}</AlertDescription></Alert> : null}
-      {bucket.effectiveRole === "viewer" ? <Alert><AlertTitle>{t.objects.viewerAccessTitle}</AlertTitle><AlertDescription>{t.objects.viewerAccessDescription}</AlertDescription></Alert> : null}
+      <div>
+        <Button variant="ghost" className="-ml-3" onPress={onBack}><ArrowLeft /> {t.login.backToBuckets}</Button>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <h2 className="break-all text-xl font-semibold">{bucket.name}</h2>
+          <Chip>{bucket.storageDisplayName}</Chip>
+          {bucket.effectiveRole === "viewer" ? (
+            <Chip variant="tertiary">{roleLabel(bucket.effectiveRole)}</Chip>
+          ) : (
+            <Chip color="accent" variant="soft">{roleLabel(bucket.effectiveRole)}</Chip>
+          )}
+        </div>
+      </div>
+      {bucket.storageStatus !== "active" ? (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{t.objects.driveAccessIssueTitle}</Alert.Title>
+            <Alert.Description>{t.objects.driveAccessIssueDescription(bucket.storageDisplayName)}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      ) : null}
+      {bucket.effectiveRole === "viewer" ? (
+        <Alert status="accent">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{t.objects.viewerAccessTitle}</Alert.Title>
+            <Alert.Description>{t.objects.viewerAccessDescription}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      ) : null}
       {error ? <ErrorAlert message={error} /> : null}
 
-      <div className="grid w-fit grid-cols-2 gap-2"><Button type="button" variant={view === "objects" ? "default" : "outline"} onClick={() => setView("objects")}><Files /> {t.objects.viewObjects}</Button><Button type="button" variant={view === "traffic" ? "default" : "outline"} onClick={() => setView("traffic")}><Activity /> {t.objects.viewTraffic}</Button></div>
+      <div className="grid w-fit grid-cols-2 gap-2">
+        <Button fullWidth variant={view === "objects" ? "primary" : "outline"} onPress={() => setView("objects")}><Files /> {t.objects.viewObjects}</Button>
+        <Button fullWidth variant={view === "traffic" ? "primary" : "outline"} onPress={() => setView("traffic")}><Activity /> {t.objects.viewTraffic}</Button>
+      </div>
 
-      {view === "traffic" ? <Suspense fallback={<LoadingState label={t.objects.loadingTraffic} />}><BucketTraffic bucketId={bucket.id} /></Suspense> : <>
-      {importJob ? <Alert variant={importJob.status === "failed" ? "destructive" : "default"}><CloudDownload /><AlertTitle>{t.objects.importAlertTitle(importJob.status)}</AlertTitle><AlertDescription><p>{t.objects.importAlertDescription({ sourceFolderName: importJob.sourceFolderName, discovered: importJob.discovered, imported: importJob.imported, conflicts: importJob.conflicts, unsupported: importJob.unsupported, failed: importJob.failed })}</p>{importJob.lastError ? <p>{importJob.lastError}</p> : null}<div className="mt-3 flex gap-2">{!["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void doCancelImport(importJob.id)}>{t.objects.cancelImport}</Button> : null}{["completed", "cancelled", "failed"].includes(importJob.status) ? <Button size="sm" variant="outline" onClick={() => void listDriveImportIssues(bucket.id, importJob.id).then((page) => setImportIssues(page.items))}>{t.objects.viewReport}</Button> : null}</div></AlertDescription></Alert> : null}
-      {importIssues.length ? <Table><TableHeader><TableRow><TableHead>{t.objects.issueKey}</TableHead><TableHead>{t.objects.issueStatus}</TableHead><TableHead>{t.objects.issueReason}</TableHead></TableRow></TableHeader><TableBody>{importIssues.map((issue) => <TableRow key={issue.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{issue.key}</TableRowHeader><TableCell>{issue.status}</TableCell><TableCell>{issue.reason ?? "-"}</TableCell></TableRow>)}</TableBody></Table> : null}
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><form onSubmit={search} role="search" className="flex flex-1 gap-2"><Input placeholder={t.objects.filterPlaceholder} value={prefix} onChange={(event) => setPrefix(event.target.value)} aria-label={t.objects.filterAriaLabel} /><Button type="submit" variant="outline" disabled={loading}><Search /> <span className="hidden sm:inline">{t.objects.search}</span></Button></form><div className="flex gap-2">{owner ? <Button variant="outline" onClick={() => void openImport()}><CloudDownload /> {t.objects.importFromDrive}</Button> : null}{owner ? <Button variant="outline" onClick={() => void openBackup()}><HardDriveDownload /> {t.backup.button}</Button> : null}{writable ? <Button variant="outline" onClick={() => void openUploadForm()}><FileCode2 /> {t.objects.uploadFormAction}</Button> : null}{writable ? <Button onClick={() => setShowUpload(true)}><Plus /> {t.objects.upload}</Button> : null}</div></div>
-
-      {loading ? <LoadingState label={t.objects.loading} /> : items.length === 0 ? <EmptyState icon={Files} title={t.objects.emptyTitle} description={writable ? t.objects.emptyDescriptionWritable : t.objects.emptyDescriptionReadonly} /> : <><Table><TableHeader><TableRow><TableHead>{t.objects.tableKey}</TableHead><TableHead>{t.objects.tableSize}</TableHead><TableHead>{t.objects.tableType}</TableHead><TableHead>{t.objects.tableModified}</TableHead><TableHead className="text-right">{t.objects.tableAction}</TableHead></TableRow></TableHeader><TableBody>{items.map((item) => <TableRow key={item.id}><TableRowHeader className="max-w-80 break-all font-mono text-xs">{item.key}</TableRowHeader><TableCell className="whitespace-nowrap">{humanBytes(item.size)}</TableCell><TableCell className="max-w-48 break-all">{item.contentType}</TableCell><TableCell className="whitespace-nowrap">{new Date(item.lastModified).toLocaleString()}</TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title={t.objects.download} aria-label={t.objects.downloadLabel(item.key)} asChild><a href={objectDownloadUrl(bucket.id, item.id)}><ArrowDownToLine /></a></Button>{isPreviewable(item.contentType) ? <Button size="icon" variant="ghost" title={t.objects.preview} aria-label={t.objects.previewLabel(item.key)} onClick={() => window.open(objectPreviewUrl(bucket.id, item.id), "_blank", "noopener,noreferrer")}><Eye /></Button> : null}{owner ? <Button size="icon" variant="ghost" title={t.objects.publicLink} aria-label={t.objects.publicLinkLabel(item.key)} onClick={() => void openLinks(item)}><Link2 /></Button> : null}<Button size="icon" variant="ghost" title={t.objects.copyTitle} aria-label={t.objects.copyLabel(item.key)} onClick={() => void openCopy(item)}><Copy /></Button><Button size="icon" variant="ghost" title={t.objects.versionsTitle} aria-label={t.objects.versionsLabel(item.key)} onClick={() => void openVersions(item)}><History /></Button>{writable ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" title={t.objects.deleteTitle} aria-label={t.objects.deleteLabel(item.key)} onClick={() => setDeleteTarget(item)}><Trash2 /></Button> : null}</div></TableCell></TableRow>)}</TableBody></Table>{nextAfter ? <div className="flex justify-center"><Button variant="outline" disabled={loadingMore} onClick={() => void more()}>{loadingMore ? t.common.loadingMore : t.common.loadMore}</Button></div> : null}</>}
-      </>}
-
-      <Dialog open={showImport} onOpenChange={(open) => { if (!importBusy) setShowImport(open); }}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{t.objects.importDialogTitle}</DialogTitle><DialogDescription>{t.objects.importDialogDescription}</DialogDescription></DialogHeader><DialogBody className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>{t.objects.locationLabel}</Label><Select value={importKind} options={importKindOptions} onValueChange={(kind) => { setImportKind(kind); const driveId = kind === "shared_drive" ? sharedDrives[0]?.id ?? "" : ""; setImportDriveId(driveId); setFolderStack([]); setSelectedFolder(null); if (kind === "shared_drive" && !driveId) { setDriveFolders([]); setSelectedFolder(null); } else { void browseFolders(kind, driveId, []); } }} />{noSharedDrives ? <p className="text-xs text-muted-foreground">{t.objects.noSharedDriveAccessible}</p> : null}</div>{importKind === "shared_drive" ? <div className="space-y-2"><Label>{t.objects.sharedDriveLabel}</Label><Select value={importDriveId} options={sharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} placeholder={t.objects.pickSharedDrive} onValueChange={(driveId) => { setImportDriveId(driveId); setFolderStack([]); setSelectedFolder(null); void browseFolders("shared_drive", driveId, []); }} /></div> : null}</div><div className="flex flex-wrap items-center gap-2 text-sm"><Button size="sm" variant="ghost" disabled={folderStack.length === 0 || importBusy} onClick={() => { const stack = folderStack.slice(0, -1); setFolderStack(stack); setSelectedFolder(null); void browseFolders(importKind, importDriveId, stack); }}>{t.objects.up}</Button><span className="text-muted-foreground">/{folderStack.map((folder) => folder.name).join("/")}</span></div><div className="max-h-72 space-y-1 overflow-y-auto rounded-md border p-2">{importBusy ? <LoadingState label={t.objects.loadingTraffic} /> : driveFolders.length === 0 ? <p className="p-4 text-sm text-muted-foreground">{t.objects.noSubfolders}</p> : driveFolders.map((folder) => <div key={folder.id} className={`flex items-center justify-between rounded-md p-2 ${selectedFolder?.id === folder.id ? "bg-muted" : ""}`}><button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setSelectedFolder(folder)}><Folder className="size-4 shrink-0" /><span className="truncate">{folder.name}</span></button><Button size="sm" variant="ghost" onClick={() => { const stack = [...folderStack, folder]; setFolderStack(stack); setSelectedFolder(null); void browseFolders(importKind, importDriveId, stack); }}>{t.objects.open}</Button></div>)}</div>{selectedFolder ? <Alert><AlertTitle>{t.objects.folderSelectedTitle}</AlertTitle><AlertDescription>{selectedFolder.name}</AlertDescription></Alert> : null}</DialogBody><DialogFooter><Button variant="outline" disabled={importBusy} onClick={() => setShowImport(false)}>{t.common.cancel}</Button><Button disabled={!selectedFolder || importBusy || (importKind === "shared_drive" && !importDriveId)} onClick={() => void startImport()}>{importBusy ? t.objects.preparing : t.objects.startImport}</Button></DialogFooter></DialogContent></Dialog>
-
-      <Dialog open={showBackup} onOpenChange={(open) => { if (!backupBusy) setShowBackup(open); }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{t.backup.dialogTitle}</DialogTitle>
-            <DialogDescription>{t.backup.dialogDescription}</DialogDescription>
-          </DialogHeader>
-          <DialogBody className="space-y-4">
-            {backupAccounts.length === 0 ? (
-              <Alert>
-                <AlertTitle>{t.backup.noAccountsTitle}</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>{t.backup.noAccountsDescription}</p>
-                  {onOpenBackupAccounts ? (
-                    <Button size="sm" variant="outline" onClick={() => { setShowBackup(false); onOpenBackupAccounts(); }}>
-                      {t.backup.openBackupPage}
-                    </Button>
+      {view === "traffic" ? (
+        <Suspense fallback={<LoadingState label={t.objects.loadingTraffic} />}><BucketTraffic bucketId={bucket.id} /></Suspense>
+      ) : (
+        <>
+          {importJob ? (
+            <Alert status={importJob.status === "failed" ? "danger" : "default"}>
+              <Alert.Indicator><CloudDownload className="size-4" /></Alert.Indicator>
+              <Alert.Content>
+                <Alert.Title>{t.objects.importAlertTitle(importJob.status)}</Alert.Title>
+                <Alert.Description>
+                  {t.objects.importAlertDescription({ sourceFolderName: importJob.sourceFolderName, discovered: importJob.discovered, imported: importJob.imported, conflicts: importJob.conflicts, unsupported: importJob.unsupported, failed: importJob.failed })}
+                </Alert.Description>
+                {importJob.lastError ? <Alert.Description>{importJob.lastError}</Alert.Description> : null}
+                <div className="mt-3 flex gap-2">
+                  {!["completed", "cancelled", "failed"].includes(importJob.status) ? (
+                    <Button size="sm" variant="outline" onPress={() => void doCancelImport(importJob.id)}>{t.objects.cancelImport}</Button>
                   ) : null}
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <div className="space-y-2">
-                <Label>{t.backup.targetAccountLabel}</Label>
-                <Select
-                  value={backupAccountId}
-                  onValueChange={setBackupAccountId}
-                  placeholder={t.backup.pickAccount}
-                  options={backupAccounts.map((account) => ({
-                    value: account.id,
-                    label: account.status === "active" ? account.email : `${account.email}${t.backup.needsReauthSuffix}`,
-                    disabled: account.status !== "active",
-                  }))}
-                />
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    disabled={!backupAccountId || backupBusy || Boolean(activeBackupTransfer)}
-                    onClick={() => void doStartBackup()}
-                  >
-                    {backupBusy ? t.backup.starting : t.backup.start}
-                  </Button>
+                  {["completed", "cancelled", "failed"].includes(importJob.status) ? (
+                    <Button size="sm" variant="outline" onPress={() => void listDriveImportIssues(bucket.id, importJob.id).then((page) => setImportIssues(page.items))}>{t.objects.viewReport}</Button>
+                  ) : null}
                 </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>{t.backup.historyLabel}</Label>
-              {backupBusy && backupTransfers.length === 0 ? (
-                <LoadingState label={t.backup.loadingHistory} />
-              ) : backupTransfers.length === 0 ? (
-                <p className="rounded-md border p-4 text-sm text-muted-foreground">{t.backup.noHistory}</p>
-              ) : (
-                <div className="max-h-72 space-y-2 overflow-y-auto">
-                  {backupTransfers.map((transfer) => {
-                    const account = backupAccounts.find((a) => a.id === transfer.backupAccountId);
-                    const isActive =
-                      transfer.status === "queued" || transfer.status === "running" || transfer.status === "cancel_requested";
-                    return (
-                      <div key={transfer.id} className="space-y-1 rounded-md border p-3 text-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="truncate font-medium">{account?.email ?? transfer.backupAccountId}</span>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={BACKUP_STATUS_VARIANT[transfer.status]}>{BACKUP_STATUS_LABEL[transfer.status]}</Badge>
-                            {isActive ? (
-                              <Button size="sm" variant="ghost" onClick={() => void doCancelBackup(transfer.id)}>{t.backup.cancelRun}</Button>
-                            ) : null}
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {t.backup.progressSummary({ copied: transfer.copied, skipped: transfer.skipped, failed: transfer.failed, total: transfer.total })}
-                        </p>
-                        {transfer.lastError ? <p className="text-xs text-destructive">{transfer.lastError}</p> : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBackup(false)}>{t.common.close}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showUpload} onOpenChange={(open) => { if (!uploading) setShowUpload(open); }}><DialogContent><form className="flex min-h-0 flex-1 flex-col gap-5" onSubmit={(event) => void doUpload(event)}><DialogHeader><DialogTitle>{t.objects.uploadDialogTitle}</DialogTitle><DialogDescription>{t.objects.uploadDialogDescription}</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="object-file">{t.objects.fileLabel}</Label><Input ref={fileInput} id="object-file" type="file" onChange={(event) => { const selected = event.target.files?.[0] ?? null; setFile(selected); if (selected) setKey(selected.name); }} /></div><div className="space-y-2"><Label htmlFor="object-key">{t.objects.objectKeyLabel}</Label><Input id="object-key" value={key} onChange={(event) => setKey(event.target.value)} maxLength={1024} /></div>{file ? <p className="text-sm text-muted-foreground">{humanBytes(file.size)} · {file.type || "application/octet-stream"}</p> : null}<DialogFooter><Button type="button" variant="outline" disabled={uploading} onClick={() => setShowUpload(false)}>{t.common.cancel}</Button><Button disabled={!file || !key.trim() || uploading}>{uploading ? t.objects.uploading : t.objects.upload}</Button></DialogFooter></form></DialogContent></Dialog>
-
-      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.objects.deleteConfirmTitle}</AlertDialogTitle><AlertDialogDescription className="break-all">Namespace <span className="font-mono">{deleteTarget?.key}</span> {t.objects.deleteConfirmDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={(event) => { event.preventDefault(); void doDelete(); }}>{deleting ? t.common.deleting : t.common.delete}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-
-      <Dialog open={Boolean(linkTarget)} onOpenChange={(open) => { if (!open && !linkBusy) { setLinkTarget(null); setGenerated(null); setLinkLoaded(false); } }}><DialogContent className="min-w-0 max-w-2xl"><DialogHeader><DialogTitle>{t.objects.publicLinkDialogTitle}</DialogTitle><DialogDescription className="break-all">{t.objects.publicLinkDialogDescriptionPrefix} <span className="font-mono">{linkTarget?.key}</span>{t.objects.publicLinkDialogDescriptionSuffix}</DialogDescription></DialogHeader><DialogBody className="space-y-4">{!linkLoaded ? <LoadingState label={t.objects.loadingLinkSettings} /> : <>{generated ? <div className="space-y-2"><Label>{t.objects.newUrlLabel}</Label><CopyableCode value={generated.url} label={t.objects.publicUrlCopyLabel} /><p className="text-xs text-muted-foreground">{generated.expiresAt ? t.objects.validUntil(new Date(generated.expiresAt).toLocaleString()) : t.objects.validUntilRevoked}</p></div> : null}<div className="grid gap-6 md:grid-cols-2"><section className="space-y-3"><h3 className="font-medium">{t.objects.presignedTitle}</h3><p className="text-sm text-muted-foreground">{t.objects.presignedDescription}</p>{credentials.length ? <><Select ariaLabel={t.objects.presignedCredentialAriaLabel} value={credentialId} onValueChange={setCredentialId} options={credentials.map((credential) => ({ value: credential.id, label: `${credential.label} · ${credential.access_key_id}` }))} /><Select ariaLabel={t.objects.presignedExpiryAriaLabel} value={String(expiresSeconds)} onValueChange={(value) => setExpiresSeconds(Number(value))} options={EXPIRY_OPTIONS} /><Button variant="outline" disabled={linkBusy} onClick={() => void temporaryLink()}>{t.objects.generateTemporary}</Button></> : <Alert><AlertTitle>{t.objects.noActiveKeyTitle}</AlertTitle><AlertDescription>{t.objects.noActiveKeyDescription}</AlertDescription></Alert>}</section><section className="space-y-3"><h3 className="font-medium">{t.objects.persistentTitle}</h3><p className="text-sm text-muted-foreground">{t.objects.persistentDescription}</p><Input value={publicLabel} maxLength={100} onChange={(event) => setPublicLabel(event.target.value)} placeholder={t.objects.linkLabelPlaceholder} /><Input type="datetime-local" min={new Date().toISOString().slice(0, 16)} value={publicExpiresAt} onChange={(event) => setPublicExpiresAt(event.target.value)} /><Button variant="outline" disabled={linkBusy || !publicLabel.trim()} onClick={() => void persistentLink()}>{t.objects.createPermanentLink}</Button></section></div>{publicLinks.length ? <div className="space-y-2"><h3 className="font-medium">{t.objects.permanentLinksTitle}</h3>{publicLinks.map((link) => <div key={link.id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{link.label}</p><p className="text-xs text-muted-foreground">{link.status === "active" ? link.expiresAt ? t.objects.activeUntil(new Date(link.expiresAt).toLocaleString()) : t.objects.activeNoExpiry : t.objects.revoked}</p></div>{link.status === "active" ? <Button size="sm" variant="destructive" disabled={linkBusy} onClick={() => setRevokeTarget(link)}>{t.objects.revoke}</Button> : null}</div>)}</div> : null}</>}</DialogBody><DialogFooter><Button onClick={() => { setLinkTarget(null); setGenerated(null); setLinkLoaded(false); }} disabled={linkBusy}>{t.credentials.done}</Button></DialogFooter></DialogContent></Dialog>
-
-      <Dialog open={showUploadForm} onOpenChange={(open) => { if (!uploadFormBusy) { setShowUploadForm(open); if (!open) setUploadForm(null); } }}>
-        <DialogContent className="min-w-0 max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{t.objects.uploadFormDialogTitle}</DialogTitle>
-            <DialogDescription>{t.objects.uploadFormDialogDescription}</DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-          {credentials.length === 0 && !uploadFormBusy ? (
-            <Alert>
-              <AlertTitle>{t.objects.noActiveKeyTitle}</AlertTitle>
-              <AlertDescription>{t.objects.noActiveKeyDescription}</AlertDescription>
+              </Alert.Content>
             </Alert>
-          ) : (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">{t.objects.uploadFormDescription}</p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="upload-form-prefix">{t.objects.uploadFormPrefixLabel}</Label>
-                  <Input
-                    id="upload-form-prefix"
-                    value={uploadFormPrefix}
-                    placeholder={t.objects.uploadFormPrefixPlaceholder}
-                    maxLength={512}
-                    onChange={(event) => setUploadFormPrefix(event.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">{t.objects.uploadFormPrefixHint}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="upload-form-max">{t.objects.uploadFormMaxSizeLabel}</Label>
-                  <Input
-                    id="upload-form-max"
-                    type="number"
-                    min={1}
-                    max={5120}
-                    value={uploadFormMaxMb}
-                    onChange={(event) => setUploadFormMaxMb(Math.max(1, Number(event.target.value) || 1))}
-                  />
-                  <p className="text-xs text-muted-foreground">{humanBytes(uploadFormMaxMb * 1024 * 1024)}</p>
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Select
-                  ariaLabel={t.objects.uploadFormCredentialAriaLabel}
-                  value={credentialId}
-                  onValueChange={setCredentialId}
-                  options={credentials.map((credential) => ({ value: credential.id, label: `${credential.label} · ${credential.access_key_id}` }))}
-                />
-                <Select
-                  ariaLabel={t.objects.uploadFormExpiryAriaLabel}
-                  value={String(uploadFormExpires)}
-                  onValueChange={(value) => setUploadFormExpires(Number(value))}
-                  options={EXPIRY_OPTIONS}
-                />
-              </div>
-              <Button variant="outline" disabled={uploadFormBusy || !credentialId} onClick={() => void generateUploadForm()}>
-                {t.objects.uploadFormGenerate}
-              </Button>
+          ) : null}
+          {importIssues.length ? (
+            <Table>
+              <Table.ScrollContainer>
+                <Table.Content aria-label={t.objects.importIssuesTableLabel}>
+                  <Table.Header>
+                    <Table.Column isRowHeader>{t.objects.issueKey}</Table.Column>
+                    <Table.Column>{t.objects.issueStatus}</Table.Column>
+                    <Table.Column>{t.objects.issueReason}</Table.Column>
+                  </Table.Header>
+                  <Table.Body>
+                    {importIssues.map((issue) => (
+                      <Table.Row key={issue.id} id={issue.id}>
+                        <Table.Cell className="max-w-80 break-all font-mono text-xs">{issue.key}</Table.Cell>
+                        <Table.Cell>{issue.status}</Table.Cell>
+                        <Table.Cell>{issue.reason ?? "-"}</Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table.Content>
+              </Table.ScrollContainer>
+            </Table>
+          ) : null}
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+            <form onSubmit={search} role="search" className="flex flex-1 gap-2">
+              <Input fullWidth placeholder={t.objects.filterPlaceholder} value={prefix} onChange={(event) => setPrefix(event.target.value)} aria-label={t.objects.filterAriaLabel} />
+              <Button type="submit" variant="outline" isDisabled={loading}><Search /> <span className="hidden sm:inline">{t.objects.search}</span></Button>
+            </form>
+            <div className="flex flex-wrap gap-2">
+              {owner ? <Button variant="outline" onPress={() => void openImport()}><CloudDownload /> {t.objects.importFromDrive}</Button> : null}
+              {owner ? <Button variant="outline" onPress={() => void openBackup()}><HardDriveDownload /> {t.backup.button}</Button> : null}
+              {writable ? <Button variant="outline" onPress={() => void openUploadForm()}><FileCode2 /> {t.objects.uploadFormAction}</Button> : null}
+              {writable ? <Button onPress={() => setShowUpload(true)}><Plus /> {t.objects.upload}</Button> : null}
+            </div>
+          </div>
 
-              {uploadForm ? (
-                <div className="space-y-3 border-t pt-4">
-                  <div className="space-y-1">
-                    <Label>{t.objects.uploadFormResultTitle} {new Date(uploadForm.expiresAt).toLocaleString()}</Label>
-                    <p className="text-xs text-muted-foreground">
-                      {t.objects.uploadFormKeyTemplate}: <span className="font-mono">{uploadForm.keyTemplate}</span> · {t.objects.uploadFormFileLast}
-                    </p>
-                  </div>
-                  <CopyableCode value={uploadForm.url} label={t.objects.uploadFormEndpointLabel} />
-                  <CopyableCode value={htmlSnippet(uploadForm)} label={t.objects.uploadFormHtmlLabel} />
-                  <CopyableCode value={curlSnippet(uploadForm)} label={t.objects.uploadFormCurlLabel} />
+          {loading ? (
+            <LoadingState label={t.objects.loading} />
+          ) : items.length === 0 ? (
+            <EmptyState icon={Files} title={t.objects.emptyTitle} description={writable ? t.objects.emptyDescriptionWritable : t.objects.emptyDescriptionReadonly} />
+          ) : (
+            <>
+              <Table>
+                <Table.ScrollContainer>
+                  <Table.Content aria-label={t.objects.viewObjects}>
+                    <Table.Header>
+                      <Table.Column isRowHeader>{t.objects.tableKey}</Table.Column>
+                      <Table.Column>{t.objects.tableSize}</Table.Column>
+                      <Table.Column>{t.objects.tableType}</Table.Column>
+                      <Table.Column>{t.objects.tableModified}</Table.Column>
+                      <Table.Column className="text-end">{t.objects.tableAction}</Table.Column>
+                    </Table.Header>
+                    <Table.Body>
+                      {items.map((item) => (
+                        <Table.Row key={item.id} id={item.id}>
+                          <Table.Cell className="max-w-80 break-all font-mono text-xs">{item.key}</Table.Cell>
+                          <Table.Cell className="whitespace-nowrap">{humanBytes(item.size)}</Table.Cell>
+                          <Table.Cell className="max-w-48 break-all">{item.contentType}</Table.Cell>
+                          <Table.Cell className="whitespace-nowrap">{new Date(item.lastModified).toLocaleString()}</Table.Cell>
+                          <Table.Cell>
+                            {/* Each action is icon-only, so a tooltip carries its name. A
+                                role-gated one stays `{gate ? <Tooltip><Button`, the shape
+                                ui-permission-gates.test.ts reads. */}
+                            <div className="flex justify-end gap-1">
+                              <Tooltip delay={300}>
+                                <Focusable>
+                                  <a
+                                    href={objectDownloadUrl(bucket.id, item.id)}
+                                    className={buttonVariants({ variant: "ghost", size: "sm", isIconOnly: true })}
+                                    aria-label={t.objects.downloadLabel(item.key)}
+                                  >
+                                    <ArrowDownToLine />
+                                  </a>
+                                </Focusable>
+                                <Tooltip.Content>{t.objects.download}</Tooltip.Content>
+                              </Tooltip>
+                              {isPreviewable(item.contentType) ? (
+                                <Tooltip delay={300}>
+                                  <Button isIconOnly size="sm" variant="ghost" aria-label={t.objects.previewLabel(item.key)} onPress={() => window.open(objectPreviewUrl(bucket.id, item.id), "_blank", "noopener,noreferrer")}><Eye /></Button>
+                                  <Tooltip.Content>{t.objects.preview}</Tooltip.Content>
+                                </Tooltip>
+                              ) : null}
+                              {owner ? <Tooltip delay={300}><Button isIconOnly size="sm" variant="ghost" aria-label={t.objects.publicLinkLabel(item.key)} onPress={() => void openLinks(item)}><Link2 /></Button><Tooltip.Content>{t.objects.publicLink}</Tooltip.Content></Tooltip> : null}
+                              <Tooltip delay={300}>
+                                <Button isIconOnly size="sm" variant="ghost" aria-label={t.objects.copyLabel(item.key)} onPress={() => void openCopy(item)}><Copy /></Button>
+                                <Tooltip.Content>{t.objects.copyTitle}</Tooltip.Content>
+                              </Tooltip>
+                              <Tooltip delay={300}>
+                                <Button isIconOnly size="sm" variant="ghost" aria-label={t.objects.versionsLabel(item.key)} onPress={() => void openVersions(item)}><History /></Button>
+                                <Tooltip.Content>{t.objects.versionsTitle}</Tooltip.Content>
+                              </Tooltip>
+                              {writable ? <Tooltip delay={300}><Button isIconOnly size="sm" variant="ghost" className="text-danger" aria-label={t.objects.deleteLabel(item.key)} onPress={() => setDeleteTarget(item)}><Trash2 /></Button><Tooltip.Content>{t.objects.deleteTitle}</Tooltip.Content></Tooltip> : null}
+                            </div>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
+              </Table>
+              {nextAfter ? (
+                <div className="flex justify-center">
+                  <Button variant="outline" isDisabled={loadingMore} onPress={() => void more()}>{loadingMore ? t.common.loadingMore : t.common.loadMore}</Button>
                 </div>
               ) : null}
-            </div>
+            </>
           )}
-          </DialogBody>
-          <DialogFooter>
-            <Button onClick={() => { setShowUploadForm(false); setUploadForm(null); }} disabled={uploadFormBusy}>
-              {t.credentials.done}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </>
+      )}
 
-      <Dialog open={Boolean(copyTarget)} onOpenChange={(open) => { if (!open && !copyBusy) setCopyTarget(null); }}>
-        <DialogContent className="min-w-0 max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t.objects.copyTitle}</DialogTitle>
-            <DialogDescription className="break-all">
-              <span className="font-mono">{copyTarget?.key}</span> — {t.objects.copyDialogDescription}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-          {copyBuckets.length === 0 && !copyBusy ? (
-            <Alert>
-              <AlertTitle>{t.objects.copyNoTargets}</AlertTitle>
-            </Alert>
-          ) : (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>{t.objects.copyTargetBucket}</Label>
-                <Select
-                  value={copyBucketId}
-                  onValueChange={setCopyBucketId}
-                  ariaLabel={t.objects.copyTargetBucket}
-                  options={copyBuckets.map((b) => ({ value: b.id, label: b.name }))}
-                />
+      <Modal.Backdrop isOpen={showImport} onOpenChange={(open) => { if (!importBusy) setShowImport(open); }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog className="max-w-2xl">
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{t.objects.importDialogTitle}</Modal.Heading>
+              <p className="text-sm text-muted">{t.objects.importDialogDescription}</p>
+            </Modal.Header>
+            <Modal.Body className="space-y-4 text-foreground">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Select
+                    label={t.objects.locationLabel}
+                    value={importKind}
+                    options={importKindOptions}
+                    onValueChange={(kind) => {
+                      setImportKind(kind);
+                      const driveId = kind === "shared_drive" ? sharedDrives[0]?.id ?? "" : "";
+                      setImportDriveId(driveId);
+                      setFolderStack([]);
+                      setSelectedFolder(null);
+                      if (kind === "shared_drive" && !driveId) {
+                        setDriveFolders([]);
+                        setSelectedFolder(null);
+                      } else {
+                        void browseFolders(kind, driveId, []);
+                      }
+                    }}
+                  />
+                  {noSharedDrives ? <p className="text-xs text-muted">{t.objects.noSharedDriveAccessible}</p> : null}
+                </div>
+                {importKind === "shared_drive" ? (
+                  <Select
+                    label={t.objects.sharedDriveLabel}
+                    value={importDriveId}
+                    options={sharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))}
+                    placeholder={t.objects.pickSharedDrive}
+                    onValueChange={(driveId) => {
+                      setImportDriveId(driveId);
+                      setFolderStack([]);
+                      setSelectedFolder(null);
+                      void browseFolders("shared_drive", driveId, []);
+                    }}
+                  />
+                ) : null}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="copy-key">{t.objects.copyTargetKey}</Label>
-                <Input
-                  id="copy-key"
-                  value={copyKey}
-                  maxLength={1024}
-                  onChange={(event) => setCopyKey(event.target.value)}
-                />
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  isDisabled={folderStack.length === 0 || importBusy}
+                  onPress={() => {
+                    const stack = folderStack.slice(0, -1);
+                    setFolderStack(stack);
+                    setSelectedFolder(null);
+                    void browseFolders(importKind, importDriveId, stack);
+                  }}
+                >
+                  {t.objects.up}
+                </Button>
+                <span className="text-muted">/{folderStack.map((folder) => folder.name).join("/")}</span>
               </div>
-            </div>
-          )}
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" disabled={copyBusy} onClick={() => setCopyTarget(null)}>
-              {t.common.cancel}
-            </Button>
-            <Button
-              disabled={copyBusy || !copyBucketId || !copyKey.trim()}
-              onClick={() => void doCopy()}
-            >
-              {copyBusy ? t.objects.copying : t.objects.copyAction}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(versionTarget)} onOpenChange={(open) => { if (!open && !versionBusy) { setVersionTarget(null); setVersions([]); } }}>
-        <DialogContent className="min-w-0 max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{t.objects.versionsTitle}</DialogTitle>
-            <DialogDescription className="break-all">
-              <span className="font-mono">{versionTarget?.key}</span> — {t.objects.versionsDialogDescription}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-          {versionBusy && versions.length === 0 ? (
-            <LoadingState label={t.objects.loadingVersions} />
-          ) : versions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t.objects.versionsEmpty}</p>
-          ) : (
-            <div className="space-y-2">
-              {versions.every((version) => version.versionId === "null") ? (
-                <p className="text-xs text-muted-foreground">{t.objects.versionsDisabledHint}</p>
-              ) : null}
-              {versions.map((version) => (
-                <div key={version.versionId} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-                  {/* The badge row and the timestamp are two stacked lines, not
-                      one wrapped one -- without the gap they read as a single
-                      cramped block. */}
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* S3 reports 'null' as the version id for objects written
-                          while versioning was off; showing that literally reads
-                          as a bug rather than as "this object has no versions". */}
-                      {version.versionId === "null" ? (
-                        <span className="text-xs text-muted-foreground">{t.objects.versionUnversioned}</span>
-                      ) : (
-                        <span className="truncate font-mono text-xs">{version.versionId}</span>
-                      )}
-                      {version.isLatest ? <Badge variant="success">{t.objects.versionCurrent}</Badge> : null}
-                      {version.isDeleteMarker ? <Badge variant="warning">{t.objects.versionDeleteMarker}</Badge> : null}
+              <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border p-2">
+                {importBusy ? (
+                  <LoadingState label={t.objects.loadingTraffic} />
+                ) : driveFolders.length === 0 ? (
+                  <p className="p-4 text-sm text-muted">{t.objects.noSubfolders}</p>
+                ) : (
+                  driveFolders.map((folder) => (
+                    <div key={folder.id} className={`flex items-center justify-between rounded-lg p-2 ${selectedFolder?.id === folder.id ? "bg-default" : ""}`}>
+                      <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setSelectedFolder(folder)}>
+                        <Folder className="size-4 shrink-0" />
+                        <span className="truncate">{folder.name}</span>
+                      </button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onPress={() => {
+                          const stack = [...folderStack, folder];
+                          setFolderStack(stack);
+                          setSelectedFolder(null);
+                          void browseFolders(importKind, importDriveId, stack);
+                        }}
+                      >
+                        {t.objects.open}
+                      </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(version.lastModified).toLocaleString()}
-                      {version.isDeleteMarker ? "" : ` · ${humanBytes(version.size)}`}
-                    </p>
-                  </div>
-                  {version.isLatest || !writable ? null : (
+                  ))
+                )}
+              </div>
+              {selectedFolder ? (
+                <Alert>
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{t.objects.folderSelectedTitle}</Alert.Title>
+                    <Alert.Description>{selectedFolder.name}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              ) : null}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={importBusy}>{t.common.cancel}</Button>
+              <Button isDisabled={!selectedFolder || importBusy || (importKind === "shared_drive" && !importDriveId)} onPress={() => void startImport()}>
+                {importBusy ? t.objects.preparing : t.objects.startImport}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop isOpen={showBackup} onOpenChange={(open) => { if (!backupBusy) setShowBackup(open); }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog className="max-w-2xl">
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{t.backup.dialogTitle}</Modal.Heading>
+              <p className="text-sm text-muted">{t.backup.dialogDescription}</p>
+            </Modal.Header>
+            <Modal.Body className="space-y-4 text-foreground">
+              {backupAccounts.length === 0 ? (
+                <Alert>
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{t.backup.noAccountsTitle}</Alert.Title>
+                    <Alert.Description>{t.backup.noAccountsDescription}</Alert.Description>
+                    {onOpenBackupAccounts ? (
+                      <Button size="sm" variant="outline" className="mt-2" onPress={() => { setShowBackup(false); onOpenBackupAccounts(); }}>
+                        {t.backup.openBackupPage}
+                      </Button>
+                    ) : null}
+                  </Alert.Content>
+                </Alert>
+              ) : (
+                <div className="space-y-2">
+                  <Select
+                    label={t.backup.targetAccountLabel}
+                    value={backupAccountId}
+                    onValueChange={setBackupAccountId}
+                    placeholder={t.backup.pickAccount}
+                    options={backupAccounts.map((account) => ({
+                      value: account.id,
+                      label: account.status === "active" ? account.email : `${account.email}${t.backup.needsReauthSuffix}`,
+                      disabled: account.status !== "active",
+                    }))}
+                  />
+                  <div className="flex justify-end">
                     <Button
                       size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      aria-label={t.objects.versionDeleteLabel(version.versionId)}
-                      disabled={versionBusy}
-                      onClick={() => void removeVersion(version.versionId)}
+                      isDisabled={!backupAccountId || backupBusy || Boolean(activeBackupTransfer)}
+                      onPress={() => void doStartBackup()}
                     >
-                      <Trash2 /> {version.isDeleteMarker ? t.objects.versionRestore : t.objects.versionDelete}
+                      {backupBusy ? t.backup.starting : t.backup.start}
                     </Button>
-                  )}
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-          </DialogBody>
-          <DialogFooter>
-            <Button onClick={() => { setVersionTarget(null); setVersions([]); }} disabled={versionBusy}>
-              {t.credentials.done}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              )}
 
-      <AlertDialog open={Boolean(revokeTarget)} onOpenChange={(open) => { if (!open && !revokingLink) setRevokeTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.objects.revokeLinkConfirmTitle}</AlertDialogTitle><AlertDialogDescription>Link <span className="font-medium">{revokeTarget?.label}</span> {t.objects.revokeLinkConfirmDescriptionSuffix}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={revokingLink}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={revokingLink} onClick={(event) => { event.preventDefault(); if (revokeTarget) void revokeLink(revokeTarget.id); }}>{revokingLink ? t.objects.revoking : t.objects.revoke}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+              <div className="space-y-2">
+                <Label>{t.backup.historyLabel}</Label>
+                {backupBusy && backupTransfers.length === 0 ? (
+                  <LoadingState label={t.backup.loadingHistory} />
+                ) : backupTransfers.length === 0 ? (
+                  <p className="rounded-xl border p-4 text-sm text-muted">{t.backup.noHistory}</p>
+                ) : (
+                  <div className="max-h-72 space-y-2 overflow-y-auto">
+                    {backupTransfers.map((transfer) => {
+                      const account = backupAccounts.find((a) => a.id === transfer.backupAccountId);
+                      const isActive =
+                        transfer.status === "queued" || transfer.status === "running" || transfer.status === "cancel_requested";
+                      const color = BACKUP_STATUS_COLOR[transfer.status];
+                      return (
+                        <div key={transfer.id} className="space-y-1 rounded-xl border p-3 text-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="truncate font-medium">{account?.email ?? transfer.backupAccountId}</span>
+                            <div className="flex items-center gap-2">
+                              <Chip size="sm" color={color} variant={color === "default" ? "secondary" : "soft"}>{BACKUP_STATUS_LABEL[transfer.status]}</Chip>
+                              {isActive ? (
+                                <Button size="sm" variant="ghost" onPress={() => void doCancelBackup(transfer.id)}>{t.backup.cancelRun}</Button>
+                              ) : null}
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted">
+                            {t.backup.progressSummary({ copied: transfer.copied, skipped: transfer.skipped, failed: transfer.failed, total: transfer.total })}
+                          </p>
+                          {transfer.lastError ? <p className="text-xs text-danger">{transfer.lastError}</p> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="outline">{t.common.close}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop isOpen={showUpload} onOpenChange={(open) => { if (!uploading) setShowUpload(open); }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog>
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void doUpload(event)}>
+              <Modal.Header>
+                <Modal.Heading>{t.objects.uploadDialogTitle}</Modal.Heading>
+                <p className="text-sm text-muted">{t.objects.uploadDialogDescription}</p>
+              </Modal.Header>
+              <Modal.Body className="space-y-4 text-foreground">
+                <div className="space-y-2">
+                  <Label htmlFor="object-file">{t.objects.fileLabel}</Label>
+                  <Input
+                    ref={fileInput}
+                    id="object-file"
+                    type="file"
+                    fullWidth
+                    onChange={(event) => {
+                      const selected = event.target.files?.[0] ?? null;
+                      setFile(selected);
+                      if (selected) setKey(selected.name);
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="object-key">{t.objects.objectKeyLabel}</Label>
+                  <Input id="object-key" fullWidth value={key} onChange={(event) => setKey(event.target.value)} maxLength={1024} />
+                </div>
+                {file ? <p className="text-sm text-muted">{humanBytes(file.size)} · {file.type || "application/octet-stream"}</p> : null}
+              </Modal.Body>
+              <Modal.Footer>
+                <Button slot="close" variant="tertiary" isDisabled={uploading}>{t.common.cancel}</Button>
+                <Button type="submit" isDisabled={!file || !key.trim() || uploading}>{uploading ? t.objects.uploading : t.objects.upload}</Button>
+              </Modal.Footer>
+            </form>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <AlertDialog.Backdrop isOpen={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{t.objects.deleteConfirmTitle}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>Namespace <span className="break-all font-mono">{deleteTarget?.key}</span> {t.objects.deleteConfirmDescription}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={deleting}>{t.common.cancel}</Button>
+              <Button variant="danger" isDisabled={deleting} onPress={() => void doDelete()}>{deleting ? t.common.deleting : t.common.delete}</Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
+
+      <Modal.Backdrop isOpen={Boolean(linkTarget)} onOpenChange={(open) => { if (!open && !linkBusy) { setLinkTarget(null); setGenerated(null); setLinkLoaded(false); } }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog className="max-w-2xl">
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{t.objects.publicLinkDialogTitle}</Modal.Heading>
+              <p className="text-sm text-muted">
+                {t.objects.publicLinkDialogDescriptionPrefix} <span className="break-all font-mono">{linkTarget?.key}</span>{t.objects.publicLinkDialogDescriptionSuffix}
+              </p>
+            </Modal.Header>
+            <Modal.Body className="space-y-4 text-foreground">
+              {!linkLoaded ? (
+                <LoadingState label={t.objects.loadingLinkSettings} />
+              ) : (
+                <>
+                  {generated ? (
+                    <div className="space-y-2">
+                      <Label>{t.objects.newUrlLabel}</Label>
+                      <CopyableCode value={generated.url} label={t.objects.publicUrlCopyLabel} />
+                      <p className="text-xs text-muted">
+                        {generated.expiresAt ? t.objects.validUntil(new Date(generated.expiresAt).toLocaleString()) : t.objects.validUntilRevoked}
+                      </p>
+                    </div>
+                  ) : null}
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <section className="space-y-3">
+                      <h3 className="font-medium">{t.objects.presignedTitle}</h3>
+                      <p className="text-sm text-muted">{t.objects.presignedDescription}</p>
+                      {credentials.length ? (
+                        <>
+                          <Select
+                            ariaLabel={t.objects.presignedCredentialAriaLabel}
+                            value={credentialId}
+                            onValueChange={setCredentialId}
+                            options={credentials.map((credential) => ({ value: credential.id, label: `${credential.label} · ${credential.access_key_id}` }))}
+                          />
+                          <Select
+                            ariaLabel={t.objects.presignedExpiryAriaLabel}
+                            value={String(expiresSeconds)}
+                            onValueChange={(value) => setExpiresSeconds(Number(value))}
+                            options={EXPIRY_OPTIONS}
+                          />
+                          <Button variant="outline" isDisabled={linkBusy} onPress={() => void temporaryLink()}>{t.objects.generateTemporary}</Button>
+                        </>
+                      ) : (
+                        <Alert>
+                          <Alert.Indicator />
+                          <Alert.Content>
+                            <Alert.Title>{t.objects.noActiveKeyTitle}</Alert.Title>
+                            <Alert.Description>{t.objects.noActiveKeyDescription}</Alert.Description>
+                          </Alert.Content>
+                        </Alert>
+                      )}
+                    </section>
+                    <section className="space-y-3">
+                      <h3 className="font-medium">{t.objects.persistentTitle}</h3>
+                      <p className="text-sm text-muted">{t.objects.persistentDescription}</p>
+                      <Input fullWidth value={publicLabel} maxLength={100} onChange={(event) => setPublicLabel(event.target.value)} placeholder={t.objects.linkLabelPlaceholder} />
+                      <Input fullWidth type="datetime-local" min={new Date().toISOString().slice(0, 16)} value={publicExpiresAt} onChange={(event) => setPublicExpiresAt(event.target.value)} />
+                      <Button variant="outline" isDisabled={linkBusy || !publicLabel.trim()} onPress={() => void persistentLink()}>{t.objects.createPermanentLink}</Button>
+                    </section>
+                  </div>
+                  {publicLinks.length ? (
+                    <div className="space-y-2">
+                      <h3 className="font-medium">{t.objects.permanentLinksTitle}</h3>
+                      {publicLinks.map((link) => (
+                        <div key={link.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{link.label}</p>
+                            <p className="text-xs text-muted">
+                              {link.status === "active" ? link.expiresAt ? t.objects.activeUntil(new Date(link.expiresAt).toLocaleString()) : t.objects.activeNoExpiry : t.objects.revoked}
+                            </p>
+                          </div>
+                          {link.status === "active" ? (
+                            <Button size="sm" variant="danger" isDisabled={linkBusy} onPress={() => setRevokeTarget(link)}>{t.objects.revoke}</Button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button isDisabled={linkBusy} onPress={() => { setLinkTarget(null); setGenerated(null); setLinkLoaded(false); }}>{t.credentials.done}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop isOpen={showUploadForm} onOpenChange={(open) => { if (!uploadFormBusy) { setShowUploadForm(open); if (!open) setUploadForm(null); } }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog className="max-w-2xl">
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{t.objects.uploadFormDialogTitle}</Modal.Heading>
+              <p className="text-sm text-muted">{t.objects.uploadFormDialogDescription}</p>
+            </Modal.Header>
+            <Modal.Body className="text-foreground">
+              {credentials.length === 0 && !uploadFormBusy ? (
+                <Alert>
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{t.objects.noActiveKeyTitle}</Alert.Title>
+                    <Alert.Description>{t.objects.noActiveKeyDescription}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted">{t.objects.uploadFormDescription}</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="upload-form-prefix">{t.objects.uploadFormPrefixLabel}</Label>
+                      <Input
+                        id="upload-form-prefix"
+                        fullWidth
+                        value={uploadFormPrefix}
+                        placeholder={t.objects.uploadFormPrefixPlaceholder}
+                        maxLength={512}
+                        onChange={(event) => setUploadFormPrefix(event.target.value)}
+                      />
+                      <p className="text-xs text-muted">{t.objects.uploadFormPrefixHint}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="upload-form-max">{t.objects.uploadFormMaxSizeLabel}</Label>
+                      <Input
+                        id="upload-form-max"
+                        type="number"
+                        fullWidth
+                        min={1}
+                        max={5120}
+                        value={uploadFormMaxMb}
+                        onChange={(event) => setUploadFormMaxMb(Math.max(1, Number(event.target.value) || 1))}
+                      />
+                      <p className="text-xs text-muted">{humanBytes(uploadFormMaxMb * 1024 * 1024)}</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Select
+                      ariaLabel={t.objects.uploadFormCredentialAriaLabel}
+                      value={credentialId}
+                      onValueChange={setCredentialId}
+                      options={credentials.map((credential) => ({ value: credential.id, label: `${credential.label} · ${credential.access_key_id}` }))}
+                    />
+                    <Select
+                      ariaLabel={t.objects.uploadFormExpiryAriaLabel}
+                      value={String(uploadFormExpires)}
+                      onValueChange={(value) => setUploadFormExpires(Number(value))}
+                      options={EXPIRY_OPTIONS}
+                    />
+                  </div>
+                  <Button variant="outline" isDisabled={uploadFormBusy || !credentialId} onPress={() => void generateUploadForm()}>
+                    {t.objects.uploadFormGenerate}
+                  </Button>
+
+                  {uploadForm ? (
+                    <div className="space-y-3 border-t border-separator pt-4">
+                      <div className="space-y-1">
+                        <Label>{t.objects.uploadFormResultTitle} {new Date(uploadForm.expiresAt).toLocaleString()}</Label>
+                        <p className="text-xs text-muted">
+                          {t.objects.uploadFormKeyTemplate}: <span className="font-mono">{uploadForm.keyTemplate}</span> · {t.objects.uploadFormFileLast}
+                        </p>
+                      </div>
+                      <CopyableCode value={uploadForm.url} label={t.objects.uploadFormEndpointLabel} />
+                      <CopyableCode value={htmlSnippet(uploadForm)} label={t.objects.uploadFormHtmlLabel} />
+                      <CopyableCode value={curlSnippet(uploadForm)} label={t.objects.uploadFormCurlLabel} />
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button isDisabled={uploadFormBusy} onPress={() => { setShowUploadForm(false); setUploadForm(null); }}>
+                {t.credentials.done}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop isOpen={Boolean(copyTarget)} onOpenChange={(open) => { if (!open && !copyBusy) setCopyTarget(null); }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog>
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{t.objects.copyTitle}</Modal.Heading>
+              <p className="text-sm text-muted">
+                <span className="break-all font-mono">{copyTarget?.key}</span> — {t.objects.copyDialogDescription}
+              </p>
+            </Modal.Header>
+            <Modal.Body className="text-foreground">
+              {copyBuckets.length === 0 && !copyBusy ? (
+                <Alert>
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{t.objects.copyNoTargets}</Alert.Title>
+                  </Alert.Content>
+                </Alert>
+              ) : (
+                <div className="space-y-4">
+                  <Select
+                    label={t.objects.copyTargetBucket}
+                    value={copyBucketId}
+                    onValueChange={setCopyBucketId}
+                    options={copyBuckets.map((b) => ({ value: b.id, label: b.name }))}
+                  />
+                  <div className="space-y-2">
+                    <Label htmlFor="copy-key">{t.objects.copyTargetKey}</Label>
+                    <Input
+                      id="copy-key"
+                      fullWidth
+                      value={copyKey}
+                      maxLength={1024}
+                      onChange={(event) => setCopyKey(event.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={copyBusy}>
+                {t.common.cancel}
+              </Button>
+              <Button
+                isDisabled={copyBusy || !copyBucketId || !copyKey.trim()}
+                onPress={() => void doCopy()}
+              >
+                {copyBusy ? t.objects.copying : t.objects.copyAction}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Modal.Backdrop isOpen={Boolean(versionTarget)} onOpenChange={(open) => { if (!open && !versionBusy) { setVersionTarget(null); setVersions([]); } }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog className="max-w-2xl">
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{t.objects.versionsTitle}</Modal.Heading>
+              <p className="text-sm text-muted">
+                <span className="break-all font-mono">{versionTarget?.key}</span> — {t.objects.versionsDialogDescription}
+              </p>
+            </Modal.Header>
+            <Modal.Body className="text-foreground">
+              {versionBusy && versions.length === 0 ? (
+                <LoadingState label={t.objects.loadingVersions} />
+              ) : versions.length === 0 ? (
+                <p className="text-sm text-muted">{t.objects.versionsEmpty}</p>
+              ) : (
+                <div className="space-y-2">
+                  {versions.every((version) => version.versionId === "null") ? (
+                    <p className="text-xs text-muted">{t.objects.versionsDisabledHint}</p>
+                  ) : null}
+                  {versions.map((version) => (
+                    <div key={version.versionId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+                      {/* The badge row and the timestamp are two stacked lines, not
+                          one wrapped one -- without the gap they read as a single
+                          cramped block. */}
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* S3 reports 'null' as the version id for objects written
+                              while versioning was off; showing that literally reads
+                              as a bug rather than as "this object has no versions". */}
+                          {version.versionId === "null" ? (
+                            <span className="text-xs text-muted">{t.objects.versionUnversioned}</span>
+                          ) : (
+                            <span className="truncate font-mono text-xs">{version.versionId}</span>
+                          )}
+                          {version.isLatest ? <Chip size="sm" color="success" variant="soft">{t.objects.versionCurrent}</Chip> : null}
+                          {version.isDeleteMarker ? <Chip size="sm" color="warning" variant="soft">{t.objects.versionDeleteMarker}</Chip> : null}
+                        </div>
+                        <p className="text-xs text-muted">
+                          {new Date(version.lastModified).toLocaleString()}
+                          {version.isDeleteMarker ? "" : ` · ${humanBytes(version.size)}`}
+                        </p>
+                      </div>
+                      {version.isLatest || !writable ? null : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-danger"
+                          aria-label={t.objects.versionDeleteLabel(version.versionId)}
+                          isDisabled={versionBusy}
+                          onPress={() => void removeVersion(version.versionId)}
+                        >
+                          <Trash2 /> {version.isDeleteMarker ? t.objects.versionRestore : t.objects.versionDelete}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button isDisabled={versionBusy} onPress={() => { setVersionTarget(null); setVersions([]); }}>
+                {t.credentials.done}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <AlertDialog.Backdrop isOpen={Boolean(revokeTarget)} onOpenChange={(open) => { if (!open && !revokingLink) setRevokeTarget(null); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{t.objects.revokeLinkConfirmTitle}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>Link <span className="font-medium">{revokeTarget?.label}</span> {t.objects.revokeLinkConfirmDescriptionSuffix}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={revokingLink}>{t.common.cancel}</Button>
+              <Button variant="danger" isDisabled={revokingLink} onPress={() => { if (revokeTarget) void revokeLink(revokeTarget.id); }}>
+                {revokingLink ? t.objects.revoking : t.objects.revoke}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   );
 }

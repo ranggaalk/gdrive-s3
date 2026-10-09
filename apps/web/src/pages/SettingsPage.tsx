@@ -1,21 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { FolderCog, KeyRound, RotateCcw, ShieldAlert, TriangleAlert } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FolderCog, KeyRound, RotateCcw, ShieldAlert } from "lucide-react";
+import { Alert, AlertDialog, Button, Card, Chip, Input, Label } from "@heroui/react";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
 import { useToast } from "@/components/toast-provider";
@@ -173,43 +158,54 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <Alert variant="warning">
-        <ShieldAlert />
-        <AlertTitle>{t.settings.impactWarningTitle}</AlertTitle>
-        <AlertDescription>{t.settings.impactWarningDescription}</AlertDescription>
+      <Alert status="warning">
+        <Alert.Indicator>
+          <ShieldAlert />
+        </Alert.Indicator>
+        <Alert.Content>
+          <Alert.Title>{t.settings.impactWarningTitle}</Alert.Title>
+          <Alert.Description>{t.settings.impactWarningDescription}</Alert.Description>
+        </Alert.Content>
       </Alert>
 
       {savedMessage ? (
-        <Alert variant="success"><AlertTitle>{t.settings.savedTitle}</AlertTitle><AlertDescription>{savedMessage}</AlertDescription></Alert>
+        <Alert status="success">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{t.settings.savedTitle}</Alert.Title>
+            <Alert.Description>{savedMessage}</Alert.Description>
+          </Alert.Content>
+        </Alert>
       ) : null}
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><KeyRound className="size-5 text-primary" /> {t.settings.oauthCardTitle}</CardTitle>
-          <CardDescription>{t.settings.oauthCardDescription}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+        <Card.Header>
+          <Card.Title className="flex items-center gap-2 text-base font-semibold"><KeyRound className="size-5 text-accent" /> {t.settings.oauthCardTitle}</Card.Title>
+          <Card.Description>{t.settings.oauthCardDescription}</Card.Description>
+        </Card.Header>
+        <Card.Content className="space-y-5">
           <div className="grid gap-3 text-sm sm:grid-cols-2">
             <div className="space-y-1">
-              <p className="text-muted-foreground">{t.settings.clientIdSourceLabel}</p>
-              <Badge variant={status.clientIdSource === "database" ? "default" : "secondary"}>
+              <p className="text-muted">{t.settings.clientIdSourceLabel}</p>
+              <Chip color={status.clientIdSource === "database" ? "accent" : "default"} variant={status.clientIdSource === "database" ? "soft" : "secondary"}>
                 {SOURCE_LABEL[status.clientIdSource]}
-              </Badge>
+              </Chip>
             </div>
             <div className="space-y-1">
-              <p className="text-muted-foreground">{t.settings.clientSecretSourceLabel}</p>
-              <Badge variant={status.clientSecretSource === "database" ? "default" : "secondary"}>
+              <p className="text-muted">{t.settings.clientSecretSourceLabel}</p>
+              <Chip color={status.clientSecretSource === "database" ? "accent" : "default"} variant={status.clientSecretSource === "database" ? "soft" : "secondary"}>
                 {SOURCE_LABEL[status.clientSecretSource]}
-              </Badge>
+              </Chip>
             </div>
           </div>
 
-          <form onSubmit={(event) => void onSave(event)} className="space-y-4 border-t pt-5">
+          <form onSubmit={(event) => void onSave(event)} className="space-y-4 border-t border-separator pt-5">
             {formError ? <ErrorAlert message={formError} /> : null}
             <div className="space-y-2">
               <Label htmlFor="settings-client-id">{t.settings.clientIdLabel}</Label>
               <Input
                 id="settings-client-id"
+                fullWidth
                 value={clientId}
                 onChange={(event) => setClientId(event.target.value)}
                 placeholder="xxxxxxxxxx.apps.googleusercontent.com"
@@ -220,106 +216,119 @@ export function SettingsPage() {
               <Label htmlFor="settings-client-secret">{t.settings.clientSecretLabel}</Label>
               <Input
                 id="settings-client-secret"
+                fullWidth
                 type="password"
                 value={clientSecret}
                 onChange={(event) => setClientSecret(event.target.value)}
                 placeholder={t.settings.clientSecretPlaceholder}
                 autoComplete="off"
               />
-              <p className="text-xs text-muted-foreground">{t.settings.clientSecretHelp}</p>
+              <p className="text-xs text-muted">{t.settings.clientSecretHelp}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button type="submit" disabled={saving || !clientId.trim() || !clientSecret.trim()}>
+              <Button type="submit" isDisabled={saving || !clientId.trim() || !clientSecret.trim()}>
                 {saving ? t.settings.saving : t.settings.save}
               </Button>
               {hasCustomCredentials ? (
-                <Button type="button" variant="outline" onClick={() => setConfirmReset(true)} disabled={resetting}>
+                <Button variant="outline" onPress={() => setConfirmReset(true)} isDisabled={resetting}>
                   <RotateCcw /> {t.settings.resetToEnv}
                 </Button>
               ) : null}
             </div>
           </form>
-        </CardContent>
+        </Card.Content>
       </Card>
 
       {folderSavedMessage ? (
-        <Alert variant="success"><AlertTitle>{t.settings.savedTitle}</AlertTitle><AlertDescription>{folderSavedMessage}</AlertDescription></Alert>
+        <Alert status="success">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{t.settings.savedTitle}</Alert.Title>
+            <Alert.Description>{folderSavedMessage}</Alert.Description>
+          </Alert.Content>
+        </Alert>
       ) : null}
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><FolderCog className="size-5 text-primary" /> {t.settings.folderCardTitle}</CardTitle>
-          <CardDescription>{t.settings.folderCardDescription}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+        <Card.Header>
+          <Card.Title className="flex items-center gap-2 text-base font-semibold"><FolderCog className="size-5 text-accent" /> {t.settings.folderCardTitle}</Card.Title>
+          <Card.Description>{t.settings.folderCardDescription}</Card.Description>
+        </Card.Header>
+        <Card.Content className="space-y-5">
           <div className="space-y-1 text-sm">
-            <p className="text-muted-foreground">{t.settings.sourceLabel}</p>
-            <Badge variant={folderStatus.source === "custom" ? "default" : "secondary"}>
+            <p className="text-muted">{t.settings.sourceLabel}</p>
+            <Chip color={folderStatus.source === "custom" ? "accent" : "default"} variant={folderStatus.source === "custom" ? "soft" : "secondary"}>
               {FOLDER_SOURCE_LABEL[folderStatus.source]}
-            </Badge>
+            </Chip>
           </div>
 
-          <form onSubmit={(event) => void onSaveFolderName(event)} className="space-y-4 border-t pt-5">
+          <form onSubmit={(event) => void onSaveFolderName(event)} className="space-y-4 border-t border-separator pt-5">
             {folderFormError ? <ErrorAlert message={folderFormError} /> : null}
             <div className="space-y-2">
               <Label htmlFor="settings-root-folder-name">{t.settings.folderNameLabel}</Label>
               <Input
                 id="settings-root-folder-name"
+                fullWidth
                 value={folderName}
                 onChange={(event) => setFolderName(event.target.value)}
                 placeholder="[DRIVE-S3-GATEWAY]"
                 maxLength={255}
               />
-              <p className="text-xs text-muted-foreground">{t.settings.folderNameHelp}</p>
+              <p className="text-xs text-muted">{t.settings.folderNameHelp}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button type="submit" disabled={savingFolder || !folderName.trim()}>
+              <Button type="submit" isDisabled={savingFolder || !folderName.trim()}>
                 {savingFolder ? t.settings.saving : t.settings.save}
               </Button>
               {folderStatus.source === "custom" ? (
-                <Button type="button" variant="outline" onClick={() => setConfirmFolderReset(true)} disabled={resettingFolder}>
+                <Button variant="outline" onPress={() => setConfirmFolderReset(true)} isDisabled={resettingFolder}>
                   <RotateCcw /> {t.settings.resetToDefault}
                 </Button>
               ) : null}
             </div>
           </form>
-        </CardContent>
+        </Card.Content>
       </Card>
 
-      <AlertDialog open={confirmReset} onOpenChange={(open) => { if (!resetting) setConfirmReset(open); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t.settings.resetOauthConfirmTitle}</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <span className="flex items-start gap-2">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-                {t.settings.resetOauthConfirmDescription}
-              </span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={resetting}>{t.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction disabled={resetting} onClick={(event) => { event.preventDefault(); void onReset(); }}>
-              {resetting ? t.settings.resetting : t.settings.reset}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog.Backdrop isOpen={confirmReset} onOpenChange={(open) => { if (!resetting) setConfirmReset(open); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="warning" />
+              <AlertDialog.Heading>{t.settings.resetOauthConfirmTitle}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{t.settings.resetOauthConfirmDescription}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={resetting}>{t.common.cancel}</Button>
+              <Button isDisabled={resetting} onPress={() => void onReset()}>
+                {resetting ? t.settings.resetting : t.settings.reset}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
 
-      <AlertDialog open={confirmFolderReset} onOpenChange={(open) => { if (!resettingFolder) setConfirmFolderReset(open); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t.settings.resetFolderConfirmTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{t.settings.resetFolderConfirmDescription}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={resettingFolder}>{t.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction disabled={resettingFolder} onClick={(event) => { event.preventDefault(); void onResetFolderName(); }}>
-              {resettingFolder ? t.settings.resetting : t.settings.reset}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog.Backdrop isOpen={confirmFolderReset} onOpenChange={(open) => { if (!resettingFolder) setConfirmFolderReset(open); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="warning" />
+              <AlertDialog.Heading>{t.settings.resetFolderConfirmTitle}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{t.settings.resetFolderConfirmDescription}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={resettingFolder}>{t.common.cancel}</Button>
+              <Button isDisabled={resettingFolder} onPress={() => void onResetFolderName()}>
+                {resettingFolder ? t.settings.resetting : t.settings.reset}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   );
 }

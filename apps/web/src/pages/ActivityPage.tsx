@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Clock } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
+import { Button, Table } from "@heroui/react";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
 import { listAudit, type AuditItem } from "../api/client.ts";
@@ -51,12 +50,31 @@ export function ActivityPage() {
       {error ? <ErrorAlert message={error} /> : null}
       {items.length === 0 ? <EmptyState icon={Clock} title={t.activity.emptyTitle} description={t.activity.emptyDescription} /> : (
         <>
-          <Table><TableHeader><TableRow><TableHead>{t.activity.tableTime}</TableHead><TableHead>{t.activity.tableAction}</TableHead><TableHead>{t.activity.tableBucket}</TableHead><TableHead>{t.activity.tableStatus}</TableHead></TableRow></TableHeader><TableBody>{items.map((item) => (
-            <TableRow key={item.id}><TableRowHeader className="whitespace-nowrap">{new Date(item.createdAt).toLocaleString()}</TableRowHeader><TableCell>{item.action}</TableCell><TableCell>{item.bucketName ?? "-"}</TableCell><TableCell>{item.statusCode ?? "-"}</TableCell></TableRow>
-          ))}</TableBody></Table>
+          <Table>
+            <Table.ScrollContainer>
+              <Table.Content aria-label={t.nav.activity}>
+                <Table.Header>
+                  <Table.Column isRowHeader>{t.activity.tableTime}</Table.Column>
+                  <Table.Column>{t.activity.tableAction}</Table.Column>
+                  <Table.Column>{t.activity.tableBucket}</Table.Column>
+                  <Table.Column>{t.activity.tableStatus}</Table.Column>
+                </Table.Header>
+                <Table.Body>
+                  {items.map((item) => (
+                    <Table.Row key={item.id} id={item.id}>
+                      <Table.Cell className="whitespace-nowrap">{new Date(item.createdAt).toLocaleString()}</Table.Cell>
+                      <Table.Cell>{item.action}</Table.Cell>
+                      <Table.Cell>{item.bucketName ?? "-"}</Table.Cell>
+                      <Table.Cell>{item.statusCode ?? "-"}</Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table.Content>
+            </Table.ScrollContainer>
+          </Table>
           {nextBefore ? (
             <div className="flex justify-center">
-              <Button variant="outline" disabled={loadingMore} onClick={() => void loadMore()}>
+              <Button variant="outline" isDisabled={loadingMore} onPress={() => void loadMore()}>
                 {loadingMore ? t.common.loadingMore : t.common.loadMore}
               </Button>
             </div>

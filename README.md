@@ -10,7 +10,7 @@ namespace honest.
 
 ![Runtime](https://img.shields.io/badge/runtime-Bun-000000?style=flat-square)
 ![Language](https://img.shields.io/badge/language-TypeScript-3178C6?style=flat-square)
-![Frontend](https://img.shields.io/badge/frontend-React%2018-61DAFB?style=flat-square)
+![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20HeroUI-61DAFB?style=flat-square)
 ![Storage](https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square)
 ![Tests](https://img.shields.io/badge/tests-650%20passing-16a34a?style=flat-square)
 
@@ -21,7 +21,7 @@ namespace honest.
 ```mermaid
 flowchart LR
     C["S3 clients<br/>AWS CLI · SDK · rclone · mc"] -->|SigV4| G
-    D["Dashboard<br/>React 18"] -->|session + CSRF| G
+    D["Dashboard<br/>React 19 + HeroUI"] -->|session + CSRF| G
     G["DriveS3 Gateway<br/>Bun runtime"]
     G --> S[("SQLite<br/>namespace, ACL, audit")]
     G --> GD["Google Drive<br/>object bytes"]
