@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Activity, ArrowDownToLine, ArrowLeft, CloudDownload, Copy, Eye, FileCode2, Files, Folder, HardDriveDownload, History, Link2, Plus, Search, Trash2 } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowLeft, CalendarClock, CloudDownload, Copy, Eye, FileCode2, Files, Folder, HardDriveDownload, History, Link2, Plus, Search, Trash2 } from "lucide-react";
 import { Alert, AlertDialog, Button, buttonVariants, Chip, Focusable, Input, Label, Modal, Table, Tooltip } from "@heroui/react";
 import { Select } from "@/components/ui/select";
+import { BackupScheduleDialog, formatWhen, scheduleSummary } from "@/components/backup-schedules";
 import { CopyableCode } from "@/components/copyable-code";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
@@ -41,6 +42,8 @@ import {
   startBucketBackup,
   getBucketBackup,
   cancelBucketBackup,
+  listBackupSchedules,
+  getBackupScheduleOptions,
   type Bucket,
   type CredentialSummary,
   type DriveFolderSummary,
@@ -54,6 +57,7 @@ import {
   type PresignedPostForm,
   type PublicLinkSummary,
   type BackupAccount,
+  type BackupSchedule,
   type BackupTransfer,
 } from "../api/client.ts";
 
@@ -187,6 +191,9 @@ export function ObjectsPage({
   const [backupAccountId, setBackupAccountId] = useState("");
   const [backupTransfers, setBackupTransfers] = useState<BackupTransfer[]>([]);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [backupSchedules, setBackupSchedules] = useState<BackupSchedule[]>([]);
+  const [minScheduleInterval, setMinScheduleInterval] = useState(15);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const writable = bucket.effectiveRole !== "viewer";
   const owner = bucket.effectiveRole === "owner";
@@ -294,6 +301,7 @@ export function ObjectsPage({
   const activeBackupTransfer = backupTransfers.find(
     (t) => t.status === "queued" || t.status === "running" || t.status === "cancel_requested",
   ) ?? null;
+  const selectedSchedule = backupSchedules.find((schedule) => schedule.backupAccountId === backupAccountId) ?? null;
 
   useEffect(() => {
     if (!activeBackupTransfer) return;
@@ -314,9 +322,16 @@ export function ObjectsPage({
   const openBackup = async () => {
     setShowBackup(true); setBackupBusy(true); setError(null);
     try {
-      const [accounts, transfers] = await Promise.all([listBackupAccounts(), listBucketBackups(bucket.id)]);
+      const [accounts, transfers, schedules, scheduleOptions] = await Promise.all([
+        listBackupAccounts(),
+        listBucketBackups(bucket.id),
+        listBackupSchedules(bucket.id).catch(() => [] as BackupSchedule[]),
+        getBackupScheduleOptions().catch(() => null),
+      ]);
       setBackupAccounts(accounts);
       setBackupTransfers(transfers);
+      setBackupSchedules(schedules);
+      if (scheduleOptions) setMinScheduleInterval(scheduleOptions.minIntervalMinutes);
       setBackupAccountId((current) =>
         current ? current : accounts.find((a) => a.status === "active" || a.kind !== "drive")?.id ?? "",
       );
@@ -883,6 +898,34 @@ export function ObjectsPage({
                       {backupBusy ? t.backup.starting : t.backup.start}
                     </Button>
                   </div>
+                  {backupAccountId ? (
+                    <div className="space-y-1 rounded-xl border p-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <CalendarClock className="size-4" aria-hidden="true" /> {t.backupSchedule.inDialogTitle}
+                        </span>
+                        <Button size="sm" variant="outline" onPress={() => setScheduleDialogOpen(true)}>
+                          {selectedSchedule ? t.backupSchedule.edit : t.backupSchedule.inDialogCreate}
+                        </Button>
+                      </div>
+                      {selectedSchedule ? (
+                        <>
+                          <p>{scheduleSummary(selectedSchedule, t)}</p>
+                          <p className="text-xs text-muted">
+                            {selectedSchedule.enabled && selectedSchedule.nextRunAt
+                              ? t.backupSchedule.nextRun(formatWhen(selectedSchedule.nextRunAt)!)
+                              : t.backupSchedule.notScheduled}
+                            {selectedSchedule.lastOutcome ? ` · ${t.backupSchedule.outcome[selectedSchedule.lastOutcome]}` : ""}
+                          </p>
+                          {selectedSchedule.pausedReason ? (
+                            <p className="text-xs text-warning">{selectedSchedule.pausedReason}</p>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted">{t.backupSchedule.inDialogNone}</p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -927,6 +970,22 @@ export function ObjectsPage({
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
+
+      <BackupScheduleDialog
+        isOpen={scheduleDialogOpen}
+        onOpenChange={setScheduleDialogOpen}
+        onSaved={(saved) => {
+          setScheduleDialogOpen(false);
+          setBackupSchedules((list) => [...list.filter((item) => item.id !== saved.id), saved]);
+          toast.success(t.toast.backupScheduleSaved);
+        }}
+        schedule={selectedSchedule}
+        buckets={[{ id: bucket.id, name: bucket.name }]}
+        destinations={backupAccounts}
+        fixedBucketId={bucket.id}
+        fixedAccountId={backupAccountId}
+        minIntervalMinutes={minScheduleInterval}
+      />
 
       <Modal.Backdrop isOpen={showUpload} onOpenChange={(open) => { if (!uploading) setShowUpload(open); }}>
         <Modal.Container size="lg">

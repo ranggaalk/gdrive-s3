@@ -13,6 +13,8 @@ import type { ObjectRow } from "./objects.ts";
 import type { BackupDestinationKind } from "./backup-accounts.ts";
 import { newBackupTransferId, nowIso } from "../../util/ids.ts";
 
+export type BackupTransferTrigger = "manual" | "schedule";
+
 export type BackupTransferStatus =
   | "queued"
   | "running"
@@ -37,7 +39,12 @@ export interface BackupTransferRow {
   started_at: string | null;
   completed_at: string | null;
   updated_at: string;
+  triggered_by: BackupTransferTrigger;
+  /** The schedule that queued the run, or whose "run now" did. */
+  schedule_id: string | null;
 }
+
+export const TERMINAL_TRANSFER_STATUSES: readonly BackupTransferStatus[] = ["completed", "cancelled", "failed"];
 
 /** A transfer row joined with the names history views need. The bucket and
  *  the destination account both cascade-delete into `backup_transfers`, so an
@@ -83,6 +90,7 @@ export interface BackupHistoryFilter {
   backupAccountId?: string;
   bucketId?: string;
   status?: BackupTransferStatus;
+  triggeredBy?: BackupTransferTrigger;
 }
 
 /**
@@ -143,7 +151,13 @@ export class BackupTransfersRepository {
       .all(userId, bucketId, limit);
   }
 
-  create(input: { userId: string; bucketId: string; backupAccountId: string }): BackupTransferRow {
+  create(input: {
+    userId: string;
+    bucketId: string;
+    backupAccountId: string;
+    triggeredBy?: BackupTransferTrigger;
+    scheduleId?: string | null;
+  }): BackupTransferRow {
     const totalCount =
       this.db
         .query<{ n: number }, [string]>(
@@ -169,10 +183,22 @@ export class BackupTransfersRepository {
       this.db
         .query(
           `INSERT INTO backup_transfers
-             (id, bucket_id, backup_account_id, user_id, status, total_count, skipped_count, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+             (id, bucket_id, backup_account_id, user_id, status, total_count, skipped_count,
+              triggered_by, schedule_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
         )
-        .run(id, input.bucketId, input.backupAccountId, input.userId, totalCount, skippedCount, now, now);
+        .run(
+          id,
+          input.bucketId,
+          input.backupAccountId,
+          input.userId,
+          totalCount,
+          skippedCount,
+          input.triggeredBy ?? "manual",
+          input.scheduleId ?? null,
+          now,
+          now,
+        );
     } catch (error) {
       // SQLite reports a partial unique index by its column list, not its
       // name (e.g. "UNIQUE constraint failed: backup_transfers.bucket_id,
@@ -189,6 +215,13 @@ export class BackupTransfersRepository {
     return this.findById(id)!;
   }
 
+  /**
+   * The next run to give a batch to. Cancellations first, since they are
+   * cheap and someone is waiting on them; then anything a person started by
+   * hand ahead of what a schedule queued, so clicking "Start backup" never
+   * waits behind a night's worth of scheduled work. Within each, the run that
+   * has waited longest -- each batch bumps updated_at, so runs take turns.
+   */
   claimNextJob(): BackupTransferRow | null {
     let claimed: BackupTransferRow | null = null;
     const tx = this.db.transaction(() => {
@@ -196,11 +229,10 @@ export class BackupTransfersRepository {
         .query<BackupTransferRow, []>(
           `SELECT * FROM backup_transfers
             WHERE status IN ('queued', 'running', 'cancel_requested')
-            ORDER BY CASE status
-              WHEN 'cancel_requested' THEN 0
-              WHEN 'queued' THEN 1
-              ELSE 2
-            END, updated_at ASC LIMIT 1`,
+            ORDER BY CASE status WHEN 'cancel_requested' THEN 0 ELSE 1 END,
+                     CASE triggered_by WHEN 'manual' THEN 0 ELSE 1 END,
+                     CASE status WHEN 'queued' THEN 0 ELSE 1 END,
+                     updated_at ASC LIMIT 1`,
         )
         .get();
       if (!row) return;
@@ -226,11 +258,21 @@ export class BackupTransfersRepository {
       .run(folderId, nowIso(), id);
   }
 
-  /** Objects still needing a copy for this destination: not yet copied at their
-   * current etag, and not permanently failed (exhausted retries). */
-  listObjectsNeedingWork(bucketId: string, backupAccountId: string, limit: number): ObjectRow[] {
+  /**
+   * Objects still needing a copy for this destination: not yet copied at their
+   * current etag, and not permanently failed (exhausted retries). Given the
+   * run asking, also not one this run already tried and failed: a failure is
+   * retried by the next run, not hammered again straight away -- and counted
+   * once, so the run's counters still add up to its total.
+   */
+  listObjectsNeedingWork(
+    bucketId: string,
+    backupAccountId: string,
+    limit: number,
+    transferId: string | null = null,
+  ): ObjectRow[] {
     return this.db
-      .query<ObjectRow, [string, string, string, number]>(
+      .query<ObjectRow, [string, string, string, string, string | null, number]>(
         `SELECT o.* FROM objects o
           WHERE o.bucket_id = ? AND o.status = 'active'
             AND NOT EXISTS (
@@ -243,9 +285,19 @@ export class BackupTransfersRepository {
                WHERE s.backup_account_id = ? AND s.object_id = o.id
                  AND s.object_etag = o.etag AND s.status = 'failed' AND s.attempts >= ${MAX_BACKUP_ITEM_ATTEMPTS}
             )
+            AND NOT EXISTS (
+              SELECT 1 FROM backup_object_status s
+               WHERE s.backup_account_id = ? AND s.object_id = o.id
+                 AND s.status = 'failed' AND s.last_transfer_id = ?
+            )
           ORDER BY o.created_at ASC LIMIT ?`,
       )
-      .all(bucketId, backupAccountId, backupAccountId, limit);
+      .all(bucketId, backupAccountId, backupAccountId, backupAccountId, transferId, limit);
+  }
+
+  /** Whether a run against this destination would copy anything at all. */
+  hasObjectsNeedingWork(bucketId: string, backupAccountId: string): boolean {
+    return this.listObjectsNeedingWork(bucketId, backupAccountId, 1).length > 0;
   }
 
   markObjectCopied(input: {
@@ -355,6 +407,22 @@ export class BackupTransfersRepository {
     return this.findById(id)!;
   }
 
+  /**
+   * Finishes a run that has nothing left to copy even though its counters
+   * say otherwise -- an object counted into total_count was deleted before
+   * the run reached it. Without this the run would stay "running" forever,
+   * handed an empty batch on every pass.
+   */
+  completeIdle(id: string): void {
+    const now = nowIso();
+    this.db
+      .query(
+        `UPDATE backup_transfers SET status = 'completed', completed_at = ?, updated_at = ?
+          WHERE id = ? AND status = 'running'`,
+      )
+      .run(now, now, id);
+  }
+
   failJob(id: string, error: string): void {
     const now = nowIso();
     this.db
@@ -396,6 +464,10 @@ export class BackupTransfersRepository {
     if (options.status) {
       where.push("t.status = ?");
       params.push(options.status);
+    }
+    if (options.triggeredBy) {
+      where.push("t.triggered_by = ?");
+      params.push(options.triggeredBy);
     }
     if (options.before) {
       where.push("(t.created_at < ? OR (t.created_at = ? AND t.id < ?))");
@@ -476,6 +548,28 @@ export class BackupTransfersRepository {
       copied: rows.find((r) => r.status === "copied")?.n ?? 0,
       failed: rows.find((r) => r.status === "failed")?.n ?? 0,
     };
+  }
+
+  /**
+   * Deletes finished runs that ended before `before`, keeping the latest run
+   * of every (bucket, destination) pair however old, so each pair still shows
+   * how it last went. The ledger keeps every line: its last_transfer_id just
+   * goes NULL. Returns how many runs went.
+   */
+  pruneHistory(before: string): number {
+    return this.db
+      .query(
+        `DELETE FROM backup_transfers
+          WHERE status IN ('completed', 'cancelled', 'failed')
+            AND COALESCE(completed_at, updated_at) < ?
+            AND id <> (
+              SELECT latest.id FROM backup_transfers latest
+               WHERE latest.bucket_id = backup_transfers.bucket_id
+                 AND latest.backup_account_id = backup_transfers.backup_account_id
+               ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1
+            )`,
+      )
+      .run(before).changes;
   }
 
   /** Rollup per destination account, for the account cards and the totals

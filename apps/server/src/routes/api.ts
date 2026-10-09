@@ -9,6 +9,7 @@ import { handleAudit } from "./api-audit.ts";
 import { handleTraffic } from "./api-traffic.ts";
 import { handleSettings } from "./api-settings.ts";
 import { handleBackupAccounts, handleBackupHistory } from "./api-backup.ts";
+import { handleBackupSchedules } from "./api-backup-schedules.ts";
 import { handleSecurityTotp } from "./api-security.ts";
 import { handleSecurityKms } from "./api-kms.ts";
 import { TokenRevokedError } from "../drive/oauth-token.ts";
@@ -164,6 +165,10 @@ export async function handleApi(
 
   if (path === "/api/backup-accounts" || path.startsWith("/api/backup-accounts/")) {
     return handleBackupAccounts(ctx, req, session, requestId, path.slice("/api/backup-accounts".length));
+  }
+
+  if (path === "/api/backup-schedules" || path.startsWith("/api/backup-schedules/")) {
+    return handleBackupSchedules(ctx, req, session, requestId, path.slice("/api/backup-schedules".length));
   }
 
   if (path === "/api/backups" || path.startsWith("/api/backups/")) {

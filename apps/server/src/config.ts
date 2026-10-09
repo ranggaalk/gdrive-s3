@@ -106,6 +106,20 @@ export interface AppConfig {
     rcloneRemotes: string[];
   };
 
+  /** Scheduled backups, and the housekeeping that job also does. */
+  backupScheduler: {
+    /** Off stops schedules firing; manual runs and saved schedules are untouched. */
+    enabled: boolean;
+    tickSeconds: number;
+    /** The shortest interval an "every N minutes" schedule may ask for. */
+    minIntervalMinutes: number;
+    /** Failed scheduled runs in a row before the schedule pauses itself. */
+    maxConsecutiveFailures: number;
+    /** Finished runs older than this are pruned (the latest per bucket and
+     *  destination always stays); 0 keeps everything. */
+    historyRetentionDays: number;
+  };
+
   presignedMinExpiresSeconds: number;
   presignedMaxExpiresSeconds: number;
   multipartExpiryBatchSize: number;
@@ -465,6 +479,25 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       rcloneConfigPath: optional(env, "RCLONE_CONFIG", ""),
       rcloneRemotes: parseRcloneRemotes(optional(env, "BACKUP_RCLONE_REMOTES", "")),
     },
+    backupScheduler: {
+      enabled: parseBool(optional(env, "BACKUP_SCHEDULER_ENABLED", "true"), "BACKUP_SCHEDULER_ENABLED"),
+      tickSeconds: parseIntStrict(
+        optional(env, "BACKUP_SCHEDULER_TICK_SECONDS", "60"),
+        "BACKUP_SCHEDULER_TICK_SECONDS",
+      ),
+      minIntervalMinutes: parseIntStrict(
+        optional(env, "BACKUP_SCHEDULE_MIN_INTERVAL_MINUTES", "15"),
+        "BACKUP_SCHEDULE_MIN_INTERVAL_MINUTES",
+      ),
+      maxConsecutiveFailures: parseIntStrict(
+        optional(env, "BACKUP_SCHEDULE_MAX_FAILURES", "5"),
+        "BACKUP_SCHEDULE_MAX_FAILURES",
+      ),
+      historyRetentionDays: parseIntStrict(
+        optional(env, "BACKUP_HISTORY_RETENTION_DAYS", "90"),
+        "BACKUP_HISTORY_RETENTION_DAYS",
+      ),
+    },
     presignedMinExpiresSeconds: parseIntStrict(
       optional(env, "PRESIGNED_MIN_EXPIRES_SECONDS", "1"),
       "PRESIGNED_MIN_EXPIRES_SECONDS",
@@ -564,6 +597,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ["MULTIPART_EXPIRY_BATCH_SIZE", config.multipartExpiryBatchSize],
   ] as const) {
     if (value <= 0) throw new ConfigError(`${key} must be > 0`);
+  }
+  if (config.backupScheduler.tickSeconds < 5) {
+    throw new ConfigError("BACKUP_SCHEDULER_TICK_SECONDS must be >= 5");
+  }
+  if (config.backupScheduler.minIntervalMinutes < 1) {
+    throw new ConfigError("BACKUP_SCHEDULE_MIN_INTERVAL_MINUTES must be >= 1");
+  }
+  if (config.backupScheduler.maxConsecutiveFailures < 1) {
+    throw new ConfigError("BACKUP_SCHEDULE_MAX_FAILURES must be >= 1");
   }
   const partMb = config.backupDestinations.s3PartSizeBytes / (1024 * 1024);
   if (partMb < 5 || partMb > 5120) {

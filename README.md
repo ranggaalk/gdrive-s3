@@ -110,9 +110,16 @@ Run a manual per-bucket backup to any of three kinds of destination:
   operator configures. Users never supply rclone config themselves.
 
 Source files are never modified, nothing is ever deleted from a destination,
-and a durable per-object ledger means repeat runs skip anything unchanged. The
-design is deliberately scheduler-ready. Setup and caveats are in the
+and a durable per-object ledger means repeat runs skip anything unchanged.
+Setup and caveats are in the
 [operations runbook](docs/OPERATIONS.md#9-backup-destinations-s3-and-rclone).
+
+Backups can also run on a **schedule** — every few hours, daily, or weekly at a
+set time in the schedule's own time zone. A slot that finds nothing changed is
+skipped without leaving an empty run behind, a schedule that keeps failing
+pauses itself and says why, and everything lives in SQLite: no Redis, no host
+cron, and a restart loses nothing. See
+[scheduled backups](docs/OPERATIONS.md#10-scheduled-backups).
 
 The Backup page reports on that ledger: totals across the gateway, a rollup per
 destination, and a filterable history of every run from every bucket.

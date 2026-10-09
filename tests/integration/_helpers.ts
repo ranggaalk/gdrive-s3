@@ -75,6 +75,13 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       rcloneConfigPath: "",
       rcloneRemotes: [],
     },
+    backupScheduler: {
+      enabled: true,
+      tickSeconds: 60,
+      minIntervalMinutes: 15,
+      maxConsecutiveFailures: 5,
+      historyRetentionDays: 90,
+    },
     presignedMinExpiresSeconds: 1,
     presignedMaxExpiresSeconds: 604_800,
     multipartExpiryBatchSize: 50,

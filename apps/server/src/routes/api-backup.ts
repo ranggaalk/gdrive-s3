@@ -10,6 +10,7 @@ import type {
   BackupTransferHistoryRow,
   BackupTransferRow,
   BackupTransferStatus,
+  BackupTransferTrigger,
 } from "../db/repositories/backup-transfers.ts";
 import {
   BackupAlreadyActiveError,
@@ -140,7 +141,7 @@ export async function handleBackupAccounts(
   const segments = rest.replace(/^\//, "").split("/");
   const id = segments[0]!;
 
-  // Matched before the /:id branches; destination ids all start with "bac_".
+  // Matched before the /:id branches; destination ids all start with "bka_".
   if (segments.length === 1 && id === "options") {
     if (req.method !== "GET") return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
     return ok(destinations.options(), requestId);
@@ -213,6 +214,8 @@ function transferView(t: BackupTransferRow) {
     lastError: t.last_error,
     createdAt: t.created_at,
     completedAt: t.completed_at,
+    triggeredBy: t.triggered_by,
+    scheduleId: t.schedule_id,
   };
 }
 
@@ -366,6 +369,10 @@ export function handleBackupHistory(
     if (status && !TRANSFER_STATUSES.includes(status as BackupTransferStatus)) {
       return apiError("INVALID", "Status backup tidak dikenal.", 400, requestId);
     }
+    const trigger = url.searchParams.get("trigger");
+    if (trigger && trigger !== "manual" && trigger !== "schedule") {
+      return apiError("INVALID", "Pemicu backup tidak dikenal.", 400, requestId);
+    }
     const limit = readLimit(url);
     const rows = ctx.repos.backupTransfers.listForUser(userId, {
       limit,
@@ -373,6 +380,7 @@ export function handleBackupHistory(
       backupAccountId: url.searchParams.get("accountId") ?? undefined,
       bucketId: url.searchParams.get("bucketId") ?? undefined,
       status: (status as BackupTransferStatus | null) ?? undefined,
+      triggeredBy: (trigger as BackupTransferTrigger | null) ?? undefined,
     });
     const last = rows[rows.length - 1];
     return ok(

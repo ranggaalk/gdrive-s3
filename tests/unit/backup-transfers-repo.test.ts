@@ -175,3 +175,65 @@ describe("BackupTransfersRepository", () => {
     expect(fresh.findById(t2.id)?.status).toBe("cancelled");
   });
 });
+
+describe("BackupTransfersRepository, scheduling", () => {
+  test("a run started by hand is claimed before one a schedule queued, even a later one", () => {
+    const { db, buckets, backupTransfers, bucket, account, user } = setup();
+    const other = buckets.create(user.id, "media", "us-east-1", "folderB");
+    insertObject(db, bucket.id, "a.txt", "etag-a");
+    insertObject(db, other.id, "b.txt", "etag-b");
+
+    const scheduled = backupTransfers.create({
+      userId: user.id, bucketId: bucket.id, backupAccountId: account.id, triggeredBy: "schedule",
+    });
+    const manual = backupTransfers.create({ userId: user.id, bucketId: other.id, backupAccountId: account.id });
+    expect(scheduled.triggered_by).toBe("schedule");
+    expect(manual.triggered_by).toBe("manual");
+
+    expect(backupTransfers.claimNextJob()?.id).toBe(manual.id);
+  });
+
+  test("an object that failed in a run is not handed to the same run again", () => {
+    const { db, backupTransfers, bucket, account, user } = setup();
+    const objectId = insertObject(db, bucket.id, "a.txt", "etag-a");
+    const run = backupTransfers.create({ userId: user.id, bucketId: bucket.id, backupAccountId: account.id });
+    backupTransfers.markObjectFailed({
+      transferId: run.id, backupAccountId: account.id, objectId, objectKey: "a.txt", objectEtag: "etag-a", error: "boom",
+    });
+
+    expect(backupTransfers.listObjectsNeedingWork(bucket.id, account.id, 10, run.id)).toEqual([]);
+    // The next run does retry it.
+    expect(backupTransfers.listObjectsNeedingWork(bucket.id, account.id, 10).map((o) => o.id)).toEqual([objectId]);
+  });
+
+  test("completeIdle finishes a running run whose counted objects are gone", () => {
+    const { db, backupTransfers, bucket, account, user } = setup();
+    insertObject(db, bucket.id, "a.txt", "etag-a");
+    const run = backupTransfers.create({ userId: user.id, bucketId: bucket.id, backupAccountId: account.id });
+    backupTransfers.claimNextJob();
+    db.query("DELETE FROM objects WHERE bucket_id = ?").run(bucket.id);
+
+    expect(backupTransfers.refreshAndMaybeFinish(run.id).status).toBe("running");
+    backupTransfers.completeIdle(run.id);
+    expect(backupTransfers.findById(run.id)?.status).toBe("completed");
+  });
+
+  test("pruneHistory removes old finished runs but keeps each pair's latest", () => {
+    const { db, buckets, backupTransfers, bucket, account, user } = setup();
+    const other = buckets.create(user.id, "media", "us-east-1", "folderB");
+    const finish = (bucketId: string, at: string) => {
+      const run = backupTransfers.create({ userId: user.id, bucketId, backupAccountId: account.id });
+      backupTransfers.refreshAndMaybeFinish(run.id);
+      db.query("UPDATE backup_transfers SET created_at = ?, completed_at = ? WHERE id = ?").run(at, at, run.id);
+      return run.id;
+    };
+    const oldest = finish(bucket.id, "2026-01-01T00:00:00.000Z");
+    const latest = finish(bucket.id, "2026-02-01T00:00:00.000Z");
+    const onlyRun = finish(other.id, "2026-01-01T00:00:00.000Z");
+
+    expect(backupTransfers.pruneHistory("2026-06-01T00:00:00.000Z")).toBe(1);
+    expect(backupTransfers.findById(oldest)).toBeNull();
+    expect(backupTransfers.findById(latest)).not.toBeNull();
+    expect(backupTransfers.findById(onlyRun)).not.toBeNull();
+  });
+});

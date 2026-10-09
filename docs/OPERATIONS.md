@@ -268,3 +268,41 @@ the key from the destination's Edit dialog) and run the backup again; a run that
 reaches the destination clears the error. An object the destination cannot
 hold — a key with `.` or `..` segments, or one over S3's 1024-byte limit --
 fails on its own and the run carries on.
+
+## 10. Scheduled backups
+
+A schedule belongs to one bucket and one destination, and is managed from the
+Backup page (or Objects > Backup for one bucket). When it falls due it queues
+an ordinary run — the same worker, ledger and history as a manual run — so only
+new or changed objects are copied.
+
+- **Timing.** Every N minutes or hours (at least
+  `BACKUP_SCHEDULE_MIN_INTERVAL_MINUTES`, default 15), daily at HH:MM, or
+  weekly on chosen days at HH:MM. Clock times are read in the schedule's IANA
+  time zone (`Asia/Jakarta`, …); a time a DST change skips runs just after the
+  jump, and one it repeats runs once.
+- **Nothing changed.** By default a slot with nothing to copy is skipped
+  without creating a run, so an "every 15 minutes" schedule is close to
+  continuous backup without flooding the history.
+- **Downtime.** Slots missed while the gateway was down fire once when it is
+  back, and the next slot is counted from then — never a burst of catch-up
+  runs.
+- **Overlap.** A slot that finds the previous run still going is skipped; a
+  slot can never queue two runs, even with two processes on one database.
+- **Priority.** Runs started by hand are worked on before scheduled ones.
+- **Failures.** A run that fails, or a slot whose Drive destination needs
+  reconnecting, counts against the schedule. After
+  `BACKUP_SCHEDULE_MAX_FAILURES` (default 5) in a row it switches itself off and
+  shows why on the Backup page; switching it back on clears the count. A
+  schedule whose bucket is gone or no longer its owner's pauses straight away.
+- **History.** Finished runs older than `BACKUP_HISTORY_RETENTION_DAYS`
+  (default 90; `0` keeps everything) are pruned hourly. The latest run of every
+  bucket and destination stays regardless, and the per-object ledger is never
+  pruned.
+
+The scheduler checks for due schedules every `BACKUP_SCHEDULER_TICK_SECONDS`
+(default 60). `BACKUP_SCHEDULER_ENABLED=false` stops schedules firing without
+touching them — useful while restoring or migrating. Everything it needs is in
+SQLite; it needs no Redis or host cron. Scheduled runs pause and resume with
+the gateway like any other run.
+
