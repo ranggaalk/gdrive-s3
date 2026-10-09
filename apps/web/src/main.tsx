@@ -8,7 +8,6 @@ import { ToastProvider } from "@/components/toast-provider";
 import { App } from "./App.tsx";
 import "./index.css";
 
-// Keep the current React 18 bootstrap stable during the design-system migration.
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element #root not found");
 

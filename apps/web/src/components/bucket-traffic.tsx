@@ -3,8 +3,7 @@ import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
 import { useTheme } from "@/components/theme-provider";
 import { useLocale } from "@/components/locale-provider";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button, Card } from "@heroui/react";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { humanBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -19,8 +18,9 @@ const POLL_MS = 15_000;
 
 // Colors follow the dataviz skill's validated default palette (categorical
 // slots 1/2 for identity series, status "critical" for the error count) —
-// not the dashboard's own --primary token, which is near-white in dark mode
-// and unusable as a chart series color.
+// not the dashboard's --accent token, which the colour-theme picker recolours
+// to any preset or custom hue, so a series could end up indistinguishable
+// from its neighbour or from the error series.
 const PALETTE = {
   light: { grid: "#e1e0d9", axis: "#898781", blue: "#2a78d6", orange: "#eb6834", critical: "#d03b3b" },
   dark: { grid: "#2c2c2a", axis: "#898781", blue: "#3987e5", orange: "#d95926", critical: "#e66767" },
@@ -118,7 +118,7 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1 rounded-full bg-muted p-1">
+        <div className="inline-flex items-center gap-1 rounded-full bg-default p-1">
           {RANGES.map((r) => (
             <button
               key={r.value}
@@ -128,8 +128,8 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
               className={cn(
                 "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
                 range === r.value
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-accent text-accent-foreground shadow-xs"
+                  : "text-muted hover:text-foreground",
               )}
             >
               {r.label}
@@ -137,9 +137,9 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <p className="text-xs text-muted-foreground">{t.traffic.autoRefresh(POLL_MS / 1000)}</p>
+          <p className="text-xs text-muted">{t.traffic.autoRefresh(POLL_MS / 1000)}</p>
           {onViewDetail ? (
-            <Button type="button" size="sm" variant="outline" onClick={onViewDetail}>
+            <Button size="sm" variant="outline" onPress={onViewDetail}>
               {t.traffic.viewDetail}
             </Button>
           ) : null}
@@ -152,11 +152,11 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
       ) : (
         <>
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t.traffic.bandwidthTitle}</CardTitle>
-              <CardDescription>{t.traffic.bandwidthTotal(humanBytes(totals.bytesIn), humanBytes(totals.bytesOut))}</CardDescription>
-            </CardHeader>
-            <CardContent>
+            <Card.Header>
+              <Card.Title className="text-base font-semibold">{t.traffic.bandwidthTitle}</Card.Title>
+              <Card.Description>{t.traffic.bandwidthTotal(humanBytes(totals.bytesIn), humanBytes(totals.bytesOut))}</Card.Description>
+            </Card.Header>
+            <Card.Content>
               <Chart
                 type="area"
                 height={260}
@@ -171,18 +171,18 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
                   tooltip: { ...opts.tooltip, y: { formatter: (v: number) => humanBytes(Math.round(v)) } },
                 }}
               />
-            </CardContent>
+            </Card.Content>
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t.traffic.requestTitle}</CardTitle>
-              <CardDescription>
+            <Card.Header>
+              <Card.Title className="text-base font-semibold">{t.traffic.requestTitle}</Card.Title>
+              <Card.Description>
                 {t.traffic.requestTotal(totals.requests)}
-                {totals.errors > 0 ? <span className="text-destructive">{t.traffic.errorSuffix(totals.errors)}</span> : null}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+                {totals.errors > 0 ? <span className="text-danger">{t.traffic.errorSuffix(totals.errors)}</span> : null}
+              </Card.Description>
+            </Card.Header>
+            <Card.Content>
               <Chart
                 type="area"
                 height={260}
@@ -197,7 +197,7 @@ function TrafficCharts({ bucketId, onViewDetail }: TrafficChartsProps) {
                   tooltip: { ...opts.tooltip, y: { formatter: (v: number) => String(Math.round(v)) } },
                 }}
               />
-            </CardContent>
+            </Card.Content>
           </Card>
         </>
       )}

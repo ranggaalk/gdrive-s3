@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { HardDrive, PackageOpen, Plus, Settings2, Share2, Trash2 } from "lucide-react";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Alert, AlertDialog, Button, Chip, Description, Input, Label, Modal, Table, TextArea, TextField, Tooltip } from "@heroui/react";
 import { Select } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
 import { useToast } from "@/components/toast-provider";
@@ -331,237 +324,342 @@ export function BucketsPage({ onOpen }: { onOpen: (bucket: Bucket) => void }) {
   return (
     <div className="space-y-6">
       {error ? <ErrorAlert message={error} /> : null}
-      <div className="flex justify-end"><Button onClick={() => { setShowCreate(true); void loadSharedDrives(); }}><Plus /> {t.buckets.createButton}</Button></div>
+      <div className="flex justify-end"><Button onPress={() => { setShowCreate(true); void loadSharedDrives(); }}><Plus /> {t.buckets.createButton}</Button></div>
 
       {buckets.length === 0 ? (
         <EmptyState icon={PackageOpen} title={t.buckets.emptyTitle} description={t.buckets.emptyDescription} />
       ) : (
         <Table>
-            <TableHeader><TableRow><TableHead>{t.buckets.tableName}</TableHead><TableHead>{t.buckets.tableLocation}</TableHead><TableHead>{t.buckets.tableAccess}</TableHead><TableHead>{t.buckets.tableObjects}</TableHead><TableHead>{t.buckets.tableMultipart}</TableHead><TableHead>{t.buckets.tableStatus}</TableHead><TableHead>{t.buckets.tableCreated}</TableHead><TableHead className="text-right">{t.buckets.tableAction}</TableHead></TableRow></TableHeader>
-            <TableBody>{buckets.map((bucket) => (
-              <TableRow key={bucket.id}>
-                <TableRowHeader><div className="flex flex-wrap items-center gap-2"><Button variant="link" className="h-auto p-0" onClick={() => onOpen(bucket)}>{bucket.name}</Button>{bucket.isPublic ? <Badge variant="warning">{t.buckets.publicBadge}</Badge> : null}</div></TableRowHeader>
-                <TableCell><div className="flex min-w-40 items-center gap-2">{bucket.storageKind === "shared_drive" ? <Share2 className="size-4 text-muted-foreground" /> : <HardDrive className="size-4 text-muted-foreground" />}<span>{bucket.storageDisplayName}</span></div></TableCell>
-                <TableCell><Badge variant={bucket.effectiveRole === "owner" ? "default" : "secondary"}>{roleLabel(bucket.effectiveRole)}</Badge></TableCell>
-                <TableCell>{bucket.objectCount ?? 0}</TableCell><TableCell>{bucket.multipartOpen ?? 0}</TableCell><TableCell><Badge variant={bucket.storageStatus === "active" ? "success" : "destructive"}>{bucket.storageStatus === "active" ? t.buckets.statusActive : t.buckets.statusIssue}</Badge></TableCell><TableCell className="whitespace-nowrap">{new Date(bucket.createdAt).toLocaleString()}</TableCell>
-                <TableCell className="text-right"><div className="flex justify-end gap-1">{bucket.ownedByMe ? <Button size="icon" variant="ghost" aria-label={t.buckets.manageAccessLabel(bucket.name)} title={t.buckets.manageAccessTitle} onClick={() => void openAccess(bucket)}><Settings2 /></Button> : null}{bucket.ownedByMe ? <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.deleteBucketLabel(bucket.name)} title={t.buckets.deleteBucketTitle} onClick={() => setPendingDelete(bucket)}><Trash2 /></Button> : null}</div></TableCell>
-              </TableRow>
-            ))}</TableBody>
-          </Table>
+          <Table.ScrollContainer>
+            <Table.Content aria-label={t.nav.buckets}>
+              <Table.Header>
+                <Table.Column isRowHeader>{t.buckets.tableName}</Table.Column>
+                <Table.Column>{t.buckets.tableLocation}</Table.Column>
+                <Table.Column>{t.buckets.tableAccess}</Table.Column>
+                <Table.Column>{t.buckets.tableObjects}</Table.Column>
+                <Table.Column>{t.buckets.tableMultipart}</Table.Column>
+                <Table.Column>{t.buckets.tableStatus}</Table.Column>
+                <Table.Column>{t.buckets.tableCreated}</Table.Column>
+                <Table.Column className="text-end">{t.buckets.tableAction}</Table.Column>
+              </Table.Header>
+              <Table.Body>{buckets.map((bucket) => (
+                <Table.Row key={bucket.id} id={bucket.id}>
+                  <Table.Cell><div className="flex flex-wrap items-center gap-2"><button type="button" className="rounded-sm font-medium text-accent underline-offset-4 hover:underline focus-visible:focus-ring" onClick={() => onOpen(bucket)}>{bucket.name}</button>{bucket.isPublic ? <Chip size="sm" color="warning" variant="soft">{t.buckets.publicBadge}</Chip> : null}</div></Table.Cell>
+                  <Table.Cell><div className="flex min-w-40 items-center gap-2">{bucket.storageKind === "shared_drive" ? <Share2 className="size-4 text-muted" /> : <HardDrive className="size-4 text-muted" />}<span>{bucket.storageDisplayName}</span></div></Table.Cell>
+                  <Table.Cell>{bucket.effectiveRole === "owner" ? <Chip size="sm" color="accent" variant="soft">{roleLabel(bucket.effectiveRole)}</Chip> : <Chip size="sm">{roleLabel(bucket.effectiveRole)}</Chip>}</Table.Cell>
+                  <Table.Cell>{bucket.objectCount ?? 0}</Table.Cell>
+                  <Table.Cell>{bucket.multipartOpen ?? 0}</Table.Cell>
+                  <Table.Cell><Chip size="sm" color={bucket.storageStatus === "active" ? "success" : "danger"} variant="soft">{bucket.storageStatus === "active" ? t.buckets.statusActive : t.buckets.statusIssue}</Chip></Table.Cell>
+                  <Table.Cell className="whitespace-nowrap">{new Date(bucket.createdAt).toLocaleString()}</Table.Cell>
+                  <Table.Cell className="text-end"><div className="flex justify-end gap-1">{bucket.ownedByMe ? <Tooltip delay={300}><Button onPress={() => void openAccess(bucket)} isIconOnly size="sm" variant="ghost" aria-label={t.buckets.manageAccessLabel(bucket.name)}><Settings2 /></Button><Tooltip.Content>{t.buckets.manageAccessTitle}</Tooltip.Content></Tooltip> : null}{bucket.ownedByMe ? <Tooltip delay={300}><Button onPress={() => setPendingDelete(bucket)} isIconOnly size="sm" variant="ghost" className="text-danger" aria-label={t.buckets.deleteBucketLabel(bucket.name)}><Trash2 /></Button><Tooltip.Content>{t.buckets.deleteBucketTitle}</Tooltip.Content></Tooltip> : null}</div></Table.Cell>
+                </Table.Row>
+              ))}</Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+        </Table>
       )}
 
-      <Dialog open={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); if (open) void loadSharedDrives(); } }}>
-        <DialogContent>
-          <form onSubmit={(event) => void doCreate(event)} className="flex min-h-0 flex-1 flex-col gap-5">
-            <DialogHeader><DialogTitle>{t.buckets.createDialogTitle}</DialogTitle><DialogDescription>{t.buckets.createDialogDescription}</DialogDescription></DialogHeader>
-            <DialogBody className="space-y-5">
-            {formError ? <ErrorAlert message={formError} /> : null}
-            <div className="space-y-2"><Label htmlFor="bucket-name">{t.buckets.nameLabel}</Label><Input id="bucket-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus aria-invalid={Boolean(formError)} aria-describedby="bucket-help" /><p id="bucket-help" className="text-xs text-muted-foreground">{t.buckets.nameHelp}</p></div>
-            <fieldset className="space-y-2"><legend className="text-sm font-medium">{t.buckets.locationLegend}</legend><div className="grid grid-cols-2 gap-2"><Button type="button" variant={storageKind === "my_drive" ? "default" : "outline"} onClick={() => setStorageKind("my_drive")}><HardDrive /> My Drive</Button><Button type="button" variant={storageKind === "shared_drive" ? "default" : "outline"} disabled={drivesLoading || noSharedDrives} title={noSharedDrives ? t.buckets.noWritableSharedDriveTitle : undefined} onClick={() => setStorageKind("shared_drive")}><Share2 /> Shared Drive</Button></div>{noSharedDrives ? <p className="text-xs text-muted-foreground">{t.buckets.noWritableSharedDriveHelp}</p> : null}</fieldset>
-            {storageKind === "shared_drive" ? <div className="space-y-2"><Label>{t.buckets.sharedDriveLabel}</Label><Select value={sharedDriveId} onValueChange={setSharedDriveId} disabled={drivesLoading} placeholder={drivesLoading ? t.buckets.loadingSharedDrives : t.buckets.pickSharedDrive} options={writableSharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} /><p className="text-xs text-muted-foreground">{t.buckets.sharedDriveHelp}</p></div> : null}
-            </DialogBody>
-            <DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>{t.common.cancel}</Button><Button type="submit" disabled={name.trim().length < 3 || creating || (storageKind === "shared_drive" && !sharedDriveId)}>{creating ? t.buckets.creating : t.buckets.create}</Button></DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <Modal.Backdrop isOpen={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); if (open) void loadSharedDrives(); } }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog>
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <form onSubmit={(event) => void doCreate(event)} className="flex min-h-0 flex-1 flex-col">
+              <Modal.Header>
+                <Modal.Heading>{t.buckets.createDialogTitle}</Modal.Heading>
+                <p className="text-sm text-muted">{t.buckets.createDialogDescription}</p>
+              </Modal.Header>
+              <Modal.Body className="space-y-5">
+                {formError ? <ErrorAlert message={formError} /> : null}
+                <TextField fullWidth isInvalid={Boolean(formError)} value={name} onChange={setName}>
+                  <Label>{t.buckets.nameLabel}</Label>
+                  <Input autoFocus />
+                  <Description>{t.buckets.nameHelp}</Description>
+                </TextField>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium text-foreground">{t.buckets.locationLegend}</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button fullWidth variant={storageKind === "my_drive" ? "primary" : "outline"} onPress={() => setStorageKind("my_drive")}><HardDrive /> My Drive</Button>
+                    <Button fullWidth variant={storageKind === "shared_drive" ? "primary" : "outline"} isDisabled={drivesLoading || noSharedDrives} onPress={() => setStorageKind("shared_drive")}><Share2 /> Shared Drive</Button>
+                  </div>
+                  {noSharedDrives ? <p className="text-xs text-muted">{t.buckets.noWritableSharedDriveHelp}</p> : null}
+                </fieldset>
+                {storageKind === "shared_drive" ? (
+                  <div className="space-y-2">
+                    <Select label={t.buckets.sharedDriveLabel} value={sharedDriveId} onValueChange={setSharedDriveId} disabled={drivesLoading} placeholder={drivesLoading ? t.buckets.loadingSharedDrives : t.buckets.pickSharedDrive} options={writableSharedDrives.map((drive) => ({ value: drive.id, label: drive.name }))} />
+                    <p className="text-xs text-muted">{t.buckets.sharedDriveHelp}</p>
+                  </div>
+                ) : null}
+              </Modal.Body>
+              <Modal.Footer>
+                <Button slot="close" variant="tertiary" isDisabled={creating}>{t.common.cancel}</Button>
+                <Button type="submit" isDisabled={name.trim().length < 3 || creating || (storageKind === "shared_drive" && !sharedDriveId)}>{creating ? t.buckets.creating : t.buckets.create}</Button>
+              </Modal.Footer>
+            </form>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <Dialog open={Boolean(accessBucket)} onOpenChange={(open) => { if (!open && !memberBusy) setAccessBucket(null); }}>
-        <DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "") : t.buckets.bucketSettingsTitle(accessBucket?.name ?? "")}</DialogTitle><DialogDescription>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogDescription : t.buckets.bucketSettingsDescription}</DialogDescription></DialogHeader>
-        {/* Members are a Shared Drive concept, so a My Drive bucket has only
-            one panel and needs no tabs. */}
-        {accessBucket?.storageKind === "shared_drive" ? (
-          <div className="grid w-fit grid-cols-2 gap-2">
-            <Button type="button" size="sm" variant={accessTab === "members" ? "default" : "outline"} onClick={() => setAccessTab("members")}>{t.buckets.accessTabMembers}</Button>
-            <Button type="button" size="sm" variant={accessTab === "policy" ? "default" : "outline"} onClick={() => setAccessTab("policy")}>{t.buckets.accessTabPolicy}</Button>
-          </div>
-        ) : null}
-        {accessTab === "policy" ? (
-          <><DialogBody className="space-y-4">
-            {aclDraft === "public-read-write" ? (
-              <Alert variant="destructive"><AlertTitle>{t.buckets.publicBadge}</AlertTitle><AlertDescription>{t.buckets.aclPublicWriteWarning}</AlertDescription></Alert>
-            ) : aclDraft === "public-read" ? (
-              <Alert><AlertTitle>{t.buckets.publicBadge}</AlertTitle><AlertDescription>{t.buckets.aclPublicWarning}</AlertDescription></Alert>
-            ) : null}
-            <div className="space-y-2">
-              <Label htmlFor="bucket-acl">{t.buckets.aclLabel}</Label>
-              <Select
-                value={aclDraft}
-                onValueChange={(value) => setAclDraft(value as BucketAcl)}
-                ariaLabel={t.buckets.aclLabel}
-                options={[
-                  { value: "private", label: t.buckets.aclPrivate },
-                  { value: "public-read", label: t.buckets.aclPublicRead },
-                  { value: "public-read-write", label: t.buckets.aclPublicReadWrite },
-                  { value: "authenticated-read", label: t.buckets.aclAuthenticatedRead },
-                ]}
-              />
-              <p className="text-xs text-muted-foreground">{t.buckets.aclHelp}</p>
-            </div>
-            <div className="space-y-2">
-              <Label>{t.buckets.lockLabel}</Label>
-              {access?.objectLockEnabled ? (
-                <>
-                  <Badge variant="success">{t.buckets.lockEnabled}</Badge>
-                  <Select
-                    value={lockDefaultMode}
-                    onValueChange={(value) => setLockDefaultMode(value as LockMode | "none")}
-                    ariaLabel={t.buckets.lockDefaultLabel}
-                    options={[
-                      { value: "none", label: t.buckets.lockDefaultNone },
-                      { value: "GOVERNANCE", label: t.buckets.lockModeGovernance },
-                      { value: "COMPLIANCE", label: t.buckets.lockModeCompliance },
-                    ]}
-                  />
-                  {lockDefaultMode === "none" ? null : (
-                    <div className="space-y-1">
-                      <Label htmlFor="lock-days">{t.buckets.lockDefaultDaysLabel}</Label>
-                      <Input
-                        id="lock-days"
-                        type="number"
-                        min={1}
-                        max={36500}
-                        value={lockDefaultDays}
-                        onChange={(event) => setLockDefaultDays(Math.max(1, Number(event.target.value) || 1))}
-                      />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <Button variant="outline" size="sm" disabled={accessBusy} onClick={() => setConfirmLock(true)}>
-                  {t.buckets.lockEnable}
-                </Button>
-              )}
-              <p className="text-xs text-muted-foreground">{t.buckets.lockHelp}</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="bucket-versioning">{t.buckets.versioningLabel}</Label>
-              <Select
-                value={versioningDraft}
-                onValueChange={(value) => setVersioningDraft(value as BucketVersioning)}
-                ariaLabel={t.buckets.versioningLabel}
-                options={[
-                  {
-                    value: "Disabled",
-                    label: t.buckets.versioningDisabled,
-                    // S3 has no path back to Disabled once versioning is on.
-                    disabled: access ? access.versioning !== "Disabled" : false,
-                  },
-                  { value: "Enabled", label: t.buckets.versioningEnabled },
-                  { value: "Suspended", label: t.buckets.versioningSuspended },
-                ]}
-              />
-              <p className="text-xs text-muted-foreground">{t.buckets.versioningHelp}</p>
-              {access && access.retainedVersions > 0 ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    {t.buckets.versioningRetained(access.retainedVersions)} · {t.buckets.versioningStorageHint}
-                  </span>
-                  <Button size="sm" variant="outline" disabled={pruning} onClick={() => setConfirmPrune(true)}>
-                    {pruning ? t.buckets.pruning : t.buckets.pruneVersions}
-                  </Button>
+      <Modal.Backdrop isOpen={Boolean(accessBucket)} onOpenChange={(open) => { if (!open && !memberBusy) setAccessBucket(null); }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog className="max-w-xl">
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogTitle(accessBucket?.name ?? "") : t.buckets.bucketSettingsTitle(accessBucket?.name ?? "")}</Modal.Heading>
+              <p className="text-sm text-muted">{accessBucket?.storageKind === "shared_drive" ? t.buckets.manageAccessDialogDescription : t.buckets.bucketSettingsDescription}</p>
+              {/* Members are a Shared Drive concept, so a My Drive bucket has only
+                  one panel and needs no tabs. */}
+              {accessBucket?.storageKind === "shared_drive" ? (
+                <div className="grid w-fit grid-cols-2 gap-2">
+                  <Button size="sm" variant={accessTab === "members" ? "primary" : "outline"} onPress={() => setAccessTab("members")}>{t.buckets.accessTabMembers}</Button>
+                  <Button size="sm" variant={accessTab === "policy" ? "primary" : "outline"} onPress={() => setAccessTab("policy")}>{t.buckets.accessTabPolicy}</Button>
                 </div>
               ) : null}
-            </div>
+            </Modal.Header>
+            {accessTab === "policy" ? (
+              <>
+                <Modal.Body className="space-y-4">
+                  {aclDraft === "public-read-write" ? (
+                    <Alert status="danger">
+                      <Alert.Indicator />
+                      <Alert.Content>
+                        <Alert.Title>{t.buckets.publicBadge}</Alert.Title>
+                        <Alert.Description>{t.buckets.aclPublicWriteWarning}</Alert.Description>
+                      </Alert.Content>
+                    </Alert>
+                  ) : aclDraft === "public-read" ? (
+                    <Alert>
+                      <Alert.Indicator />
+                      <Alert.Content>
+                        <Alert.Title>{t.buckets.publicBadge}</Alert.Title>
+                        <Alert.Description>{t.buckets.aclPublicWarning}</Alert.Description>
+                      </Alert.Content>
+                    </Alert>
+                  ) : null}
+                  <div className="space-y-2">
+                    <Select
+                      label={t.buckets.aclLabel}
+                      value={aclDraft}
+                      onValueChange={(value) => setAclDraft(value as BucketAcl)}
+                      options={[
+                        { value: "private", label: t.buckets.aclPrivate },
+                        { value: "public-read", label: t.buckets.aclPublicRead },
+                        { value: "public-read-write", label: t.buckets.aclPublicReadWrite },
+                        { value: "authenticated-read", label: t.buckets.aclAuthenticatedRead },
+                      ]}
+                    />
+                    <p className="text-xs text-muted">{t.buckets.aclHelp}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t.buckets.lockLabel}</Label>
+                    {access?.objectLockEnabled ? (
+                      <>
+                        <Chip size="sm" color="success" variant="soft">{t.buckets.lockEnabled}</Chip>
+                        <Select
+                          value={lockDefaultMode}
+                          onValueChange={(value) => setLockDefaultMode(value as LockMode | "none")}
+                          ariaLabel={t.buckets.lockDefaultLabel}
+                          options={[
+                            { value: "none", label: t.buckets.lockDefaultNone },
+                            { value: "GOVERNANCE", label: t.buckets.lockModeGovernance },
+                            { value: "COMPLIANCE", label: t.buckets.lockModeCompliance },
+                          ]}
+                        />
+                        {lockDefaultMode === "none" ? null : (
+                          <div className="space-y-1">
+                            <Label htmlFor="lock-days">{t.buckets.lockDefaultDaysLabel}</Label>
+                            <Input
+                              id="lock-days"
+                              fullWidth
+                              type="number"
+                              min={1}
+                              max={36500}
+                              value={lockDefaultDays}
+                              onChange={(event) => setLockDefaultDays(Math.max(1, Number(event.target.value) || 1))}
+                            />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <Button variant="outline" size="sm" isDisabled={accessBusy} onPress={() => setConfirmLock(true)}>
+                        {t.buckets.lockEnable}
+                      </Button>
+                    )}
+                    <p className="text-xs text-muted">{t.buckets.lockHelp}</p>
+                  </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="bucket-encryption">{t.buckets.encryptionLabel}</Label>
-              <Select
-                value={sseDraft}
-                onValueChange={(value) => setSseDraft(value as SseAlgorithm | "none")}
-                ariaLabel={t.buckets.encryptionLabel}
-                options={[
-                  { value: "none", label: t.buckets.encryptionNone },
-                  { value: "AES256", label: t.buckets.encryptionSseS3 },
-                  { value: "aws:kms", label: t.buckets.encryptionSseKms, disabled: kmsKeys.length === 0 },
-                ]}
-              />
-              <p className="text-xs text-muted-foreground">{t.buckets.encryptionHelp}</p>
-              {sseDraft === "aws:kms" ? (
-                kmsKeys.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">{t.buckets.encryptionNoKeys}</p>
-                ) : (
-                  <Select
-                    value={sseKeyDraft}
-                    onValueChange={setSseKeyDraft}
-                    ariaLabel={t.buckets.encryptionKeyLabel}
-                    options={kmsKeys.map((key) => ({
-                      value: key.id,
-                      label: `${key.alias} · v${key.version}`,
-                      disabled: key.status !== "active",
-                    }))}
-                  />
-                )
-              ) : null}
-            </div>
+                  <div className="space-y-2">
+                    <Select
+                      label={t.buckets.versioningLabel}
+                      value={versioningDraft}
+                      onValueChange={(value) => setVersioningDraft(value as BucketVersioning)}
+                      options={[
+                        {
+                          value: "Disabled",
+                          label: t.buckets.versioningDisabled,
+                          // S3 has no path back to Disabled once versioning is on.
+                          disabled: access ? access.versioning !== "Disabled" : false,
+                        },
+                        { value: "Enabled", label: t.buckets.versioningEnabled },
+                        { value: "Suspended", label: t.buckets.versioningSuspended },
+                      ]}
+                    />
+                    <p className="text-xs text-muted">{t.buckets.versioningHelp}</p>
+                    {access && access.retainedVersions > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted">
+                          {t.buckets.versioningRetained(access.retainedVersions)} · {t.buckets.versioningStorageHint}
+                        </span>
+                        <Button size="sm" variant="outline" isDisabled={pruning} onPress={() => setConfirmPrune(true)}>
+                          {pruning ? t.buckets.pruning : t.buckets.pruneVersions}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="bucket-policy">{t.buckets.policyLabel}</Label>
-              <textarea
-                id="bucket-policy"
-                className="min-h-56 w-full rounded-md border bg-background p-3 font-mono text-xs"
-                spellCheck={false}
-                value={policyDraft}
-                placeholder={t.buckets.policyPlaceholder}
-                onChange={(event) => { setPolicyDraft(event.target.value); setPolicyError(null); }}
-              />
-              <p className="text-xs text-muted-foreground">{t.buckets.policyHelp}</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t.buckets.policyTemplateLabel}</span>
-                <Button type="button" size="sm" variant="outline" onClick={() => { setPolicyDraft(POLICY_TEMPLATES.publicRead(accessBucket?.name ?? "bucket")); setPolicyError(null); }}>{t.buckets.policyTemplatePublicRead}</Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => { setPolicyDraft(POLICY_TEMPLATES.grantUser(accessBucket?.name ?? "bucket")); setPolicyError(null); }}>{t.buckets.policyTemplateGrantUser}</Button>
-              </div>
-              {policyError ? <Alert variant="destructive"><AlertTitle>{t.buckets.policyInvalid}</AlertTitle><AlertDescription className="break-all">{policyError}</AlertDescription></Alert> : null}
-              {access?.policyUpdatedAt ? <p className="text-xs text-muted-foreground">{t.buckets.policySavedAt(new Date(access.policyUpdatedAt).toLocaleString())}</p> : null}
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button disabled={accessBusy} onClick={() => void saveAccess()}>{accessBusy ? t.buckets.savingAccess : t.buckets.saveAccess}</Button>
-          </DialogFooter></>
-        ) : (
-        <><form className="grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} /><Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} buttonClassName="min-w-28" /><Button type="submit" disabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button></form><DialogBody className="space-y-2">{members.length === 0 ? <p className="text-sm text-muted-foreground">{t.buckets.noExtraMembers}</p> : members.map((member) => <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{member.email}</p><p className="text-xs text-muted-foreground">{member.access_status}</p></div><div className="flex items-center gap-2"><Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} buttonClassName="h-9 min-w-28 px-2" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} /><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.buckets.removeMemberLabel(member.email)} disabled={memberBusy} onClick={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button></div></div>)}</DialogBody></>)}</DialogContent>
-      </Dialog>
+                  <div className="space-y-2">
+                    <Select
+                      label={t.buckets.encryptionLabel}
+                      value={sseDraft}
+                      onValueChange={(value) => setSseDraft(value as SseAlgorithm | "none")}
+                      options={[
+                        { value: "none", label: t.buckets.encryptionNone },
+                        { value: "AES256", label: t.buckets.encryptionSseS3 },
+                        { value: "aws:kms", label: t.buckets.encryptionSseKms, disabled: kmsKeys.length === 0 },
+                      ]}
+                    />
+                    <p className="text-xs text-muted">{t.buckets.encryptionHelp}</p>
+                    {sseDraft === "aws:kms" ? (
+                      kmsKeys.length === 0 ? (
+                        <p className="text-xs text-muted">{t.buckets.encryptionNoKeys}</p>
+                      ) : (
+                        <Select
+                          value={sseKeyDraft}
+                          onValueChange={setSseKeyDraft}
+                          ariaLabel={t.buckets.encryptionKeyLabel}
+                          options={kmsKeys.map((key) => ({
+                            value: key.id,
+                            label: `${key.alias} · v${key.version}`,
+                            disabled: key.status !== "active",
+                          }))}
+                        />
+                      )
+                    ) : null}
+                  </div>
 
-      <AlertDialog open={confirmLock} onOpenChange={(open) => { if (!accessBusy) setConfirmLock(open); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t.buckets.lockConfirmTitle}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t.buckets.lockConfirmDescription} {t.buckets.lockIrreversible}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={accessBusy}>{t.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={accessBusy}
-              onClick={(event) => { event.preventDefault(); void doEnableObjectLock(); }}
-            >
-              {t.buckets.lockEnable}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+                  <div className="space-y-2">
+                    <Label htmlFor="bucket-policy">{t.buckets.policyLabel}</Label>
+                    <TextArea
+                      id="bucket-policy"
+                      fullWidth
+                      className="min-h-56 font-mono text-xs"
+                      spellCheck={false}
+                      value={policyDraft}
+                      placeholder={t.buckets.policyPlaceholder}
+                      onChange={(event) => { setPolicyDraft(event.target.value); setPolicyError(null); }}
+                    />
+                    <p className="text-xs text-muted">{t.buckets.policyHelp}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted">{t.buckets.policyTemplateLabel}</span>
+                      <Button size="sm" variant="outline" onPress={() => { setPolicyDraft(POLICY_TEMPLATES.publicRead(accessBucket?.name ?? "bucket")); setPolicyError(null); }}>{t.buckets.policyTemplatePublicRead}</Button>
+                      <Button size="sm" variant="outline" onPress={() => { setPolicyDraft(POLICY_TEMPLATES.grantUser(accessBucket?.name ?? "bucket")); setPolicyError(null); }}>{t.buckets.policyTemplateGrantUser}</Button>
+                    </div>
+                    {policyError ? (
+                      <Alert status="danger">
+                        <Alert.Indicator />
+                        <Alert.Content>
+                          <Alert.Title>{t.buckets.policyInvalid}</Alert.Title>
+                          <Alert.Description className="break-all">{policyError}</Alert.Description>
+                        </Alert.Content>
+                      </Alert>
+                    ) : null}
+                    {access?.policyUpdatedAt ? <p className="text-xs text-muted">{t.buckets.policySavedAt(new Date(access.policyUpdatedAt).toLocaleString())}</p> : null}
+                  </div>
+                </Modal.Body>
+                <Modal.Footer>
+                  <Button isDisabled={accessBusy} onPress={() => void saveAccess()}>{accessBusy ? t.buckets.savingAccess : t.buckets.saveAccess}</Button>
+                </Modal.Footer>
+              </>
+            ) : (
+              <>
+                {/* The add form stays pinned above the scrolling member list. */}
+                <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => void addMember(event)}>
+                  <Input fullWidth type="email" placeholder={t.buckets.memberEmailPlaceholder} value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} aria-label={t.buckets.memberEmailLabel} />
+                  <Select value={memberRole} onValueChange={setMemberRole} options={ROLE_OPTIONS} ariaLabel={t.buckets.memberRoleLabel} triggerClassName="min-w-28" />
+                  <Button type="submit" isDisabled={!memberEmail.trim() || memberBusy}>{memberBusy ? t.buckets.addingMember : t.buckets.addMember}</Button>
+                </form>
+                <Modal.Body className="mt-4 space-y-2 text-foreground">
+                  {members.length === 0 ? <p className="text-sm text-muted">{t.buckets.noExtraMembers}</p> : members.map((member) => (
+                    <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{member.email}</p>
+                        <p className="text-xs text-muted">{member.access_status}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select value={member.role} disabled={memberBusy} options={ROLE_OPTIONS} ariaLabel={t.buckets.memberRoleLabel} triggerClassName="min-w-28" onValueChange={async (role) => { if (!accessBucket) return; setMemberBusy(true); try { await updateBucketMember(accessBucket.id, member.user_id, role); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRoleUpdated(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }} />
+                        <Button isIconOnly size="sm" variant="ghost" className="text-danger" aria-label={t.buckets.removeMemberLabel(member.email)} isDisabled={memberBusy} onPress={async () => { if (!accessBucket) return; setMemberBusy(true); try { await removeBucketMember(accessBucket.id, member.user_id); setMembers(await listBucketMembers(accessBucket.id)); toast.success(t.toast.memberRemoved(member.email)); } catch (e) { toast.fromError(t.toast.memberUpdateFailed, e); } finally { setMemberBusy(false); } }}><Trash2 /></Button>
+                      </div>
+                    </div>
+                  ))}
+                </Modal.Body>
+              </>
+            )}
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <AlertDialog open={confirmPrune} onOpenChange={(open) => { if (!pruning) setConfirmPrune(open); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t.buckets.pruneConfirmTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{t.buckets.pruneConfirmDescription}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pruning}>{t.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={pruning}
-              onClick={(event) => { event.preventDefault(); void doPruneVersions(); }}
-            >
-              {pruning ? t.buckets.pruning : t.buckets.pruneVersions}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog.Backdrop isOpen={confirmLock} onOpenChange={(open) => { if (!accessBusy) setConfirmLock(open); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="warning" />
+              <AlertDialog.Heading>{t.buckets.lockConfirmTitle}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{t.buckets.lockConfirmDescription} {t.buckets.lockIrreversible}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={accessBusy}>{t.common.cancel}</Button>
+              <Button isDisabled={accessBusy} onPress={() => void doEnableObjectLock()}>{t.buckets.lockEnable}</Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
 
-      <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.buckets.deleteBucketConfirmTitle(pendingDelete?.name ?? "")}</AlertDialogTitle><AlertDialogDescription>{t.buckets.deleteBucketConfirmDescription(pendingDelete?.storageDisplayName ?? "")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deleting}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={(event) => { event.preventDefault(); void doDelete(); }}>{deleting ? t.buckets.deleting : t.buckets.delete}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog.Backdrop isOpen={confirmPrune} onOpenChange={(open) => { if (!pruning) setConfirmPrune(open); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{t.buckets.pruneConfirmTitle}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{t.buckets.pruneConfirmDescription}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={pruning}>{t.common.cancel}</Button>
+              <Button variant="danger" isDisabled={pruning} onPress={() => void doPruneVersions()}>{pruning ? t.buckets.pruning : t.buckets.pruneVersions}</Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
+
+      <AlertDialog.Backdrop isOpen={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{t.buckets.deleteBucketConfirmTitle(pendingDelete?.name ?? "")}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{t.buckets.deleteBucketConfirmDescription(pendingDelete?.storageDisplayName ?? "")}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={deleting}>{t.common.cancel}</Button>
+              <Button variant="danger" isDisabled={deleting} onPress={() => void doDelete()}>{deleting ? t.buckets.deleting : t.buckets.delete}</Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   );
 }

@@ -1,14 +1,5 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, Info, TriangleAlert, XCircle } from "lucide-react";
-import {
-  Toast,
-  ToastClose,
-  ToastDescription,
-  ToastProvider as ToastPrimitiveProvider,
-  ToastTitle,
-  ToastViewport,
-} from "@/components/ui/toast";
-import { useLocale } from "@/components/locale-provider";
+import type { ReactNode } from "react";
+import { Toast, toast as heroToast } from "@heroui/react";
 
 export type ToastVariant = "success" | "error" | "warning" | "info";
 
@@ -20,13 +11,7 @@ export interface ToastOptions {
   duration?: number;
 }
 
-interface ToastEntry extends ToastOptions {
-  id: number;
-  variant: ToastVariant;
-  open: boolean;
-}
-
-interface ToastContextValue {
+interface ToastApi {
   toast: (options: ToastOptions) => void;
   /** Convenience wrappers so call sites read as intent, not configuration. */
   success: (title: string, description?: string) => void;
@@ -37,14 +22,12 @@ interface ToastContextValue {
   fromError: (title: string, cause: unknown) => void;
 }
 
-const ToastContext = createContext<ToastContextValue | null>(null);
-
-const ICONS: Record<ToastVariant, typeof Info> = {
-  success: CheckCircle2,
-  error: XCircle,
-  warning: TriangleAlert,
-  info: Info,
-};
+const HERO_VARIANT = {
+  success: "success",
+  error: "danger",
+  warning: "warning",
+  info: "default",
+} as const satisfies Record<ToastVariant, string>;
 
 // Errors linger, since they usually carry something the user must read.
 const DEFAULT_DURATION: Record<ToastVariant, number> = {
@@ -54,81 +37,43 @@ const DEFAULT_DURATION: Record<ToastVariant, number> = {
   error: 8000,
 };
 
-const MAX_VISIBLE = 3;
+function show({ title, description, variant = "info", duration }: ToastOptions) {
+  heroToast(title, {
+    description,
+    variant: HERO_VARIANT[variant],
+    timeout: duration ?? DEFAULT_DURATION[variant],
+  });
+}
 
+const withVariant = (variant: ToastVariant) => (title: string, description?: string) =>
+  show({ title, description, variant });
+
+// HeroUI keeps its toast queue outside React, so the API needs no context: it
+// is the same object for every caller and safe to use in effects' deps.
+const api: ToastApi = {
+  toast: show,
+  success: withVariant("success"),
+  error: withVariant("error"),
+  info: withVariant("info"),
+  warning: withVariant("warning"),
+  fromError: (title, cause) =>
+    show({
+      title,
+      description: cause instanceof Error ? cause.message : String(cause),
+      variant: "error",
+    }),
+};
+
+/** Mounts the region HeroUI renders queued toasts into. */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const { t } = useLocale();
-  const [entries, setEntries] = useState<ToastEntry[]>([]);
-  const nextId = useRef(0);
-
-  const dismiss = useCallback((id: number) => {
-    // Keep the entry mounted while Radix plays the close animation, then drop it.
-    setEntries((current) => current.map((entry) => (entry.id === id ? { ...entry, open: false } : entry)));
-    window.setTimeout(() => {
-      setEntries((current) => current.filter((entry) => entry.id !== id));
-    }, 300);
-  }, []);
-
-  const toast = useCallback((options: ToastOptions) => {
-    const id = nextId.current++;
-    const variant = options.variant ?? "info";
-    setEntries((current) => [
-      ...current.slice(-(MAX_VISIBLE - 1)),
-      { ...options, id, variant, open: true },
-    ]);
-  }, []);
-
-  const value = useMemo<ToastContextValue>(() => {
-    const withVariant = (variant: ToastVariant) => (title: string, description?: string) =>
-      toast({ title, description, variant });
-    return {
-      toast,
-      success: withVariant("success"),
-      error: withVariant("error"),
-      info: withVariant("info"),
-      warning: withVariant("warning"),
-      fromError: (title, cause) =>
-        toast({
-          title,
-          description: cause instanceof Error ? cause.message : String(cause),
-          variant: "error",
-        }),
-    };
-  }, [toast]);
-
   return (
-    <ToastContext.Provider value={value}>
-      <ToastPrimitiveProvider swipeDirection="right">
-        {children}
-        {entries.map((entry) => {
-          const Icon = ICONS[entry.variant];
-          return (
-            <Toast
-              key={entry.id}
-              variant={entry.variant}
-              open={entry.open}
-              duration={entry.duration ?? DEFAULT_DURATION[entry.variant]}
-              onOpenChange={(open) => { if (!open) dismiss(entry.id); }}
-            >
-              <Icon className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-              <div className="min-w-0 flex-1">
-                <ToastTitle>{entry.title}</ToastTitle>
-                {entry.description ? (
-                  <ToastDescription className="break-words">{entry.description}</ToastDescription>
-                ) : null}
-              </div>
-              <ToastClose aria-label={t.common.close} />
-            </Toast>
-          );
-        })}
-        <ToastViewport />
-      </ToastPrimitiveProvider>
-    </ToastContext.Provider>
+    <>
+      {children}
+      <Toast.Provider placement="bottom end" maxVisibleToasts={3} />
+    </>
   );
 }
 
-export function useToast() {
-  const value = useContext(ToastContext);
-  if (!value) throw new Error("useToast must be used inside ToastProvider");
-  return value;
+export function useToast(): ToastApi {
+  return api;
 }

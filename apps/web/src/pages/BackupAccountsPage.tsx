@@ -11,20 +11,7 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDialog, Button, Card, Chip } from "@heroui/react";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { BackupHistory, useBackupStatusLabels } from "@/components/backup-history";
 import { useLocale } from "@/components/locale-provider";
@@ -62,10 +49,10 @@ export function BackupAccountsPage() {
     reauthorization_required: t.backup.statusReauthRequired,
     error: t.backup.statusError,
   };
-  const STATUS_VARIANT: Record<BackupAccount["status"], "success" | "warning" | "destructive"> = {
+  const STATUS_COLOR: Record<BackupAccount["status"], "success" | "warning" | "danger"> = {
     active: "success",
     reauthorization_required: "warning",
-    error: "destructive",
+    error: "danger",
   };
 
   const [accounts, setAccounts] = useState<BackupAccount[]>([]);
@@ -134,30 +121,44 @@ export function BackupAccountsPage() {
 
   const totals = summary?.totals;
   const statCards: Array<{ label: string; value: number; icon: typeof Copy; tone: string }> = [
-    { label: t.backup.statRuns, value: totals?.runs ?? 0, icon: History, tone: "text-primary bg-primary/10" },
-    { label: t.backup.statCopied, value: totals?.copied ?? 0, icon: Copy, tone: "text-success bg-success/10" },
-    { label: t.backup.statSkipped, value: totals?.skipped ?? 0, icon: SkipForward, tone: "text-muted-foreground bg-muted" },
-    { label: t.backup.statFailed, value: totals?.failed ?? 0, icon: TriangleAlert, tone: "text-destructive bg-destructive/10" },
+    { label: t.backup.statRuns, value: totals?.runs ?? 0, icon: History, tone: "text-accent-soft-foreground bg-accent-soft" },
+    { label: t.backup.statCopied, value: totals?.copied ?? 0, icon: Copy, tone: "text-success bg-success-soft" },
+    { label: t.backup.statSkipped, value: totals?.skipped ?? 0, icon: SkipForward, tone: "text-muted bg-default" },
+    { label: t.backup.statFailed, value: totals?.failed ?? 0, icon: TriangleAlert, tone: "text-danger bg-danger-soft" },
   ];
 
   return (
     <div className="space-y-6">
       {error ? <ErrorAlert message={error} /> : null}
       {linkedMessage ? (
-        <Alert variant="success"><AlertTitle>{t.backup.linkedTitle}</AlertTitle><AlertDescription>{t.backup.linkedDescription}</AlertDescription></Alert>
+        <Alert status="success">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{t.backup.linkedTitle}</Alert.Title>
+            <Alert.Description>{t.backup.linkedDescription}</Alert.Description>
+          </Alert.Content>
+        </Alert>
       ) : null}
       {linkError ? (
-        <Alert variant="destructive"><ShieldAlert /><AlertTitle>{t.backup.linkErrorTitle}</AlertTitle><AlertDescription>{decodeURIComponent(linkError)}</AlertDescription></Alert>
+        <Alert status="danger">
+          <Alert.Indicator><ShieldAlert /></Alert.Indicator>
+          <Alert.Content>
+            <Alert.Title>{t.backup.linkErrorTitle}</Alert.Title>
+            <Alert.Description>{decodeURIComponent(linkError)}</Alert.Description>
+          </Alert.Content>
+        </Alert>
       ) : null}
 
-      <Alert>
-        <CloudCog />
-        <AlertTitle>{t.backup.infoTitle}</AlertTitle>
-        <AlertDescription>{t.backup.infoDescription}</AlertDescription>
+      <Alert status="accent">
+        <Alert.Indicator><CloudCog /></Alert.Indicator>
+        <Alert.Content>
+          <Alert.Title>{t.backup.infoTitle}</Alert.Title>
+          <Alert.Description>{t.backup.infoDescription}</Alert.Description>
+        </Alert.Content>
       </Alert>
 
       <div className="flex justify-end">
-        <Button onClick={() => startBackupAccountLink()}><Plus /> {t.backup.connectButton}</Button>
+        <Button onPress={() => startBackupAccountLink()}><Plus /> {t.backup.connectButton}</Button>
       </div>
 
       {accounts.length === 0 ? (
@@ -170,14 +171,14 @@ export function BackupAccountsPage() {
         <>
           <section aria-label={t.backup.historyTitle} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {statCards.map(({ label, value, icon: Icon, tone }) => (
-              <Card key={label} className="border-border/60 shadow-sm">
-                <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-                  <CardDescription>{label}</CardDescription>
+              <Card key={label}>
+                <Card.Header className="flex-row items-center justify-between gap-3">
+                  <Card.Description>{label}</Card.Description>
                   <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", tone)}>
                     <Icon className="size-5" aria-hidden="true" />
                   </span>
-                </CardHeader>
-                <CardContent><p className="text-3xl font-bold tabular-nums">{value}</p></CardContent>
+                </Card.Header>
+                <Card.Content><p className="text-3xl font-bold tabular-nums">{value}</p></Card.Content>
               </Card>
             ))}
           </section>
@@ -187,35 +188,36 @@ export function BackupAccountsPage() {
               const stats = summary?.accounts.find((a) => a.backupAccountId === account.id);
               return (
                 <Card key={account.id}>
-                  <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
+                  <Card.Header className="flex-row items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <CardTitle className="truncate text-base">{account.email}</CardTitle>
-                      <CardDescription>{t.backup.connectedAt(new Date(account.createdAt).toLocaleString())}</CardDescription>
+                      <Card.Title className="truncate text-base font-semibold">{account.email}</Card.Title>
+                      <Card.Description>{t.backup.connectedAt(new Date(account.createdAt).toLocaleString())}</Card.Description>
                     </div>
                     <Button
-                      size="icon"
+                      isIconOnly
+                      size="sm"
                       variant="ghost"
-                      className="shrink-0 text-destructive hover:text-destructive"
+                      className="shrink-0 text-danger"
                       aria-label={t.backup.disconnectLabel(account.email)}
-                      onClick={() => setDeleteTarget(account)}
+                      onPress={() => setDeleteTarget(account)}
                     >
                       <Trash2 />
                     </Button>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
+                  </Card.Header>
+                  <Card.Content className="gap-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={STATUS_VARIANT[account.status]}>{STATUS_LABEL[account.status]}</Badge>
+                      <Chip color={STATUS_COLOR[account.status]} variant="soft" size="sm">{STATUS_LABEL[account.status]}</Chip>
                       {stats && stats.runs > 0 ? (
-                        <Badge variant="outline">{t.backup.accountRunsLabel(stats.runs)}</Badge>
+                        <Chip variant="tertiary" size="sm" className="border">{t.backup.accountRunsLabel(stats.runs)}</Chip>
                       ) : null}
                       {stats?.lastStatus ? (
-                        <Badge variant={runStatus.variant[stats.lastStatus]}>
+                        <Chip color={runStatus.color[stats.lastStatus]} variant="soft" size="sm">
                           {runStatus.label[stats.lastStatus]}
-                        </Badge>
+                        </Chip>
                       ) : null}
                     </div>
 
-                    <dl className="space-y-1 text-xs text-muted-foreground">
+                    <dl className="space-y-1 text-xs text-muted">
                       <div className="flex items-center gap-1.5">
                         <History className="size-3.5 shrink-0" aria-hidden="true" />
                         <span>
@@ -232,28 +234,28 @@ export function BackupAccountsPage() {
                       ) : null}
                       {stats && stats.failedTotal > 0 ? (
                         <div className="flex items-center gap-1.5">
-                          <TriangleAlert className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+                          <TriangleAlert className="size-3.5 shrink-0 text-danger" aria-hidden="true" />
                           <span>{t.backup.statFailed}: {stats.failedTotal}</span>
                         </div>
                       ) : null}
                     </dl>
 
                     {account.status === "reauthorization_required" ? (
-                      <p className="text-xs text-muted-foreground">{t.backup.reauthHint}</p>
+                      <p className="text-xs text-muted">{t.backup.reauthHint}</p>
                     ) : null}
-                    {account.lastError ? <p className="text-xs text-destructive">{account.lastError}</p> : null}
+                    {account.lastError ? <p className="text-xs text-danger">{account.lastError}</p> : null}
 
                     {stats && stats.runs > 0 ? (
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => setAccountFilter(account.id)}
-                        disabled={accountFilter === account.id}
+                        onPress={() => setAccountFilter(account.id)}
+                        isDisabled={accountFilter === account.id}
                       >
                         <History /> {t.backup.viewAccountHistory}
                       </Button>
                     ) : null}
-                  </CardContent>
+                  </Card.Content>
                 </Card>
               );
             })}
@@ -261,19 +263,17 @@ export function BackupAccountsPage() {
 
           {accountFilter !== ALL_ACCOUNTS ? (
             <Alert>
-              <History />
-              <AlertTitle>
-                {t.backup.filteredByAccount(
-                  accounts.find((a) => a.id === accountFilter)?.email ?? accountFilter,
-                )}
-              </AlertTitle>
-              {/* AlertTitle's own mb-1 is sized for a paragraph; a button
-                  needs more room than that. */}
-              <AlertDescription className="mt-2">
-                <Button size="sm" variant="outline" onClick={() => setAccountFilter(ALL_ACCOUNTS)}>
+              <Alert.Indicator><History /></Alert.Indicator>
+              <Alert.Content>
+                <Alert.Title>
+                  {t.backup.filteredByAccount(
+                    accounts.find((a) => a.id === accountFilter)?.email ?? accountFilter,
+                  )}
+                </Alert.Title>
+                <Button size="sm" variant="outline" className="mt-2" onPress={() => setAccountFilter(ALL_ACCOUNTS)}>
                   {t.backup.clearAccountFilter}
                 </Button>
-              </AlertDescription>
+              </Alert.Content>
             </Alert>
           ) : null}
 
@@ -286,26 +286,27 @@ export function BackupAccountsPage() {
         </>
       )}
 
-      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t.backup.disconnectConfirmTitle}</AlertDialogTitle>
-            <AlertDialogDescription className="break-all">
-              <span className="font-medium text-foreground">{deleteTarget?.email}</span> {t.backup.disconnectConfirmDescription}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>{t.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
-              onClick={(event) => { event.preventDefault(); void doDelete(); }}
-            >
-              {deleting ? t.backup.disconnecting : t.backup.disconnect}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog.Backdrop isOpen={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{t.backup.disconnectConfirmTitle}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>
+                <span className="break-all font-medium text-foreground">{deleteTarget?.email}</span> {t.backup.disconnectConfirmDescription}
+              </p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={deleting}>{t.common.cancel}</Button>
+              <Button variant="danger" isDisabled={deleting} onPress={() => void doDelete()}>
+                {deleting ? t.backup.disconnecting : t.backup.disconnect}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   );
 }

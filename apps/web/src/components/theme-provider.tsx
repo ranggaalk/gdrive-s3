@@ -34,7 +34,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+    // HeroUI keys its theme variables off either signal; set both so a
+    // component that reads data-theme agrees with one that reads the class.
+    const root = document.documentElement;
+    root.classList.toggle("dark", resolvedTheme === "dark");
+    root.classList.toggle("light", resolvedTheme === "light");
+    root.dataset.theme = resolvedTheme;
   }, [resolvedTheme]);
 
   const value = useMemo<ThemeContextValue>(

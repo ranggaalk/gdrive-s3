@@ -18,17 +18,21 @@ function readPage(name: string): string {
   );
 }
 
-/** The role gate wrapping the button whose onClick calls `handler`. */
+/**
+ * The role gate wrapping the button whose onPress calls `handler`. The button
+ * may sit inside a <Tooltip> -- HeroUI's replacement for the `title` hint --
+ * which is still the gate's direct child.
+ */
 function gateFor(source: string, handler: string): string | null {
   const pattern = new RegExp(
-    `\\{(owner|writable)\\s*\\?\\s*<Button[^>]*?onClick=\\{\\(\\) => (?:void )?${handler}\\b`,
+    `\\{(owner|writable)\\s*\\?\\s*(?:<Tooltip\\b[^>]*>\\s*)?<Button[^>]*?onPress=\\{\\(\\) => (?:void )?${handler}\\b`,
   );
   return pattern.exec(source)?.[1] ?? null;
 }
 
 /** Whether a button calling `handler` exists at all, gated or not. */
 function hasButton(source: string, handler: string): boolean {
-  return new RegExp(`onClick=\\{\\(\\) => (?:void )?${handler}\\b`).test(source);
+  return new RegExp(`onPress=\\{\\(\\) => (?:void )?${handler}\\b`).test(source);
 }
 
 describe("Objects page permission gates match the server", () => {
@@ -78,7 +82,7 @@ describe("Buckets page settings are reachable", () => {
     // members. It now also holds ACL, policy, versioning, encryption, and
     // Object Lock, which every bucket has.
     expect(source).toMatch(
-      /\{bucket\.ownedByMe \? <Button[^>]*?onClick=\{\(\) => void openAccess\(bucket\)\}/,
+      /\{bucket\.ownedByMe \? (?:<Tooltip\b[^>]*>\s*)?<Button[^>]*?onPress=\{\(\) => void openAccess\(bucket\)\}/,
     );
   });
 

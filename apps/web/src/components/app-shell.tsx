@@ -1,17 +1,7 @@
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Globe, HardDrive, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Palette, Settings, ShieldCheck, Sun } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Button, Drawer, Dropdown, Header, Label, Separator, Tooltip } from "@heroui/react";
 import { useTheme } from "@/components/theme-provider";
 import { ThemeColorDialog } from "@/components/theme-color-dialog";
 import { LocaleDialog } from "@/components/locale-dialog";
@@ -19,6 +9,7 @@ import { useLocale } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_STORAGE_KEY = "drives3-sidebar-collapsed";
+const TOOLTIP_DELAY = 200;
 
 export type NavigationItem<T extends string> = {
   id: T;
@@ -30,13 +21,11 @@ function Navigation<T extends string>({
   items,
   active,
   onSelect,
-  mobile = false,
   collapsed = false,
 }: {
   items: Array<NavigationItem<T>>;
   active: T;
   onSelect: (id: T) => void;
-  mobile?: boolean;
   collapsed?: boolean;
 }) {
   const { t } = useLocale();
@@ -45,33 +34,34 @@ function Navigation<T extends string>({
       {items.map(({ id, name, icon: Icon }) => {
         const button = (
           <Button
-            type="button"
-            variant="ghost"
+            variant={active === id ? "primary" : "ghost"}
+            fullWidth
             className={cn(
-              "w-full",
               collapsed ? "justify-center px-0" : "justify-start",
-              active === id
-                ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
+              active === id ? "" : "text-muted hover:text-foreground",
             )}
             aria-current={active === id ? "page" : undefined}
             aria-label={collapsed ? name : undefined}
-            onClick={() => onSelect(id)}
+            onPress={() => onSelect(id)}
           >
             <Icon />
             {collapsed ? null : name}
           </Button>
         );
-        const content =
-          collapsed && !mobile ? (
-            <Tooltip>
-              <TooltipTrigger asChild>{button}</TooltipTrigger>
-              <TooltipContent side="right">{name}</TooltipContent>
-            </Tooltip>
-          ) : (
-            button
-          );
-        return mobile ? <SheetClose asChild key={id}>{content}</SheetClose> : <div key={id}>{content}</div>;
+        return (
+          <div key={id}>
+            {collapsed ? (
+              // The Button itself is the trigger: Tooltip.Trigger would wrap it
+              // in a second focusable role="button" element.
+              <Tooltip delay={TOOLTIP_DELAY}>
+                {button}
+                <Tooltip.Content placement="right">{name}</Tooltip.Content>
+              </Tooltip>
+            ) : (
+              button
+            )}
+          </div>
+        );
       })}
     </nav>
   );
@@ -90,11 +80,11 @@ function GeneralAction({
 }) {
   const button = (
     <Button
-      type="button"
       variant="ghost"
-      className={cn("w-full text-muted-foreground hover:text-foreground", collapsed ? "justify-center px-0" : "justify-start")}
+      fullWidth
+      className={cn("text-muted hover:text-foreground", collapsed ? "justify-center px-0" : "justify-start")}
       aria-label={collapsed ? label : undefined}
-      onClick={onClick}
+      onPress={onClick}
     >
       <Icon />
       {collapsed ? null : label}
@@ -102,9 +92,9 @@ function GeneralAction({
   );
   if (collapsed) {
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent side="right">{label}</TooltipContent>
+      <Tooltip delay={TOOLTIP_DELAY}>
+        {button}
+        <Tooltip.Content placement="right">{label}</Tooltip.Content>
       </Tooltip>
     );
   }
@@ -136,6 +126,7 @@ export function AppShell<T extends string>({
   const [now, setNow] = useState(() => new Date());
   const [colorDialogOpen, setColorDialogOpen] = useState(false);
   const [localeDialogOpen, setLocaleDialogOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? "1" : "0");
@@ -152,30 +143,36 @@ export function AppShell<T extends string>({
   // "Pengaturan"/"Settings" only exists in `navigation` for admins (App.tsx
   // adds it conditionally), so this menu item naturally hides itself too.
   const settingsItem = navigation.find((item) => item.id === "settings");
+  // Every entry in the mobile drawer navigates or opens a dialog, so each one
+  // closes the drawer first -- the job SheetClose used to do per button.
+  const fromDrawer = (action: () => void) => () => {
+    setMobileNavOpen(false);
+    action();
+  };
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="min-h-screen bg-muted/40">
-        <div className="flex w-full flex-col overflow-hidden bg-card lg:h-screen lg:flex-row">
+    <>
+      <div className="min-h-screen bg-background">
+        <div className="flex w-full flex-col overflow-hidden lg:h-screen lg:flex-row">
           <aside
             className={cn(
-              "hidden shrink-0 flex-col overflow-y-auto border-r bg-card p-3 transition-[width] duration-200 lg:flex lg:min-h-0",
+              "hidden shrink-0 flex-col overflow-y-auto border-r border-separator bg-surface p-3 transition-[width] duration-200 lg:flex lg:min-h-0",
               collapsed ? "w-16" : "w-64",
             )}
           >
             <div className={cn("flex items-center gap-2 px-2 py-4", collapsed && "justify-center px-0")}>
-              <HardDrive className="size-6 shrink-0 text-primary" aria-hidden="true" />
+              <HardDrive className="size-6 shrink-0 text-accent" aria-hidden="true" />
               {collapsed ? null : <span className="truncate font-semibold">{t.nav.appName}</span>}
             </div>
 
             {collapsed ? null : (
-              <p className="px-3 pb-3 pt-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t.nav.menuLabel}</p>
+              <p className="px-3 pb-3 pt-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted">{t.nav.menuLabel}</p>
             )}
             <Navigation items={navigation} active={active} onSelect={onSelect} collapsed={collapsed} />
 
             <div className="mt-auto space-y-1.5 pt-6">
               {collapsed ? null : (
-                <p className="px-3 pb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t.nav.generalLabel}</p>
+                <p className="px-3 pb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted">{t.nav.generalLabel}</p>
               )}
               <GeneralAction
                 icon={resolvedTheme === "dark" ? Sun : Moon}
@@ -189,104 +186,68 @@ export function AppShell<T extends string>({
 
               <div className={cn("flex items-center gap-2 pt-2", collapsed ? "justify-center" : "justify-between")}>
                 {collapsed ? null : (
-                  <span className="pl-2 font-mono text-xs tabular-nums text-muted-foreground">
+                  <span className="pl-2 font-mono text-xs tabular-nums text-muted">
                     {now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 )}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label={collapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}
-                      onClick={() => setCollapsed((value) => !value)}
-                    >
-                      {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">{collapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}</TooltipContent>
+                <Tooltip delay={TOOLTIP_DELAY}>
+                  <Button
+                    isIconOnly
+                    variant="ghost"
+                    aria-label={collapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}
+                    onPress={() => setCollapsed((value) => !value)}
+                  >
+                    {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+                  </Button>
+                  <Tooltip.Content placement="right">{collapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}</Tooltip.Content>
                 </Tooltip>
               </div>
             </div>
           </aside>
 
           <div className="flex min-w-0 flex-1 flex-col lg:min-h-0">
-            <header className="sticky top-0 z-10 shrink-0 border-b bg-card/95 backdrop-blur">
+            <header className="sticky top-0 z-10 shrink-0 border-b border-separator bg-surface/95 backdrop-blur-sm">
               <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
-                <Sheet>
-                  <SheetTrigger asChild>
-                    <Button type="button" size="icon" variant="ghost" className="lg:hidden" aria-label={t.nav.openNav}>
-                      <Menu />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent>
-                    <SheetHeader>
-                      <SheetTitle className="flex items-center gap-2">
-                        <HardDrive className="text-primary" /> {t.nav.appName}
-                      </SheetTitle>
-                    </SheetHeader>
-                    <div className="mt-8 flex h-[calc(100vh-8rem)] flex-col">
-                      <Navigation items={navigation} active={active} onSelect={onSelect} mobile />
-                      <div className="mt-auto space-y-1 pt-4">
-                        <SheetClose asChild>
-                          <Button type="button" variant="ghost" className="w-full justify-start text-muted-foreground" onClick={toggleTheme}>
-                            {resolvedTheme === "dark" ? <Sun /> : <Moon />}
-                            {resolvedTheme === "dark" ? t.nav.lightMode : t.nav.darkMode}
-                          </Button>
-                        </SheetClose>
-                        <SheetClose asChild>
-                          <Button type="button" variant="ghost" className="w-full justify-start text-muted-foreground" onClick={() => setColorDialogOpen(true)}>
-                            <Palette /> {t.nav.colorTheme}
-                          </Button>
-                        </SheetClose>
-                        <SheetClose asChild>
-                          <Button type="button" variant="ghost" className="w-full justify-start text-muted-foreground" onClick={() => setLocaleDialogOpen(true)}>
-                            <Globe /> {t.nav.language}
-                          </Button>
-                        </SheetClose>
-                        <SheetClose asChild>
-                          <Button type="button" variant="ghost" className="w-full justify-start text-muted-foreground" onClick={logout}>
-                            <LogOut /> {t.nav.logout}
-                          </Button>
-                        </SheetClose>
-                      </div>
-                    </div>
-                  </SheetContent>
-                </Sheet>
+                <Button isIconOnly variant="ghost" className="lg:hidden" aria-label={t.nav.openNav} onPress={() => setMobileNavOpen(true)}>
+                  <Menu />
+                </Button>
 
                 <div className="flex min-w-0 items-center gap-2 font-semibold lg:hidden">
-                  <HardDrive className="size-6 shrink-0 text-primary" aria-hidden="true" />
+                  <HardDrive className="size-6 shrink-0 text-accent" aria-hidden="true" />
                   <span className="hidden sm:inline">{t.nav.appName}</span>
                 </div>
 
                 <div className="ml-auto flex min-w-0 items-center">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label={t.nav.accountMenu(email)}
-                        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
-                      >
-                        {initial}
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel className="max-w-56 truncate" title={email}>{email}</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={onOpenSecurity}>
-                        <ShieldCheck /> {t.nav.security}
-                      </DropdownMenuItem>
-                      {settingsItem ? (
-                        <DropdownMenuItem onClick={() => onSelect(settingsItem.id)}>
-                          <Settings /> {t.nav.settings}
-                        </DropdownMenuItem>
-                      ) : null}
-                      <DropdownMenuItem onClick={logout}>
-                        <LogOut /> {t.nav.logout}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <Dropdown>
+                    <Dropdown.Trigger
+                      aria-label={t.nav.accountMenu(email)}
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground transition-opacity hover:opacity-90"
+                    >
+                      {initial}
+                    </Dropdown.Trigger>
+                    <Dropdown.Popover placement="bottom end" className="min-w-56">
+                      <Dropdown.Menu aria-label={t.nav.accountMenu(email)}>
+                        <Dropdown.Section>
+                          <Header className="max-w-56 truncate" title={email}>{email}</Header>
+                          <Dropdown.Item id="security" textValue={t.nav.security} onAction={onOpenSecurity}>
+                            <ShieldCheck className="size-4 shrink-0" />
+                            <Label>{t.nav.security}</Label>
+                          </Dropdown.Item>
+                          {settingsItem ? (
+                            <Dropdown.Item id="settings" textValue={t.nav.settings} onAction={() => onSelect(settingsItem.id)}>
+                              <Settings className="size-4 shrink-0" />
+                              <Label>{t.nav.settings}</Label>
+                            </Dropdown.Item>
+                          ) : null}
+                        </Dropdown.Section>
+                        <Separator />
+                        <Dropdown.Item id="logout" textValue={t.nav.logout} onAction={logout}>
+                          <LogOut className="size-4 shrink-0" />
+                          <Label>{t.nav.logout}</Label>
+                        </Dropdown.Item>
+                      </Dropdown.Menu>
+                    </Dropdown.Popover>
+                  </Dropdown>
                 </div>
               </div>
             </header>
@@ -294,7 +255,7 @@ export function AppShell<T extends string>({
             <main className="flex-1 p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto lg:p-8">
               <div className="mx-auto w-full max-w-7xl space-y-6">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">{t.nav.controlPlane}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">{t.nav.controlPlane}</p>
                   <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
                 </div>
                 {children}
@@ -303,8 +264,38 @@ export function AppShell<T extends string>({
           </div>
         </div>
       </div>
+      <Drawer.Backdrop isOpen={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <Drawer.Content placement="left" className="w-80 max-w-[85vw]">
+          <Drawer.Dialog>
+            <Drawer.CloseTrigger aria-label={t.common.close} />
+            <Drawer.Header>
+              <Drawer.Heading className="flex items-center gap-2">
+                <HardDrive className="size-5 text-accent" aria-hidden="true" /> {t.nav.appName}
+              </Drawer.Heading>
+            </Drawer.Header>
+            <Drawer.Body className="flex flex-col">
+              <Navigation items={navigation} active={active} onSelect={(id) => { setMobileNavOpen(false); onSelect(id); }} />
+              <div className="mt-auto space-y-1 pt-4">
+                <Button variant="ghost" fullWidth className="justify-start text-muted" onPress={fromDrawer(toggleTheme)}>
+                  {resolvedTheme === "dark" ? <Sun /> : <Moon />}
+                  {resolvedTheme === "dark" ? t.nav.lightMode : t.nav.darkMode}
+                </Button>
+                <Button variant="ghost" fullWidth className="justify-start text-muted" onPress={fromDrawer(() => setColorDialogOpen(true))}>
+                  <Palette /> {t.nav.colorTheme}
+                </Button>
+                <Button variant="ghost" fullWidth className="justify-start text-muted" onPress={fromDrawer(() => setLocaleDialogOpen(true))}>
+                  <Globe /> {t.nav.language}
+                </Button>
+                <Button variant="ghost" fullWidth className="justify-start text-muted" onPress={fromDrawer(logout)}>
+                  <LogOut /> {t.nav.logout}
+                </Button>
+              </div>
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
       <ThemeColorDialog open={colorDialogOpen} onOpenChange={setColorDialogOpen} />
       <LocaleDialog open={localeDialogOpen} onOpenChange={setLocaleDialogOpen} />
-    </TooltipProvider>
+    </>
   );
 }

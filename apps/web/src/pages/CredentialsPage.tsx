@@ -1,22 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Download, KeyRound, Plus, RefreshCw, ShieldOff, Trash2, TriangleAlert } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHeader } from "@/components/ui/table";
+import { Download, KeyRound, Plus, RefreshCw, ShieldOff, Trash2 } from "lucide-react";
+import { Alert, AlertDialog, Button, Chip, Input, Label, Modal, Table, TextField, Tooltip } from "@heroui/react";
 import { CopyableCode } from "@/components/copyable-code";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
@@ -130,38 +114,139 @@ export function CredentialsPage() {
   return (
     <div className="space-y-6">
       {error ? <ErrorAlert message={error} /> : null}
-      <div className="flex justify-end"><Button onClick={() => setShowCreate(true)}><Plus /> {t.credentials.createButton}</Button></div>
+      <div className="flex justify-end"><Button onPress={() => setShowCreate(true)}><Plus /> {t.credentials.createButton}</Button></div>
 
       {creds.length === 0 ? <EmptyState icon={KeyRound} title={t.credentials.emptyTitle} description={t.credentials.emptyDescription} /> : (
-        <Table><TableHeader><TableRow><TableHead>{t.credentials.tableLabel}</TableHead><TableHead>{t.credentials.tableAccessKeyId}</TableHead><TableHead>{t.credentials.tableStatus}</TableHead><TableHead>{t.credentials.tableLastUsed}</TableHead><TableHead className="text-right">{t.credentials.tableAction}</TableHead></TableRow></TableHeader><TableBody>{creds.map((credential) => (
-          <TableRow key={credential.id}>
-            <TableRowHeader>{credential.label}</TableRowHeader>
-            <TableCell className="font-mono text-xs">{credential.access_key_id}</TableCell>
-            <TableCell><Badge variant={credential.status === "active" ? "success" : "secondary"}>{credential.status === "active" ? t.credentials.statusActive : t.credentials.statusRevoked}</Badge></TableCell>
-            <TableCell>{credential.last_used_at ? new Date(credential.last_used_at).toLocaleString() : "-"}</TableCell>
-            <TableCell><div className="flex justify-end gap-1">{credential.status === "active" ? <>
-              <Button size="icon" variant="ghost" aria-label={t.credentials.rotateLabel(credential.label)} title={t.credentials.rotateTitle} disabled={acting} onClick={() => setPending({ kind: "rotate", credential })}><RefreshCw /></Button>
-              <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.credentials.revokeLabel(credential.label)} title={t.credentials.revokeTitle} disabled={acting} onClick={() => setPending({ kind: "revoke", credential })}><ShieldOff /></Button>
-            </> : <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" aria-label={t.credentials.deleteLabel(credential.label)} title={t.credentials.deletePermanentTitle} disabled={acting} onClick={() => setPending({ kind: "delete", credential })}><Trash2 /></Button>}</div></TableCell>
-          </TableRow>
-        ))}</TableBody></Table>
+        <Table>
+          <Table.ScrollContainer>
+            <Table.Content aria-label={t.nav.credentials}>
+              <Table.Header>
+                <Table.Column isRowHeader>{t.credentials.tableLabel}</Table.Column>
+                <Table.Column>{t.credentials.tableAccessKeyId}</Table.Column>
+                <Table.Column>{t.credentials.tableStatus}</Table.Column>
+                <Table.Column>{t.credentials.tableLastUsed}</Table.Column>
+                <Table.Column className="text-end">{t.credentials.tableAction}</Table.Column>
+              </Table.Header>
+              <Table.Body>
+                {creds.map((credential) => (
+                  <Table.Row key={credential.id} id={credential.id}>
+                    <Table.Cell className="font-medium">{credential.label}</Table.Cell>
+                    <Table.Cell className="font-mono text-xs">{credential.access_key_id}</Table.Cell>
+                    <Table.Cell>
+                      <Chip size="sm" color={credential.status === "active" ? "success" : "default"} variant={credential.status === "active" ? "soft" : "secondary"}>
+                        {credential.status === "active" ? t.credentials.statusActive : t.credentials.statusRevoked}
+                      </Chip>
+                    </Table.Cell>
+                    <Table.Cell>{credential.last_used_at ? new Date(credential.last_used_at).toLocaleString() : "-"}</Table.Cell>
+                    <Table.Cell>
+                      <div className="flex justify-end gap-1">
+                        {credential.status === "active" ? (
+                          <>
+                            <Tooltip delay={300}>
+                              <Button isIconOnly size="sm" variant="ghost" aria-label={t.credentials.rotateLabel(credential.label)} isDisabled={acting} onPress={() => setPending({ kind: "rotate", credential })}><RefreshCw /></Button>
+                              <Tooltip.Content>{t.credentials.rotateTitle}</Tooltip.Content>
+                            </Tooltip>
+                            <Tooltip delay={300}>
+                              <Button isIconOnly size="sm" variant="ghost" className="text-danger" aria-label={t.credentials.revokeLabel(credential.label)} isDisabled={acting} onPress={() => setPending({ kind: "revoke", credential })}><ShieldOff /></Button>
+                              <Tooltip.Content>{t.credentials.revokeTitle}</Tooltip.Content>
+                            </Tooltip>
+                          </>
+                        ) : (
+                          <Tooltip delay={300}>
+                            <Button isIconOnly size="sm" variant="ghost" className="text-danger" aria-label={t.credentials.deleteLabel(credential.label)} isDisabled={acting} onPress={() => setPending({ kind: "delete", credential })}><Trash2 /></Button>
+                            <Tooltip.Content>{t.credentials.deletePermanentTitle}</Tooltip.Content>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+        </Table>
       )}
 
-      <Dialog open={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); } }}>
-        <DialogContent><form onSubmit={(event) => void doCreate(event)} className="flex min-h-0 flex-1 flex-col gap-5"><DialogHeader><DialogTitle>{t.credentials.createDialogTitle}</DialogTitle><DialogDescription>{t.credentials.createDialogDescription}</DialogDescription></DialogHeader>{formError ? <ErrorAlert message={formError} /> : null}<div className="space-y-2"><Label htmlFor="credential-label">{t.credentials.labelField}</Label><Input id="credential-label" maxLength={100} value={label} onChange={(event) => setLabel(event.target.value)} autoFocus aria-invalid={Boolean(formError)} /></div><DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>{t.common.cancel}</Button><Button type="submit" disabled={!label.trim() || creating}>{creating ? t.credentials.creating : t.credentials.create}</Button></DialogFooter></form></DialogContent>
-      </Dialog>
+      <Modal.Backdrop isOpen={showCreate} onOpenChange={(open) => { if (!creating) { setShowCreate(open); setFormError(null); } }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog>
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <form onSubmit={(event) => void doCreate(event)} className="flex min-h-0 flex-1 flex-col">
+              <Modal.Header>
+                <Modal.Heading>{t.credentials.createDialogTitle}</Modal.Heading>
+                <p className="text-sm text-muted">{t.credentials.createDialogDescription}</p>
+              </Modal.Header>
+              <Modal.Body className="space-y-4">
+                {formError ? <ErrorAlert message={formError} /> : null}
+                <TextField fullWidth isInvalid={Boolean(formError)} value={label} onChange={setLabel}>
+                  <Label>{t.credentials.labelField}</Label>
+                  <Input maxLength={100} autoFocus />
+                </TextField>
+              </Modal.Body>
+              <Modal.Footer>
+                <Button slot="close" variant="tertiary" isDisabled={creating}>{t.common.cancel}</Button>
+                <Button type="submit" isDisabled={!label.trim() || creating}>{creating ? t.credentials.creating : t.credentials.create}</Button>
+              </Modal.Footer>
+            </form>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
-      <AlertDialog open={Boolean(pending)} onOpenChange={(open) => { if (!open && !acting) setPending(null); }}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{pending?.kind === "rotate" ? t.credentials.rotateConfirmTitle : pending?.kind === "revoke" ? t.credentials.revokeConfirmTitle : t.credentials.deleteConfirmTitle}</AlertDialogTitle><AlertDialogDescription>{pending?.kind === "rotate" ? t.credentials.rotateConfirmDescription : pending?.kind === "revoke" ? t.credentials.revokeConfirmDescription : t.credentials.deleteConfirmDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={acting}>{t.common.cancel}</AlertDialogCancel><AlertDialogAction className={pending?.kind === "rotate" ? "" : "bg-destructive text-destructive-foreground hover:bg-destructive/90"} disabled={acting} onClick={(event) => { event.preventDefault(); void confirmAction(); }}>{acting ? t.credentials.processing : pending?.kind === "rotate" ? t.credentials.rotate : pending?.kind === "revoke" ? t.credentials.revoke : t.credentials.deletePermanent}</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog.Backdrop isOpen={Boolean(pending)} onOpenChange={(open) => { if (!open && !acting) setPending(null); }}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status={pending?.kind === "rotate" ? "warning" : "danger"} />
+              <AlertDialog.Heading>{pending?.kind === "rotate" ? t.credentials.rotateConfirmTitle : pending?.kind === "revoke" ? t.credentials.revokeConfirmTitle : t.credentials.deleteConfirmTitle}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{pending?.kind === "rotate" ? t.credentials.rotateConfirmDescription : pending?.kind === "revoke" ? t.credentials.revokeConfirmDescription : t.credentials.deleteConfirmDescription}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={acting}>{t.common.cancel}</Button>
+              <Button variant={pending?.kind === "rotate" ? "primary" : "danger"} isDisabled={acting} onPress={() => void confirmAction()}>
+                {acting ? t.credentials.processing : pending?.kind === "rotate" ? t.credentials.rotate : pending?.kind === "revoke" ? t.credentials.revoke : t.credentials.deletePermanent}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
 
-      <Dialog open={Boolean(created)} onOpenChange={(open) => { if (!open) setCreated(null); }}>
-        <DialogContent className="min-w-0 max-w-2xl">
-          <DialogHeader><DialogTitle>{secretTitle ?? t.credentials.createdTitle}</DialogTitle><DialogDescription>{t.credentials.saveDialogDescription}</DialogDescription></DialogHeader>
-          <DialogBody>{created ? <div className="min-w-0 space-y-5"><Alert variant="warning"><TriangleAlert /><AlertTitle>{t.credentials.saveSecretNowTitle}</AlertTitle><AlertDescription>{t.credentials.saveSecretNowDescription}</AlertDescription></Alert><div className="grid gap-3 text-sm sm:grid-cols-2"><div><p className="text-muted-foreground">{t.credentials.s3Endpoint}</p><p className="break-all font-mono text-xs">{created.s3Endpoint}</p></div><div><p className="text-muted-foreground">{t.credentials.region}</p><p className="font-mono text-xs">{created.s3Region}</p></div></div><div className="space-y-2"><Label>{t.credentials.accessKeyId}</Label><CopyableCode value={created.accessKeyId} label={t.credentials.accessKeyId} /></div><div className="space-y-2"><Label>{t.credentials.secretAccessKey}</Label><CopyableCode value={created.secretAccessKey} label={t.credentials.secretAccessKey} /></div><div className="space-y-2"><Label>{t.credentials.cliExampleLabel}</Label><CopyableCode value={credentialSetupExample(created, { accessKeyId: created.accessKeyId, secretAccessKey: created.secretAccessKey })} label={t.credentials.cliExampleCopyLabel} /></div></div> : null}</DialogBody>
-          <DialogFooter><Button variant="outline" onClick={downloadCredential}><Download /> {t.credentials.downloadAsFile}</Button><Button onClick={() => setCreated(null)}>{t.credentials.done}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal.Backdrop isOpen={Boolean(created)} onOpenChange={(open) => { if (!open) setCreated(null); }}>
+        <Modal.Container size="lg">
+          <Modal.Dialog className="max-w-2xl">
+            <Modal.CloseTrigger aria-label={t.common.close} />
+            <Modal.Header>
+              <Modal.Heading>{secretTitle ?? t.credentials.createdTitle}</Modal.Heading>
+              <p className="text-sm text-muted">{t.credentials.saveDialogDescription}</p>
+            </Modal.Header>
+            <Modal.Body>
+              {created ? (
+                <div className="min-w-0 space-y-5 text-foreground">
+                  <Alert status="warning">
+                    <Alert.Indicator />
+                    <Alert.Content>
+                      <Alert.Title>{t.credentials.saveSecretNowTitle}</Alert.Title>
+                      <Alert.Description>{t.credentials.saveSecretNowDescription}</Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                  <div className="grid gap-3 text-sm sm:grid-cols-2">
+                    <div><p className="text-muted">{t.credentials.s3Endpoint}</p><p className="break-all font-mono text-xs">{created.s3Endpoint}</p></div>
+                    <div><p className="text-muted">{t.credentials.region}</p><p className="font-mono text-xs">{created.s3Region}</p></div>
+                  </div>
+                  <div className="space-y-2"><Label>{t.credentials.accessKeyId}</Label><CopyableCode value={created.accessKeyId} label={t.credentials.accessKeyId} /></div>
+                  <div className="space-y-2"><Label>{t.credentials.secretAccessKey}</Label><CopyableCode value={created.secretAccessKey} label={t.credentials.secretAccessKey} /></div>
+                  <div className="space-y-2"><Label>{t.credentials.cliExampleLabel}</Label><CopyableCode value={credentialSetupExample(created, { accessKeyId: created.accessKeyId, secretAccessKey: created.secretAccessKey })} label={t.credentials.cliExampleCopyLabel} /></div>
+                </div>
+              ) : null}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="outline" onPress={downloadCredential}><Download /> {t.credentials.downloadAsFile}</Button>
+              <Button onPress={() => setCreated(null)}>{t.credentials.done}</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }
