@@ -5,7 +5,7 @@
 
 import type { AccessibleBucketRow } from "../db/repositories/buckets.ts";
 import type { BackupAccountRow } from "../db/repositories/backup-accounts.ts";
-import type { BackupTransferRow } from "../db/repositories/backup-transfers.ts";
+import type { BackupTransferRow, BackupTransferTrigger } from "../db/repositories/backup-transfers.ts";
 import type { ObjectRow } from "../db/repositories/objects.ts";
 import type { DriveOperationTarget } from "../drive/storage.ts";
 import { createBackupSink } from "../backup/destinations.ts";
@@ -23,6 +23,8 @@ export class BackupTransferService {
     userId: string;
     bucketId: string;
     backupAccountId: string;
+    triggeredBy?: BackupTransferTrigger;
+    scheduleId?: string | null;
   }): Promise<BackupTransferRow> {
     let bucket: AccessibleBucketRow | null;
     try {
@@ -42,6 +44,8 @@ export class BackupTransferService {
       userId: input.userId,
       bucketId: input.bucketId,
       backupAccountId: input.backupAccountId,
+      triggeredBy: input.triggeredBy,
+      scheduleId: input.scheduleId,
     });
   }
 
@@ -68,7 +72,12 @@ export class BackupTransferService {
         bucket.id,
         account.id,
         this.ctx.config.driveImportBatchSize,
+        transfer.id,
       );
+      if (batch.length === 0) {
+        this.ctx.repos.backupTransfers.completeIdle(transfer.id);
+        return;
+      }
       const sourceTarget = this.ctx.bucketAccess.operationTarget(bucket);
       for (const object of batch) {
         signal?.throwIfAborted();

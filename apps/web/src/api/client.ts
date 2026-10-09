@@ -794,6 +794,9 @@ export interface BackupTransfer {
   lastError: string | null;
   createdAt: string;
   completedAt: string | null;
+  triggeredBy: "manual" | "schedule";
+  /** The schedule that queued it, or whose "run now" did. */
+  scheduleId: string | null;
 }
 
 export const listBackupAccounts = async () =>
@@ -913,6 +916,7 @@ export interface BackupHistoryFilters {
   accountId?: string;
   bucketId?: string;
   status?: BackupTransferStatus;
+  trigger?: BackupTransfer["triggeredBy"];
   before?: string | null;
   limit?: number;
 }
@@ -922,6 +926,7 @@ function historyQuery(filters: BackupHistoryFilters): string {
   if (filters.accountId) params.set("accountId", filters.accountId);
   if (filters.bucketId) params.set("bucketId", filters.bucketId);
   if (filters.status) params.set("status", filters.status);
+  if (filters.trigger) params.set("trigger", filters.trigger);
   if (filters.before) params.set("before", filters.before);
   if (filters.limit) params.set("limit", String(filters.limit));
   const query = params.toString();
@@ -952,6 +957,130 @@ export const listBackupRunObjects = async (
     await fetch(`/api/backups/${encodeURIComponent(transferId)}/objects${query ? `?${query}` : ""}`),
   );
 };
+
+// Scheduled backups (/api/backup-schedules): one per (bucket, destination)
+// pair, each queueing ordinary runs when it falls due.
+
+export type BackupScheduleFrequency = "interval" | "daily" | "weekly";
+
+export type BackupScheduleOutcome =
+  | "queued"
+  | "skipped_unchanged"
+  | "skipped_active"
+  | "skipped_destination"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "paused"
+  | "error";
+
+export interface BackupScheduleTiming {
+  frequency: BackupScheduleFrequency;
+  intervalMinutes: number | null;
+  /** "HH:MM" on the schedule's own wall clock. */
+  timeOfDay: string | null;
+  /** ISO weekdays: 1 = Monday ... 7 = Sunday. */
+  daysOfWeek: number[] | null;
+  timezone: string;
+}
+
+export interface BackupSchedule extends BackupScheduleTiming {
+  id: string;
+  bucketId: string;
+  bucketName: string;
+  backupAccountId: string;
+  accountLabel: string;
+  accountKind: BackupDestinationKind;
+  enabled: boolean;
+  skipIfUnchanged: boolean;
+  nextRunAt: string | null;
+  lastCheckedAt: string | null;
+  lastOutcome: BackupScheduleOutcome | null;
+  lastTransferId: string | null;
+  lastTransferStatus: BackupTransferStatus | null;
+  consecutiveFailures: number;
+  /** Set when the scheduler switched the schedule off by itself. */
+  pausedReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BackupScheduleOptions {
+  enabled: boolean;
+  minIntervalMinutes: number;
+}
+
+export const listBackupSchedules = async (bucketId?: string) =>
+  unwrap<BackupSchedule[]>(
+    await fetch(`/api/backup-schedules${bucketId ? `?bucketId=${encodeURIComponent(bucketId)}` : ""}`),
+  );
+
+export const getBackupScheduleOptions = async () =>
+  unwrap<BackupScheduleOptions>(await fetch("/api/backup-schedules/options"));
+
+export const createBackupSchedule = async (
+  input: BackupScheduleTiming & {
+    bucketId: string;
+    backupAccountId: string;
+    skipIfUnchanged: boolean;
+    enabled?: boolean;
+  },
+) => unwrap<BackupSchedule>(await fetch("/api/backup-schedules", mutate("POST", input)));
+
+export const updateBackupSchedule = async (
+  id: string,
+  input: Partial<BackupScheduleTiming> & { skipIfUnchanged?: boolean; enabled?: boolean },
+) =>
+  unwrap<BackupSchedule>(
+    await fetch(`/api/backup-schedules/${encodeURIComponent(id)}`, mutate("PATCH", input)),
+  );
+
+export const deleteBackupSchedule = async (id: string) =>
+  unwrap(await fetch(`/api/backup-schedules/${encodeURIComponent(id)}`, mutate("DELETE")));
+
+export const runBackupScheduleNow = async (id: string) =>
+  unwrap<{ transferId: string; schedule: BackupSchedule }>(
+    await fetch(`/api/backup-schedules/${encodeURIComponent(id)}/run`, mutate("POST")),
+  );
+
+// Scheduled snapshots of the gateway's own database (admin only), sent to one
+// of the admin's backup destinations.
+
+export interface DbSnapshotStatus extends BackupScheduleTiming {
+  enabled: boolean;
+  backupAccountId: string | null;
+  destination: { id: string; label: string; kind: BackupDestinationKind; status: BackupAccount["status"] } | null;
+  retainCount: number;
+  nextRunAt: string | null;
+  lastStartedAt: string | null;
+  lastFinishedAt: string | null;
+  lastStatus: "running" | "completed" | "failed" | null;
+  lastError: string | null;
+  /** Whether BACKUP_PASSPHRASE is set, so archives can restore without the master key. */
+  passphraseConfigured: boolean;
+  schedulerEnabled: boolean;
+  minIntervalMinutes: number;
+  snapshots: Array<{
+    id: string;
+    archiveName: string;
+    archiveRef: string;
+    destinationLabel: string;
+    bytes: number;
+    migrationVersion: number;
+    keyRecovery: "passphrase" | "none";
+    createdAt: string;
+  }>;
+}
+
+export const getDbSnapshotStatus = async () =>
+  unwrap<DbSnapshotStatus>(await fetch("/api/settings/db-snapshot"));
+
+export const saveDbSnapshotSettings = async (
+  input: Partial<BackupScheduleTiming> & { enabled?: boolean; backupAccountId?: string | null; retainCount?: number },
+) => unwrap<DbSnapshotStatus>(await fetch("/api/settings/db-snapshot", mutate("PUT", input)));
+
+export const runDbSnapshotNow = async () =>
+  unwrap<DbSnapshotStatus>(await fetch("/api/settings/db-snapshot/run", mutate("POST")));
 
 // Login-time 2FA verification (/auth/mfa/*, deliberately outside /api/* —
 // see server routes/mfa-auth.ts). getMfaLoginStatus also refreshes the

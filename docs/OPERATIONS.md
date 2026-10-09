@@ -268,3 +268,81 @@ the key from the destination's Edit dialog) and run the backup again; a run that
 reaches the destination clears the error. An object the destination cannot
 hold — a key with `.` or `..` segments, or one over S3's 1024-byte limit --
 fails on its own and the run carries on.
+
+## 10. Scheduled backups
+
+A schedule belongs to one bucket and one destination, and is managed from the
+Backup page (or Objects > Backup for one bucket). When it falls due it queues
+an ordinary run — the same worker, ledger and history as a manual run — so only
+new or changed objects are copied.
+
+- **Timing.** Every N minutes or hours (at least
+  `BACKUP_SCHEDULE_MIN_INTERVAL_MINUTES`, default 15), daily at HH:MM, or
+  weekly on chosen days at HH:MM. Clock times are read in the schedule's IANA
+  time zone (`Asia/Jakarta`, …); a time a DST change skips runs just after the
+  jump, and one it repeats runs once.
+- **Nothing changed.** By default a slot with nothing to copy is skipped
+  without creating a run, so an "every 15 minutes" schedule is close to
+  continuous backup without flooding the history.
+- **Downtime.** Slots missed while the gateway was down fire once when it is
+  back, and the next slot is counted from then — never a burst of catch-up
+  runs.
+- **Overlap.** A slot that finds the previous run still going is skipped; a
+  slot can never queue two runs, even with two processes on one database.
+- **Priority.** Runs started by hand are worked on before scheduled ones.
+- **Failures.** A run that fails, or a slot whose Drive destination needs
+  reconnecting, counts against the schedule. After
+  `BACKUP_SCHEDULE_MAX_FAILURES` (default 5) in a row it switches itself off and
+  shows why on the Backup page; switching it back on clears the count. A
+  schedule whose bucket is gone or no longer its owner's pauses straight away.
+- **History.** Finished runs older than `BACKUP_HISTORY_RETENTION_DAYS`
+  (default 90; `0` keeps everything) are pruned hourly. The latest run of every
+  bucket and destination stays regardless, and the per-object ledger is never
+  pruned.
+
+The scheduler checks for due schedules every `BACKUP_SCHEDULER_TICK_SECONDS`
+(default 60). `BACKUP_SCHEDULER_ENABLED=false` stops schedules firing without
+touching them — useful while restoring or migrating. Everything it needs is in
+SQLite; it needs no Redis or host cron. Scheduled runs pause and resume with
+the gateway like any other run.
+
+## 11. Scheduled database snapshots
+
+Bucket backups copy objects; they do not copy the database that maps bucket
+keys to Drive files, or the S3 credentials and KMS keys. **Settings → Scheduled
+database snapshots** (admins only) ships that too: on a schedule — hourly at
+most, daily by default — the gateway takes the same encrypted archive
+`db:backup` writes and uploads it, with its `.manifest.json`, to one of the
+admin's own backup destinations, under `<prefix>/_gateway-database/`.
+
+- **How.** The archive is made by running the bundled `db:backup` tool
+  (`dist/scripts/backup-sqlite.js` in the image) as a child process, so the
+  heavy work — VACUUM INTO, gzip, scrypt — never stalls S3 requests. It is
+  written next to the database first (`data/.db-snapshot-*`, removed after),
+  so the data volume needs room for one archive. `BACKUP_SQLITE_SCRIPT`
+  overrides where the tool is found, for custom packaging.
+- **Key recovery.** With `BACKUP_PASSPHRASE` set, every snapshot carries the
+  master key wrapped under it and can be restored with the passphrase alone;
+  without it, only with `MASTER_ENCRYPTION_KEY`, and the Settings card says so.
+  Keep the passphrase off the server as well.
+- **Retention.** The newest N snapshots (default 14) are kept at the
+  destination. Older ones are deleted — only files the gateway recorded
+  writing, never anything else there.
+- **Failures.** A failed snapshot shows its reason on the card; one cut off by
+  a restart is marked interrupted at the next start. `BACKUP_SCHEDULER_ENABLED`
+  switches snapshots off along with bucket schedules.
+
+To rebuild from a snapshot, fetch an archive and its manifest from the
+destination, then restore as in section 3 (section 3.1 if the new host lacks
+the old key):
+
+```bash
+aws s3 cp s3://<bucket>/<prefix>/_gateway-database/drives3-<timestamp>.sqlite.gz.enc .
+aws s3 cp s3://<bucket>/<prefix>/_gateway-database/drives3-<timestamp>.sqlite.gz.enc.manifest.json .
+bun run db:restore -- --input drives3-<timestamp>.sqlite.gz.enc --passphrase
+```
+
+(`rclone copy <remote>:<path>/_gateway-database/ .` does the same for an rclone
+destination; on Drive the folder is `_gateway-database` inside the backup
+root.)
+

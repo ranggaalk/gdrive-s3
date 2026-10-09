@@ -20,6 +20,7 @@ import {
 import { Alert, AlertDialog, Button, Card, Chip, Description, Dropdown, Label, Tooltip } from "@heroui/react";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { BackupHistory, useBackupStatusLabels } from "@/components/backup-history";
+import { BackupSchedulesSection } from "@/components/backup-schedules";
 import {
   DESTINATION_ICON,
   destinationLocation,
@@ -33,6 +34,7 @@ import { cn } from "@/lib/utils";
 import {
   deleteBackupAccount,
   getBackupDestinationOptions,
+  getBackupScheduleOptions,
   getBackupSummary,
   listBackupAccounts,
   listBuckets,
@@ -41,6 +43,7 @@ import {
   type BackupAccount,
   type BackupDestinationKind,
   type BackupDestinationOptions,
+  type BackupScheduleOptions,
   type BackupSummary,
   type Bucket,
 } from "../api/client.ts";
@@ -83,6 +86,7 @@ export function BackupAccountsPage() {
   const [deleting, setDeleting] = useState(false);
   const [accountFilter, setAccountFilter] = useState<string>(ALL_ACCOUNTS);
   const [options, setOptions] = useState<BackupDestinationOptions | null>(null);
+  const [scheduleOptions, setScheduleOptions] = useState<BackupScheduleOptions | null>(null);
   const [adding, setAdding] = useState<"s3" | "rclone" | null>(null);
   const [editTarget, setEditTarget] = useState<BackupAccount | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -100,16 +104,18 @@ export function BackupAccountsPage() {
       // bucket can never appear in it, so a failure there must not take the
       // whole page down with it. The same goes for the destination options,
       // which only decide what the "Add destination" menu offers.
-      const [nextAccounts, nextSummary, nextBuckets, nextOptions] = await Promise.all([
+      const [nextAccounts, nextSummary, nextBuckets, nextOptions, nextScheduleOptions] = await Promise.all([
         listBackupAccounts(),
         getBackupSummary(),
         listBuckets().catch(() => [] as Bucket[]),
         getBackupDestinationOptions().catch(() => null),
+        getBackupScheduleOptions().catch(() => null),
       ]);
       setAccounts(nextAccounts);
       setSummary(nextSummary);
       setBuckets(nextBuckets.filter((bucket) => bucket.ownedByMe));
       setOptions(nextOptions);
+      setScheduleOptions(nextScheduleOptions);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -399,6 +405,13 @@ export function BackupAccountsPage() {
               );
             })}
           </div>
+
+          <BackupSchedulesSection
+            buckets={buckets}
+            destinations={accounts}
+            options={scheduleOptions}
+            reloadKey={accounts}
+          />
 
           {accountFilter !== ALL_ACCOUNTS ? (
             <Alert>

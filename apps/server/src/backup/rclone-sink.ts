@@ -13,7 +13,9 @@ import { MARKER_NAME } from "./s3-sink.ts";
 import {
   bucketKeyPrefix,
   DestinationUnavailableError,
+  GATEWAY_AREA,
   UnstorableObjectError,
+  type BackupFileInput,
   type BackupPutInput,
   type BackupSink,
   type DestinationProbe,
@@ -22,6 +24,8 @@ import {
 // rclone's "fatal" exit code: retrying will not help (account suspended,
 // remote misconfigured).
 const EXIT_FATAL = 7;
+// "Directory not found" and "file not found": for a delete, already done.
+const EXIT_NOT_FOUND = [3, 4];
 
 // The variables rclone may need. Everything else -- MASTER_ENCRYPTION_KEY,
 // the Google client secret -- stays out of the child's environment.
@@ -48,10 +52,29 @@ export class RcloneBackupSink implements BackupSink, DestinationProbe {
     this.assertRemoteAllowed();
     assertSafeKey(input.object.object_key);
     const target = `${this.options.config.remote}:${input.ref}${input.object.object_key}`;
-    // --size lets rclone upload in one go instead of spooling, and makes it
-    // check the byte count: a short or long stream fails instead of landing.
     await this.rcat(target, input.object.size_bytes, input.body, input.signal);
     return { destinationId: target };
+  }
+
+  async prepareGatewayArea(): Promise<string> {
+    this.assertRemoteAllowed();
+    return bucketKeyPrefix(this.options.config.path, GATEWAY_AREA);
+  }
+
+  async putFile(input: BackupFileInput): Promise<{ destinationId: string }> {
+    this.assertRemoteAllowed();
+    const target = `${this.options.config.remote}:${input.ref}${input.name}`;
+    await this.rcat(target, input.size, input.body, input.signal);
+    return { destinationId: target };
+  }
+
+  async deleteFile(target: string, signal?: AbortSignal): Promise<void> {
+    this.assertRemoteAllowed();
+    // Only ever a path this sink returned, under the remote it was given.
+    if (!target.startsWith(`${this.options.config.remote}:`)) {
+      throw new Error(`refusing to delete ${target}: it is not on remote "${this.options.config.remote}"`);
+    }
+    await this.rclone(["deletefile", target], null, signal, [0, ...EXIT_NOT_FOUND]);
   }
 
   async check(signal?: AbortSignal): Promise<void> {
@@ -89,28 +112,27 @@ export class RcloneBackupSink implements BackupSink, DestinationProbe {
     }
   }
 
-  private async rcat(
-    target: string,
-    size: number,
-    body: ReadableStream<Uint8Array>,
+  /** --size lets rclone upload in one go instead of spooling, and makes it
+   *  check the byte count: a short or long stream fails instead of landing. */
+  private rcat(target: string, size: number, body: ReadableStream<Uint8Array>, signal?: AbortSignal): Promise<void> {
+    return this.rclone(["rcat", "--size", String(size), target], body, signal);
+  }
+
+  private async rclone(
+    args: string[],
+    body: ReadableStream<Uint8Array> | null,
     signal?: AbortSignal,
+    okExitCodes: number[] = [0],
   ): Promise<void> {
     signal?.throwIfAborted();
     const { rcloneBinary, rcloneConfigPath } = this.options.settings;
-    const cmd = [
-      rcloneBinary,
-      ...(rcloneConfigPath ? ["--config", rcloneConfigPath] : []),
-      "rcat",
-      "--size",
-      String(size),
-      target,
-    ];
+    const cmd = [rcloneBinary, ...(rcloneConfigPath ? ["--config", rcloneConfigPath] : []), ...args];
 
     let proc: Bun.Subprocess<"pipe", "ignore", "pipe">;
     try {
       proc = Bun.spawn(cmd, { stdin: "pipe", stdout: "ignore", stderr: "pipe", env: childEnv() });
     } catch (error) {
-      await body.cancel().catch(() => {});
+      await body?.cancel().catch(() => {});
       const reason = error instanceof Error ? error.message : String(error);
       throw new DestinationUnavailableError(`could not start rclone (${rcloneBinary}): ${reason}`);
     }
@@ -120,7 +142,8 @@ export class RcloneBackupSink implements BackupSink, DestinationProbe {
     const stderr = new Response(proc.stderr).text();
     try {
       try {
-        await pump(body, proc.stdin);
+        if (body) await pump(body, proc.stdin);
+        else await proc.stdin.end();
       } catch (error) {
         if (error instanceof SourceReadError) {
           // The object could not be read; rclone is still waiting for the
@@ -134,7 +157,7 @@ export class RcloneBackupSink implements BackupSink, DestinationProbe {
       }
       const code = await proc.exited;
       signal?.throwIfAborted();
-      if (code === 0) return;
+      if (okExitCodes.includes(code)) return;
       const message = lastLine(await stderr);
       const summary = `rclone exited with code ${code}${message ? `: ${message}` : ""}`;
       if (code === EXIT_FATAL || /Failed to create file system|didn't find section in config/i.test(message)) {

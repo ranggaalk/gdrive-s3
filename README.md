@@ -110,9 +110,20 @@ Run a manual per-bucket backup to any of three kinds of destination:
   operator configures. Users never supply rclone config themselves.
 
 Source files are never modified, nothing is ever deleted from a destination,
-and a durable per-object ledger means repeat runs skip anything unchanged. The
-design is deliberately scheduler-ready. Setup and caveats are in the
+and a durable per-object ledger means repeat runs skip anything unchanged.
+Setup and caveats are in the
 [operations runbook](docs/OPERATIONS.md#9-backup-destinations-s3-and-rclone).
+
+Backups can also run on a **schedule** — every few hours, daily, or weekly at a
+set time in the schedule's own time zone. A slot that finds nothing changed is
+skipped without leaving an empty run behind, a schedule that keeps failing
+pauses itself and says why, and everything lives in SQLite: no Redis, no host
+cron, and a restart loses nothing. See
+[scheduled backups](docs/OPERATIONS.md#10-scheduled-backups).
+
+The gateway's own database can be shipped the same way: an admin schedules
+encrypted snapshots to one of their destinations, so a server lost along with
+its disk can be rebuilt from the destination alone.
 
 The Backup page reports on that ledger: totals across the gateway, a rollup per
 destination, and a filterable history of every run from every bucket.
@@ -498,6 +509,12 @@ Then schedule it, hourly for a busy gateway and at least daily otherwise. With
 Copy the archives off the host — another machine or object storage. A backup
 that lives only on the server it protects is lost with that server. Under
 Compose they land in `data/backups/`, owned by uid 1010.
+
+Or let the gateway do both for you: **Settings → Scheduled database snapshots**
+takes the same archive on a schedule and ships it to one of the admin's backup
+destinations (S3, rclone or Drive), keeping the newest N. No host cron, nothing
+to copy by hand; see
+[the runbook](docs/OPERATIONS.md#11-scheduled-database-snapshots).
 
 ### 8. Upgrade
 

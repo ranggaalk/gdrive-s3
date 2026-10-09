@@ -7,7 +7,7 @@
 // and what did one particular run actually do to each object.
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { CheckCircle2, FileWarning, History, RefreshCw } from "lucide-react";
+import { CalendarClock, CheckCircle2, FileWarning, History, RefreshCw } from "lucide-react";
 import { Alert, Button, Chip, Label, Modal, Table } from "@heroui/react";
 import { Select } from "@/components/ui/select";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
@@ -27,6 +27,7 @@ import {
 const ALL = "__all__";
 
 type StatusFilter = BackupTransferStatus | typeof ALL;
+type TriggerFilter = BackupHistoryItem["triggeredBy"] | typeof ALL;
 type ObjectFilter = "all" | "copied" | "failed";
 
 /** Whole seconds between two ISO timestamps, or null if the run never
@@ -81,12 +82,14 @@ export function BackupHistory({
   const [error, setError] = useState<string | null>(null);
   const [bucketFilter, setBucketFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(ALL);
+  const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>(ALL);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
 
   const filters = {
     accountId: accountFilter === ALL ? undefined : accountFilter,
     bucketId: bucketFilter === ALL ? undefined : bucketFilter,
     status: statusFilter === ALL ? undefined : statusFilter,
+    trigger: triggerFilter === ALL ? undefined : triggerFilter,
   };
 
   const load = useCallback(async () => {
@@ -103,7 +106,7 @@ export function BackupHistory({
     }
     // The filter values are the dependency; the object literal above is rebuilt
     // every render, so depend on the primitives instead.
-  }, [accountFilter, bucketFilter, statusFilter]);
+  }, [accountFilter, bucketFilter, statusFilter, triggerFilter]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -122,7 +125,7 @@ export function BackupHistory({
     }
   };
 
-  const filtered = accountFilter !== ALL || bucketFilter !== ALL || statusFilter !== ALL;
+  const filtered = accountFilter !== ALL || bucketFilter !== ALL || statusFilter !== ALL || triggerFilter !== ALL;
 
   return (
     <section className="space-y-4">
@@ -136,7 +139,7 @@ export function BackupHistory({
         </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Select
           label={t.backup.filterAccountLabel}
           value={accountFilter}
@@ -165,6 +168,16 @@ export function BackupHistory({
               value: key,
               label: status.label[key],
             })),
+          ]}
+        />
+        <Select
+          label={t.backupSchedule.triggerLabel}
+          value={triggerFilter}
+          onValueChange={(value) => setTriggerFilter(value as TriggerFilter)}
+          options={[
+            { value: ALL, label: t.backup.filterAll },
+            { value: "manual", label: t.backupSchedule.triggerManual },
+            { value: "schedule", label: t.backupSchedule.triggerSchedule },
           ]}
         />
       </div>
@@ -207,7 +220,15 @@ export function BackupHistory({
                       <Table.Cell className="max-w-40 truncate">{run.bucketName}</Table.Cell>
                       <Table.Cell className="max-w-56 truncate">{run.accountLabel}</Table.Cell>
                       <Table.Cell>
-                        <Chip color={status.color[run.status]} variant="soft" size="sm">{status.label[run.status]}</Chip>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Chip color={status.color[run.status]} variant="soft" size="sm">{status.label[run.status]}</Chip>
+                          {run.triggeredBy === "schedule" ? (
+                            <Chip variant="tertiary" size="sm" className="border">
+                              <CalendarClock className="size-3" aria-hidden="true" />
+                              <Chip.Label>{t.backupSchedule.triggerSchedule}</Chip.Label>
+                            </Chip>
+                          ) : null}
+                        </div>
                       </Table.Cell>
                       <Table.Cell className="text-sm text-muted">
                         {t.backup.progressSummary({

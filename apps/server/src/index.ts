@@ -17,6 +17,8 @@ import { CleanupWorker } from "./jobs/orphan-cleanup.ts";
 import { MultipartExpiryWorker } from "./jobs/multipart-expiry.ts";
 import { DriveImportWorker } from "./jobs/drive-import.ts";
 import { BackupTransferWorker } from "./jobs/backup-transfer.ts";
+import { BackupSchedulerWorker } from "./jobs/backup-scheduler.ts";
+import { DbSnapshotWorker } from "./jobs/db-snapshot.ts";
 import { recoverStaleStaging } from "./jobs/staging-recovery.ts";
 import { applySecurityHeaders, classifyResponseKind } from "./security/headers.ts";
 import { DashboardServer } from "./routes/dashboard.ts";
@@ -77,10 +79,14 @@ function main(): void {
   const multipartExpiryWorker = new MultipartExpiryWorker(ctx);
   const driveImportWorker = new DriveImportWorker(ctx);
   const backupTransferWorker = new BackupTransferWorker(ctx);
+  const backupSchedulerWorker = new BackupSchedulerWorker(ctx);
+  const dbSnapshotWorker = new DbSnapshotWorker(ctx);
   cleanupWorker.start();
   multipartExpiryWorker.start();
   driveImportWorker.start();
   backupTransferWorker.start();
+  backupSchedulerWorker.start();
+  dbSnapshotWorker.start();
   const dashboard = new DashboardServer(config);
 
   const server = Bun.serve({
@@ -158,6 +164,8 @@ function main(): void {
   const shutdown = async (signal: string) => {
     log.info("shutdown signal received", { signal });
     server.stop();
+    await backupSchedulerWorker.stop();
+    await dbSnapshotWorker.stop();
     await backupTransferWorker.stop();
     await driveImportWorker.stop();
     await multipartExpiryWorker.stop();
