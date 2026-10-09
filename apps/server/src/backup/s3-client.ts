@@ -169,6 +169,16 @@ export class S3Client {
     );
   }
 
+  /** S3 answers 204 whether or not the key existed. */
+  async deleteObject(key: string, signal?: AbortSignal): Promise<void> {
+    try {
+      await this.send({ method: "DELETE", key }, signal);
+    } catch (error) {
+      if (error instanceof S3RequestError && error.code === "NoSuchKey") return;
+      throw error;
+    }
+  }
+
   async abortMultipartUpload(key: string, uploadId: string, signal?: AbortSignal): Promise<void> {
     try {
       await this.send({ method: "DELETE", key, query: { uploadId } }, signal);

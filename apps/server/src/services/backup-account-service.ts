@@ -8,6 +8,7 @@ import { meteredFetch } from "../drive/metered-fetch.ts";
 import { exchangeCode, verifyLinkedAccountIdToken } from "../auth/google-oauth.ts";
 import { sealToString, aad } from "../security/encryption.ts";
 import { newBackupAccountId } from "../util/ids.ts";
+import { GATEWAY_AREA } from "../backup/sink.ts";
 import type { AppContext } from "../context.ts";
 
 const MARKER_KEY = "drives3Type";
@@ -19,6 +20,7 @@ const MARKER_KEY = "drives3Type";
 // folder alongside the last one.
 const ROOT_ID_KEY = "drives3BackupRootFor";
 const BUCKET_ID_KEY = "drives3BackupBucketFor";
+const AREA_KEY = "drives3BackupAreaFor";
 
 /** Distinguishes a backup folder from an ordinary gateway root, which may sit
  *  in the very same account. Deliberately not the configurable gateway root
@@ -146,6 +148,22 @@ export class BackupAccountService {
       signal,
     );
     this.ctx.repos.backupAccounts.setRootFolder(account.id, created.id);
+    return created.id;
+  }
+
+  /** Idempotently ensure the gateway's own folder (database snapshots) under
+   *  the destination's root, beside the bucket folders. */
+  async ensureGatewayFolder(account: BackupAccountRow, rootFolderId: string, signal?: AbortSignal): Promise<string> {
+    const client = await this.client(account, signal);
+    const marker = `${account.id}:${GATEWAY_AREA}`;
+    const existing = await client.findByAppProperty(AREA_KEY, marker, signal, undefined, rootFolderId);
+    if (existing) return existing.id;
+    const created = await client.createFolder(
+      GATEWAY_AREA,
+      { [MARKER_KEY]: "backup_gateway_area", [AREA_KEY]: marker },
+      rootFolderId,
+      signal,
+    );
     return created.id;
   }
 

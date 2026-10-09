@@ -2,7 +2,7 @@
 // in-memory SQLite + in-memory Drive, and gives helpers to seed a user + S3
 // credential and to send SigV4-signed requests directly to handleS3.
 
-import { openMemoryDatabase } from "../../apps/server/src/db/connection.ts";
+import { openDatabase, openMemoryDatabase } from "../../apps/server/src/db/connection.ts";
 import { runMigrations } from "../../apps/server/src/db/migrate.ts";
 import { createLogger } from "../../apps/server/src/observability/logger.ts";
 import { createContext, type AppContext } from "../../apps/server/src/context.ts";
@@ -40,6 +40,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     },
     driveQuota: { projectId: "", serviceAccount: null, cacheSeconds: 60 },
     masterEncryptionKey: Buffer.alloc(32, 5),
+    backupPassphrase: null,
     sessionSecret: Buffer.alloc(32, 6),
     sqlitePath: ":memory:",
     multipartTempDir: "/tmp/mp",
@@ -174,7 +175,9 @@ export function makeHarness(
   storageOverride?: DriveStorage,
 ): Harness {
   const config = testConfig(configOverrides);
-  const db = openMemoryDatabase();
+  // A file path gets a real file: the database snapshot tests need one that a
+  // child process can open.
+  const db = config.sqlitePath === ":memory:" ? openMemoryDatabase() : openDatabase(config.sqlitePath);
   runMigrations(db);
   const log = createLogger("error");
   const storage = (storageOverride as InMemoryDriveStorage | undefined) ?? new InMemoryDriveStorage();

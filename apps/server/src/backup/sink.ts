@@ -15,6 +15,23 @@ export interface BackupPutInput {
   signal?: AbortSignal;
 }
 
+/** A file that belongs to the gateway rather than to a bucket: a database
+ *  snapshot and its manifest. */
+export interface BackupFileInput {
+  /** What prepareGatewayArea() returned. */
+  ref: string;
+  /** A bare file name, no slashes. */
+  name: string;
+  body: ReadableStream<Uint8Array>;
+  size: number;
+  contentType: string;
+  signal?: AbortSignal;
+}
+
+/** The gateway's own corner of a destination, beside the bucket folders. A
+ *  bucket name cannot start with "_", so it never collides with one. */
+export const GATEWAY_AREA = "_gateway-database";
+
 export interface BackupSink {
   /**
    * Whether the copy should hold the object's readable bytes rather than what
@@ -27,6 +44,12 @@ export interface BackupSink {
   prepare(bucket: AccessibleBucketRow, signal?: AbortSignal): Promise<string>;
   /** Copy one object; destinationId is what the ledger records for it. */
   put(input: BackupPutInput): Promise<{ destinationId: string }>;
+  /** Resolve the gateway's own area (GATEWAY_AREA) at the destination. */
+  prepareGatewayArea(signal?: AbortSignal): Promise<string>;
+  putFile(input: BackupFileInput): Promise<{ destinationId: string }>;
+  /** Remove a file this gateway put there earlier. One already gone is not
+   *  an error: the point was for it not to be there. */
+  deleteFile(destinationId: string, signal?: AbortSignal): Promise<void>;
 }
 
 /** A destination that can be checked before it is saved, and on demand. */

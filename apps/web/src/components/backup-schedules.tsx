@@ -22,6 +22,7 @@ import {
   type BackupScheduleFrequency,
   type BackupScheduleOptions,
   type BackupScheduleOutcome,
+  type BackupScheduleTiming,
 } from "../api/client.ts";
 
 const INTERVAL_CHOICES = [15, 30, 60, 120, 180, 240, 360, 720, 1440];
@@ -66,6 +67,153 @@ export function formatWhen(iso: string | null): string | null {
   return iso ? new Date(iso).toLocaleString() : null;
 }
 
+/** A timing as the form edits it: the interval as the select's string, and
+ *  every field kept, so switching frequency back and forth loses nothing. */
+export interface TimingDraft {
+  frequency: BackupScheduleFrequency;
+  intervalMinutes: string;
+  timeOfDay: string;
+  daysOfWeek: number[];
+  timezone: string;
+}
+
+export function draftFromTiming(
+  timing: Partial<BackupScheduleTiming> | null,
+  defaults: { frequency: BackupScheduleFrequency; intervalMinutes: number; timeOfDay: string },
+): TimingDraft {
+  return {
+    frequency: timing?.frequency ?? defaults.frequency,
+    intervalMinutes: String(timing?.intervalMinutes ?? defaults.intervalMinutes),
+    timeOfDay: timing?.timeOfDay ?? defaults.timeOfDay,
+    daysOfWeek: timing?.daysOfWeek ?? [1],
+    timezone: timing?.timezone ?? browserZone(),
+  };
+}
+
+/** Only the fields the frequency uses, as the API takes them. */
+export function timingFromDraft(draft: TimingDraft): BackupScheduleTiming {
+  return {
+    frequency: draft.frequency,
+    intervalMinutes: draft.frequency === "interval" ? Number(draft.intervalMinutes) : null,
+    timeOfDay: draft.frequency === "interval" ? null : draft.timeOfDay,
+    daysOfWeek: draft.frequency === "weekly" ? draft.daysOfWeek : null,
+    timezone: draft.timezone,
+  };
+}
+
+export function timingReady(draft: TimingDraft): boolean {
+  return (
+    (draft.frequency === "interval" || /^\d{2}:\d{2}$/.test(draft.timeOfDay)) &&
+    (draft.frequency !== "weekly" || draft.daysOfWeek.length > 0)
+  );
+}
+
+/** Frequency, then whichever of interval, time, weekdays and zone it needs.
+ *  Shared by bucket schedules and the database snapshot schedule. */
+export function ScheduleTimingFields({
+  value,
+  onChange,
+  minIntervalMinutes,
+}: {
+  value: TimingDraft;
+  onChange: (next: TimingDraft) => void;
+  minIntervalMinutes: number;
+}) {
+  const { t } = useLocale();
+  const s = t.backupSchedule;
+  const set = <K extends keyof TimingDraft>(key: K, next: TimingDraft[K]) => onChange({ ...value, [key]: next });
+
+  const intervalOptions = [
+    ...new Set([...INTERVAL_CHOICES.filter((m) => m >= minIntervalMinutes), Number(value.intervalMinutes)]),
+  ]
+    .sort((a, b) => a - b)
+    .map((minutes) => ({ value: String(minutes), label: s.intervalOption(minutes) }));
+  const zoneOptions = [...new Set([value.timezone, browserZone(), ...ZONE_CHOICES])].map((zone) => ({
+    value: zone,
+    label: zone,
+  }));
+  const toggleDay = (day: number) =>
+    set(
+      "daysOfWeek",
+      value.daysOfWeek.includes(day)
+        ? value.daysOfWeek.filter((d) => d !== day)
+        : [...value.daysOfWeek, day].sort((a, b) => a - b),
+    );
+
+  return (
+    <>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium text-foreground">{s.frequencyLabel}</legend>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              ["interval", s.frequencyInterval],
+              ["daily", s.frequencyDaily],
+              ["weekly", s.frequencyWeekly],
+            ] as const
+          ).map(([frequency, label]) => (
+            <Button
+              key={frequency}
+              fullWidth
+              size="sm"
+              variant={value.frequency === frequency ? "primary" : "outline"}
+              onPress={() => set("frequency", frequency)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </fieldset>
+
+      {value.frequency === "interval" ? (
+        <Select
+          label={s.intervalLabel}
+          value={value.intervalMinutes}
+          onValueChange={(next) => set("intervalMinutes", next)}
+          options={intervalOptions}
+        />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField fullWidth value={value.timeOfDay} onChange={(next) => set("timeOfDay", next)}>
+            <Label>{s.timeLabel}</Label>
+            <Input type="time" />
+          </TextField>
+          <Select
+            label={s.timezoneLabel}
+            value={value.timezone}
+            onValueChange={(next) => set("timezone", next)}
+            options={zoneOptions}
+          />
+        </div>
+      )}
+
+      {value.frequency === "weekly" ? (
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-foreground">{s.daysLabel}</legend>
+          <div className="grid grid-cols-7 gap-1">
+            {s.weekdaysShort.map((name, index) => {
+              const day = index + 1;
+              const on = value.daysOfWeek.includes(day);
+              return (
+                <Button
+                  key={day}
+                  size="sm"
+                  aria-pressed={on}
+                  variant={on ? "primary" : "outline"}
+                  className="min-w-0 px-0"
+                  onPress={() => toggleDay(day)}
+                >
+                  {name}
+                </Button>
+              );
+            })}
+          </div>
+        </fieldset>
+      ) : null}
+    </>
+  );
+}
+
 interface ScheduleDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -94,11 +242,9 @@ export function BackupScheduleDialog({
   const s = t.backupSchedule;
   const [bucketId, setBucketId] = useState("");
   const [accountId, setAccountId] = useState("");
-  const [frequency, setFrequency] = useState<BackupScheduleFrequency>("daily");
-  const [intervalMinutes, setIntervalMinutes] = useState("360");
-  const [timeOfDay, setTimeOfDay] = useState("02:00");
-  const [days, setDays] = useState<number[]>([1]);
-  const [timezone, setTimezone] = useState(browserZone());
+  const [timing, setTiming] = useState<TimingDraft>(() =>
+    draftFromTiming(null, { frequency: "daily", intervalMinutes: 360, timeOfDay: "02:00" }),
+  );
   const [skipIfUnchanged, setSkipIfUnchanged] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,43 +254,32 @@ export function BackupScheduleDialog({
     setError(null);
     setBucketId(schedule?.bucketId ?? fixedBucketId ?? "");
     setAccountId(schedule?.backupAccountId ?? fixedAccountId ?? "");
-    setFrequency(schedule?.frequency ?? "daily");
-    setIntervalMinutes(String(schedule?.intervalMinutes ?? Math.max(360, minIntervalMinutes)));
-    setTimeOfDay(schedule?.timeOfDay ?? "02:00");
-    setDays(schedule?.daysOfWeek ?? [1]);
-    setTimezone(schedule?.timezone ?? browserZone());
+    setTiming(
+      draftFromTiming(schedule, {
+        frequency: "daily",
+        intervalMinutes: Math.max(360, minIntervalMinutes),
+        timeOfDay: "02:00",
+      }),
+    );
     setSkipIfUnchanged(schedule?.skipIfUnchanged ?? true);
   }, [isOpen, schedule, fixedBucketId, fixedAccountId, minIntervalMinutes]);
 
-  const intervalOptions = [...new Set([...INTERVAL_CHOICES.filter((m) => m >= minIntervalMinutes), Number(intervalMinutes)])]
-    .sort((a, b) => a - b)
-    .map((minutes) => ({ value: String(minutes), label: s.intervalOption(minutes) }));
-  const zoneOptions = [...new Set([timezone, browserZone(), ...ZONE_CHOICES])].map((zone) => ({ value: zone, label: zone }));
-
-  const toggleDay = (day: number) =>
-    setDays((current) => (current.includes(day) ? current.filter((d) => d !== day) : [...current, day].sort((a, b) => a - b)));
-
-  const ready =
-    Boolean(bucketId && accountId) &&
-    (frequency === "interval" || /^\d{2}:\d{2}$/.test(timeOfDay)) &&
-    (frequency !== "weekly" || days.length > 0);
+  const ready = Boolean(bucketId && accountId) && timingReady(timing);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!ready || saving) return;
     setSaving(true);
     setError(null);
-    const timing = {
-      frequency,
-      intervalMinutes: frequency === "interval" ? Number(intervalMinutes) : null,
-      timeOfDay: frequency === "interval" ? null : timeOfDay,
-      daysOfWeek: frequency === "weekly" ? days : null,
-      timezone,
-    };
     try {
       const saved = schedule
-        ? await updateBackupSchedule(schedule.id, { ...timing, skipIfUnchanged })
-        : await createBackupSchedule({ ...timing, bucketId, backupAccountId: accountId, skipIfUnchanged });
+        ? await updateBackupSchedule(schedule.id, { ...timingFromDraft(timing), skipIfUnchanged })
+        : await createBackupSchedule({
+            ...timingFromDraft(timing),
+            bucketId,
+            backupAccountId: accountId,
+            skipIfUnchanged,
+          });
       onSaved(saved);
     } catch (cause) {
       setError(errorText(cause));
@@ -190,64 +325,7 @@ export function BackupScheduleDialog({
                 />
               ) : null}
 
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium text-foreground">{s.frequencyLabel}</legend>
-                <div className="grid grid-cols-3 gap-2">
-                  {(
-                    [
-                      ["interval", s.frequencyInterval],
-                      ["daily", s.frequencyDaily],
-                      ["weekly", s.frequencyWeekly],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <Button
-                      key={value}
-                      fullWidth
-                      size="sm"
-                      variant={frequency === value ? "primary" : "outline"}
-                      onPress={() => setFrequency(value)}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              </fieldset>
-
-              {frequency === "interval" ? (
-                <Select label={s.intervalLabel} value={intervalMinutes} onValueChange={setIntervalMinutes} options={intervalOptions} />
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField fullWidth value={timeOfDay} onChange={setTimeOfDay}>
-                    <Label>{s.timeLabel}</Label>
-                    <Input type="time" />
-                  </TextField>
-                  <Select label={s.timezoneLabel} value={timezone} onValueChange={setTimezone} options={zoneOptions} />
-                </div>
-              )}
-
-              {frequency === "weekly" ? (
-                <fieldset className="space-y-2">
-                  <legend className="text-sm font-medium text-foreground">{s.daysLabel}</legend>
-                  <div className="grid grid-cols-7 gap-1">
-                    {s.weekdaysShort.map((name, index) => {
-                      const day = index + 1;
-                      const on = days.includes(day);
-                      return (
-                        <Button
-                          key={day}
-                          size="sm"
-                          aria-pressed={on}
-                          variant={on ? "primary" : "outline"}
-                          className="min-w-0 px-0"
-                          onPress={() => toggleDay(day)}
-                        >
-                          {name}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ) : null}
+              <ScheduleTimingFields value={timing} onChange={setTiming} minIntervalMinutes={minIntervalMinutes} />
 
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium text-foreground">{s.skipLabel}</legend>

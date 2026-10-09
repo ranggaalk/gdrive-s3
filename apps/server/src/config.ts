@@ -48,6 +48,9 @@ export interface AppConfig {
   adminEmails: string[];
 
   masterEncryptionKey: Buffer; // exactly 32 bytes
+  /** BACKUP_PASSPHRASE, if set: a database snapshot then carries the master
+   *  key wrapped under it, so the passphrase alone can restore one. */
+  backupPassphrase: string | null;
   sessionSecret: Buffer; // >= 32 bytes
 
   sqlitePath: string;
@@ -376,6 +379,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       32,
       32,
     ),
+    backupPassphrase: optional(env, "BACKUP_PASSPHRASE", "") || null,
     sessionSecret: decodeBase64Key(required(env, "SESSION_SECRET"), "SESSION_SECRET", 32),
 
     sqlitePath: optional(env, "SQLITE_PATH", "./data/app.sqlite"),

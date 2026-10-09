@@ -24,6 +24,7 @@ import { SettingsRepository } from "./db/repositories/settings.ts";
 import { BackupAccountsRepository } from "./db/repositories/backup-accounts.ts";
 import { BackupTransfersRepository } from "./db/repositories/backup-transfers.ts";
 import { BackupSchedulesRepository } from "./db/repositories/backup-schedules.ts";
+import { DbSnapshotsRepository } from "./db/repositories/db-snapshots.ts";
 import { TotpRepository } from "./db/repositories/totp.ts";
 import { UploadLockRegistry } from "./util/upload-lock.ts";
 import { SessionService } from "./auth/session.ts";
@@ -80,6 +81,7 @@ export interface AppContext {
     backupAccounts: BackupAccountsRepository;
     backupTransfers: BackupTransfersRepository;
     backupSchedules: BackupSchedulesRepository;
+    dbSnapshots: DbSnapshotsRepository;
     totp: TotpRepository;
   };
   uploadLocks: UploadLockRegistry;
@@ -144,6 +146,7 @@ export function createContext(
   const backupAccounts = new BackupAccountsRepository(db);
   const backupTransfers = new BackupTransfersRepository(db);
   const backupSchedules = new BackupSchedulesRepository(db);
+  const dbSnapshots = new DbSnapshotsRepository(db);
   const totp = new TotpRepository(db);
   const uploadLocks = new UploadLockRegistry();
 
@@ -215,6 +218,7 @@ export function createContext(
       backupAccounts,
       backupTransfers,
       backupSchedules,
+      dbSnapshots,
       totp,
     },
     uploadLocks,

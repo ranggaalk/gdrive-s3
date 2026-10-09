@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { FolderCog, KeyRound, RotateCcw, ShieldAlert } from "lucide-react";
 import { Alert, AlertDialog, Button, Card, Chip, Input, Label } from "@heroui/react";
+import { DbSnapshotCard } from "@/components/db-snapshot-card";
 import { ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
 import { useToast } from "@/components/toast-provider";
@@ -289,6 +290,8 @@ export function SettingsPage() {
           </form>
         </Card.Content>
       </Card>
+
+      <DbSnapshotCard />
 
       <AlertDialog.Backdrop isOpen={confirmReset} onOpenChange={(open) => { if (!resetting) setConfirmReset(open); }}>
         <AlertDialog.Container>

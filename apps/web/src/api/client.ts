@@ -1043,6 +1043,45 @@ export const runBackupScheduleNow = async (id: string) =>
     await fetch(`/api/backup-schedules/${encodeURIComponent(id)}/run`, mutate("POST")),
   );
 
+// Scheduled snapshots of the gateway's own database (admin only), sent to one
+// of the admin's backup destinations.
+
+export interface DbSnapshotStatus extends BackupScheduleTiming {
+  enabled: boolean;
+  backupAccountId: string | null;
+  destination: { id: string; label: string; kind: BackupDestinationKind; status: BackupAccount["status"] } | null;
+  retainCount: number;
+  nextRunAt: string | null;
+  lastStartedAt: string | null;
+  lastFinishedAt: string | null;
+  lastStatus: "running" | "completed" | "failed" | null;
+  lastError: string | null;
+  /** Whether BACKUP_PASSPHRASE is set, so archives can restore without the master key. */
+  passphraseConfigured: boolean;
+  schedulerEnabled: boolean;
+  minIntervalMinutes: number;
+  snapshots: Array<{
+    id: string;
+    archiveName: string;
+    archiveRef: string;
+    destinationLabel: string;
+    bytes: number;
+    migrationVersion: number;
+    keyRecovery: "passphrase" | "none";
+    createdAt: string;
+  }>;
+}
+
+export const getDbSnapshotStatus = async () =>
+  unwrap<DbSnapshotStatus>(await fetch("/api/settings/db-snapshot"));
+
+export const saveDbSnapshotSettings = async (
+  input: Partial<BackupScheduleTiming> & { enabled?: boolean; backupAccountId?: string | null; retainCount?: number },
+) => unwrap<DbSnapshotStatus>(await fetch("/api/settings/db-snapshot", mutate("PUT", input)));
+
+export const runDbSnapshotNow = async () =>
+  unwrap<DbSnapshotStatus>(await fetch("/api/settings/db-snapshot/run", mutate("POST")));
+
 // Login-time 2FA verification (/auth/mfa/*, deliberately outside /api/* —
 // see server routes/mfa-auth.ts). getMfaLoginStatus also refreshes the
 // module-level csrfToken since the normal /api/me bootstrap never succeeds

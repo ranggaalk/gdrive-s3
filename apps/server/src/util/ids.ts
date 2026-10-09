@@ -21,6 +21,7 @@ export const newDriveImportItemId = () => id("imi");
 export const newBackupAccountId = () => id("bka");
 export const newBackupTransferId = () => id("bkx");
 export const newBackupScheduleId = () => id("bks");
+export const newDbSnapshotId = () => id("dbs");
 export const newTotpRecoveryCodeId = () => id("trc");
 
 export function nowIso(): string {

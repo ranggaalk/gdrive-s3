@@ -4,6 +4,8 @@
 
 import type { AppContext } from "../context.ts";
 import type { SessionRow } from "../db/repositories/sessions.ts";
+import { ScheduleInputError } from "../backup/schedule-time.ts";
+import { DbSnapshotBusyError, DbSnapshotService } from "../services/db-snapshot-service.ts";
 import { apiError, mapBodyReadError, ok, readJson } from "./api-helpers.ts";
 
 function requireAdmin(ctx: AppContext, session: SessionRow, requestId: string): Response | null {
@@ -130,6 +132,60 @@ export async function handleSettings(
     }
 
     return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+  }
+
+  // Scheduled snapshots of this database. Admin-only like everything here,
+  // and doubly so: the archive holds every user's secrets.
+  if (rest === "/db-snapshot") {
+    const snapshots = new DbSnapshotService(ctx);
+    if (req.method === "GET") return ok(snapshots.status(), requestId);
+    if (req.method === "PUT") {
+      let body: unknown;
+      try {
+        body = await readJson<unknown>(ctx, req);
+      } catch (error) {
+        const mapped = mapBodyReadError(error, requestId);
+        if (mapped) return mapped;
+        throw error;
+      }
+      try {
+        snapshots.save(session.user_id, body);
+      } catch (error) {
+        if (error instanceof ScheduleInputError) {
+          return apiError("INVALID_DB_SNAPSHOT", "Pengaturan snapshot database tidak valid.", 400, requestId, error.message);
+        }
+        throw error;
+      }
+      ctx.repos.audit.record({
+        userId: session.user_id,
+        action: "settings.db_snapshot.update",
+        requestId,
+        statusCode: 200,
+      });
+      return ok(snapshots.status(), requestId);
+    }
+    return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+  }
+
+  if (rest === "/db-snapshot/run") {
+    if (req.method !== "POST") return apiError("METHOD_NOT_ALLOWED", "Metode tidak diizinkan.", 405, requestId);
+    const snapshots = new DbSnapshotService(ctx);
+    try {
+      // Runs in the background; the dashboard follows it through GET.
+      void snapshots.startNow();
+    } catch (error) {
+      if (error instanceof DbSnapshotBusyError) {
+        return apiError("DB_SNAPSHOT_RUNNING", "Snapshot database sedang berjalan.", 409, requestId);
+      }
+      throw error;
+    }
+    ctx.repos.audit.record({
+      userId: session.user_id,
+      action: "settings.db_snapshot.run",
+      requestId,
+      statusCode: 202,
+    });
+    return ok(snapshots.status(), requestId, 202);
   }
 
   return apiError("NOT_FOUND", "Endpoint tidak ditemukan.", 404, requestId);

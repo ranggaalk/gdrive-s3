@@ -13,7 +13,9 @@ import { partSizeFor, S3Client, S3NetworkError, S3RequestError, uploadStream } f
 import {
   bucketKeyPrefix,
   DestinationUnavailableError,
+  GATEWAY_AREA,
   UnstorableObjectError,
+  type BackupFileInput,
   type BackupPutInput,
   type BackupSink,
   type DestinationProbe,
@@ -77,6 +79,27 @@ export class S3BackupSink implements BackupSink, DestinationProbe {
       }),
     );
     return { destinationId: key };
+  }
+
+  async prepareGatewayArea(): Promise<string> {
+    await this.guardEndpoint();
+    return bucketKeyPrefix(this.options.config.prefix, GATEWAY_AREA);
+  }
+
+  async putFile(input: BackupFileInput): Promise<{ destinationId: string }> {
+    const key = `${input.ref}${input.name}`;
+    await this.guarded(() =>
+      uploadStream(this.client, key, input.body, {
+        partSize: partSizeFor(input.size, this.options.partSizeBytes),
+        headers: new Headers({ "content-type": input.contentType }),
+        signal: input.signal,
+      }),
+    );
+    return { destinationId: key };
+  }
+
+  async deleteFile(key: string, signal?: AbortSignal): Promise<void> {
+    await this.guarded(() => this.client.deleteObject(key, signal));
   }
 
   /** Proves the credentials can write where copies will go, by writing a

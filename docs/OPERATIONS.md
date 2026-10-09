@@ -306,3 +306,43 @@ touching them — useful while restoring or migrating. Everything it needs is in
 SQLite; it needs no Redis or host cron. Scheduled runs pause and resume with
 the gateway like any other run.
 
+## 11. Scheduled database snapshots
+
+Bucket backups copy objects; they do not copy the database that maps bucket
+keys to Drive files, or the S3 credentials and KMS keys. **Settings → Scheduled
+database snapshots** (admins only) ships that too: on a schedule — hourly at
+most, daily by default — the gateway takes the same encrypted archive
+`db:backup` writes and uploads it, with its `.manifest.json`, to one of the
+admin's own backup destinations, under `<prefix>/_gateway-database/`.
+
+- **How.** The archive is made by running the bundled `db:backup` tool
+  (`dist/scripts/backup-sqlite.js` in the image) as a child process, so the
+  heavy work — VACUUM INTO, gzip, scrypt — never stalls S3 requests. It is
+  written next to the database first (`data/.db-snapshot-*`, removed after),
+  so the data volume needs room for one archive. `BACKUP_SQLITE_SCRIPT`
+  overrides where the tool is found, for custom packaging.
+- **Key recovery.** With `BACKUP_PASSPHRASE` set, every snapshot carries the
+  master key wrapped under it and can be restored with the passphrase alone;
+  without it, only with `MASTER_ENCRYPTION_KEY`, and the Settings card says so.
+  Keep the passphrase off the server as well.
+- **Retention.** The newest N snapshots (default 14) are kept at the
+  destination. Older ones are deleted — only files the gateway recorded
+  writing, never anything else there.
+- **Failures.** A failed snapshot shows its reason on the card; one cut off by
+  a restart is marked interrupted at the next start. `BACKUP_SCHEDULER_ENABLED`
+  switches snapshots off along with bucket schedules.
+
+To rebuild from a snapshot, fetch an archive and its manifest from the
+destination, then restore as in section 3 (section 3.1 if the new host lacks
+the old key):
+
+```bash
+aws s3 cp s3://<bucket>/<prefix>/_gateway-database/drives3-<timestamp>.sqlite.gz.enc .
+aws s3 cp s3://<bucket>/<prefix>/_gateway-database/drives3-<timestamp>.sqlite.gz.enc.manifest.json .
+bun run db:restore -- --input drives3-<timestamp>.sqlite.gz.enc --passphrase
+```
+
+(`rclone copy <remote>:<path>/_gateway-database/ .` does the same for an rclone
+destination; on Drive the folder is `_gateway-database` inside the backup
+root.)
+
