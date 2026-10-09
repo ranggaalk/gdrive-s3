@@ -40,8 +40,13 @@ header/query is present.
 ```bash
 docker build -t drives3-gateway:local .
 cp .env.example .env      # fill in Google client id/secret and the two secrets
+mkdir -p data && sudo chown -R 1010:1010 data
 docker compose up -d
 ```
+
+`./data` is a bind mount, so it keeps the host directory's ownership rather
+than the image's. Docker creates a missing one as root, and the non-root
+gateway then cannot create its database; hand it to uid 1010 first.
 
 The image is a multi-stage Bun build. Runtime characteristics:
 
@@ -51,6 +56,7 @@ The image is a multi-stage Bun build. Runtime characteristics:
 - migrations are copied to `/app/dist/server/migrations`; `MIGRATIONS_DIR`
   points there and is resolved by the bundled server via
   `apps/server/src/db/migrate.ts`;
+- the SQLite backup and restore tools are bundled at `dist/scripts/` (see §6);
 - the Compose healthcheck calls `http://127.0.0.1:8787/health/ready`;
 - `security_opt: no-new-privileges` and `cap_drop: ALL` are applied.
 
@@ -142,13 +148,27 @@ requirements.
 
 ## 6. Backups
 
-Follow [OPERATIONS.md](OPERATIONS.md). Run backup scripts on the host (they use
-Bun and read `MASTER_ENCRYPTION_KEY` from the environment), or `docker exec`
-into the running container. Retain encrypted archives off-host.
+Follow [OPERATIONS.md](OPERATIONS.md). Under PM2, run `bun run db:backup` from
+the checkout. Under Docker the image holds no source tree, so the tools are
+bundled into it instead; run them inside the container, as its own user and
+with its environment:
+
+```bash
+docker compose exec gateway bun dist/scripts/backup-sqlite.js --out /app/data/backups
+```
+
+Do not run the checkout's scripts on the host against `./data`: the host user
+does not own it, and running them as root can leave SQLite's `-shm` file
+root-owned, which locks the gateway out of its own database.
+
+Retain encrypted archives off-host. Make them with a recovery passphrase
+(`BACKUP_PASSPHRASE` for scheduled jobs) so a host rebuilt without the master
+key can still restore — see OPERATIONS.md §3.1 and the README's
+[step-by-step guide](../README.md#production-deployment).
 
 ## 7. Upgrade procedure
 
-1. Take a fresh backup (`bun run db:backup`).
+1. Take a fresh backup (§6).
 2. Pull or build the new image.
 3. `docker compose up -d`; watch startup logs for successful `migrations
    applied`.
@@ -159,7 +179,8 @@ into the running container. Retain encrypted archives off-host.
 ## 8. Rollback
 
 1. Stop the container.
-2. Restore the pre-upgrade backup (`bun run db:restore`).
+2. Restore the pre-upgrade backup with `--force` — `bun run db:restore`, or
+   under Docker `docker compose run --rm gateway bun dist/scripts/restore-sqlite.js`.
 3. Redeploy the previous image tag.
 4. Start and re-verify.
 
