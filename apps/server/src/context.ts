@@ -91,6 +91,9 @@ export interface AppContext {
   /** The fetch backup services issue Drive calls through. Injectable so those
    *  paths can be tested without reaching Google. */
   driveFetch: FetchLike;
+  /** The fetch S3 backup destinations are written through. Injectable so a
+   *  test can aim it at another in-process gateway. */
+  backupFetch: FetchLike;
   driveQuotaService: DriveQuotaService;
   reconcileService: ReconcileService;
   rootFolder: RootFolderService;
@@ -219,6 +222,7 @@ export function createContext(
     driveLimits,
     driveQuotaMeter,
     driveFetch: fetch,
+    backupFetch: fetch,
     driveQuotaService: new DriveQuotaService(config, driveQuotaMeter, driveStorage),
     reconcileService: new ReconcileService(
       config,

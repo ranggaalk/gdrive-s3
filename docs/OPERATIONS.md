@@ -9,8 +9,8 @@ Commands assume WSL and Bun in `$HOME/.bun/bin`.
 - SQLite is the namespace source of truth (`bucket/key → Drive fileId`).
 - Google Drive stores object bytes; it is not used for S3 listing.
 - `MASTER_ENCRYPTION_KEY` must remain the same across backup/restore. It protects
-  OAuth refresh tokens, S3 secret keys, TOTP and KMS key material, and backup
-  archives. A backup made with a recovery passphrase can give the key back
+  OAuth refresh tokens, S3 secret keys (the gateway's own and those of S3 backup
+  destinations), TOTP and KMS key material, and backup archives. A backup made with a recovery passphrase can give the key back
   (section 3.1); one made without cannot.
 - `data/multipart/` contains live multipart parts. Do not delete it during a
   restart or restore unless all multipart uploads have expired/been aborted.
@@ -206,3 +206,65 @@ imports.
 Keep host time synchronized with NTP. Header-signed SigV4 requests tolerate only
 the configured clock-skew window (currently 15 minutes); presigned URLs also
 expire according to `X-Amz-Date + X-Amz-Expires`.
+
+## 9. Backup destinations: S3 and rclone
+
+A bucket backup (Objects > Backup) can go to a linked Google Drive account, an
+S3-compatible bucket, or an rclone remote. All three share one queue and one
+per-object ledger, so a repeat run copies only what is new or changed, and none
+of them ever deletes from the destination: an object deleted from the gateway
+keeps its copy.
+
+**Layout.** S3 and rclone copies land at `<prefix>/<bucket name>/<object key>`,
+so `aws s3 sync s3://<dest>/<prefix>/<bucket>/ …` or `rclone copy` restores
+them with no gateway involved. A changed object overwrites its key. Each
+destination also gets a small `<prefix>/.drives3-backup.json`, rewritten by
+every connection test.
+
+**Encryption.** S3 and rclone copies are plaintext: SSE-S3 and SSE-KMS objects
+are decrypted on the way out, exactly as GetObject serves them, because a copy
+that needs this gateway's database to read is not much of a backup. Turn on
+encryption at the destination. SSE-C objects cannot be copied (the customer key
+is never stored) and show up as failed in the run. Drive copies are unchanged:
+the bytes as stored.
+
+**S3 destinations** are added by each user from the Backup page; nothing to
+configure. The secret key is sealed under `MASTER_ENCRYPTION_KEY`. The key only
+needs `s3:PutObject` and multipart upload on the prefix; add a lifecycle rule
+that aborts incomplete multipart uploads after a day or two, for runs
+interrupted mid-object. By default an endpoint must be `https://` and resolve to
+a public address, so a dashboard user cannot aim the gateway at the host's own
+network; `BACKUP_S3_ALLOW_PRIVATE_ENDPOINTS=true` lifts both for a LAN MinIO.
+`BACKUP_S3_PART_SIZE_MB` (default 16) is the multipart part size and the memory
+each running copy holds.
+
+**rclone destinations** use remotes the operator defines; users only pick one
+and a folder under it. An rclone config can run commands on the host (sftp's
+`ssh` option) and write to its disk (the `local` backend), so it is never taken
+from a user.
+
+1. Build the image with rclone: `INSTALL_RCLONE=true` in `.env`, then
+   `docker compose build`. (Outside Docker, install rclone on the host.)
+2. Write the remotes with `rclone config` somewhere, then put the file at
+   `./rclone/rclone.conf`, owned by uid 1010, and uncomment the `./rclone`
+   volume in `docker-compose.yml`. Remotes that refresh OAuth tokens
+   (OneDrive, Dropbox, Google Drive) rewrite this file, so it must stay
+   writable; static ones (SFTP with a key, WebDAV, S3) can be read-only.
+3. In `.env`: `RCLONE_CONFIG=/app/rclone/rclone.conf` and
+   `BACKUP_RCLONE_REMOTES=nas,offsite` — the remote names users may choose.
+   Prefer remotes rooted where backups belong (an `alias` remote, or an
+   sftp user confined to one directory): user paths cannot contain `..`, but
+   the remote decides everything else.
+
+rclone runs as `rclone rcat --size <n> <remote>:<path>` per object, with only
+`PATH`, `HOME`, proxy, certificate and `RCLONE_*` variables in its environment.
+Taking a remote off `BACKUP_RCLONE_REMOTES` stops destinations already saved
+against it too.
+
+**When a destination fails.** Rejected credentials, a missing bucket or remote,
+or an unreachable endpoint fail the whole run at once and mark the destination
+`error` without charging any object a retry. Fix the cause (or, for S3, replace
+the key from the destination's Edit dialog) and run the backup again; a run that
+reaches the destination clears the error. An object the destination cannot
+hold — a key with `.` or `..` segments, or one over S3's 1024-byte limit --
+fails on its own and the run carries on.

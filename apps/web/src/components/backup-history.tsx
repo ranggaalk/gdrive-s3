@@ -143,7 +143,7 @@ export function BackupHistory({
           onValueChange={onAccountFilterChange}
           options={[
             { value: ALL, label: t.backup.filterAll },
-            ...accounts.map((account) => ({ value: account.id, label: account.email })),
+            ...accounts.map((account) => ({ value: account.id, label: account.label })),
           ]}
         />
         <Select
@@ -205,7 +205,7 @@ export function BackupHistory({
                         {new Date(run.createdAt).toLocaleString()}
                       </Table.Cell>
                       <Table.Cell className="max-w-40 truncate">{run.bucketName}</Table.Cell>
-                      <Table.Cell className="max-w-56 truncate">{run.accountEmail}</Table.Cell>
+                      <Table.Cell className="max-w-56 truncate">{run.accountLabel}</Table.Cell>
                       <Table.Cell>
                         <Chip color={status.color[run.status]} variant="soft" size="sm">{status.label[run.status]}</Chip>
                       </Table.Cell>
@@ -322,7 +322,7 @@ function BackupRunDialog({ runId, onClose }: { runId: string | null; onClose: ()
           <Modal.Header>
             <Modal.Heading>{t.backup.detailTitle}</Modal.Heading>
             <p className="break-all text-sm text-muted">
-              {run ? `${run.bucketName} → ${run.accountEmail}` : t.backup.detailLoading}
+              {run ? `${run.bucketName} → ${run.accountLabel}` : t.backup.detailLoading}
             </p>
           </Modal.Header>
           <Modal.Body className="space-y-4 text-foreground">
@@ -429,7 +429,9 @@ function BackupRunDialog({ runId, onClose }: { runId: string | null; onClose: ()
                                     {object.status === "failed"
                                       ? object.lastError
                                       : object.destinationFileId
-                                        ? t.backup.objectDestinationFile(object.destinationFileId)
+                                        ? run?.accountKind === "drive"
+                                          ? t.backup.objectDestinationFile(object.destinationFileId)
+                                          : t.backup.objectDestinationPath(object.destinationFileId)
                                         : null}
                                   </Table.Cell>
                                 </Table.Row>

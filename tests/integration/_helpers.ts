@@ -68,6 +68,13 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     driveImportPageSize: 100,
     driveImportBatchSize: 5,
     driveImportIntervalMs: 2000,
+    backupDestinations: {
+      s3PartSizeBytes: 16 * 1024 * 1024,
+      s3AllowPrivateEndpoints: false,
+      rcloneBinary: "rclone",
+      rcloneConfigPath: "",
+      rcloneRemotes: [],
+    },
     presignedMinExpiresSeconds: 1,
     presignedMaxExpiresSeconds: 604_800,
     multipartExpiryBatchSize: 50,

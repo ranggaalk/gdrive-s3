@@ -88,6 +88,24 @@ export interface AppConfig {
   driveImportBatchSize: number;
   driveImportIntervalMs: number;
 
+  /** S3 and rclone backup destinations. A Drive destination needs none of it. */
+  backupDestinations: {
+    /** Part size for multipart uploads to an S3 destination. An object that
+     *  fits in one part goes up in a single PUT. A copy buffers one part at a
+     *  time, so this is also the memory each running copy holds. */
+    s3PartSizeBytes: number;
+    /** Lets an S3 endpoint use plain http, or resolve to a private, loopback or
+     *  link-local address -- a MinIO on the LAN. Off, a user cannot point the
+     *  gateway at its own network. */
+    s3AllowPrivateEndpoints: boolean;
+    rcloneBinary: string;
+    /** "" leaves rclone to find its own config file. */
+    rcloneConfigPath: string;
+    /** The rclone.conf remotes users may back up to. Empty disables rclone
+     *  destinations: the remotes are the operator's, never the user's. */
+    rcloneRemotes: string[];
+  };
+
   presignedMinExpiresSeconds: number;
   presignedMaxExpiresSeconds: number;
   multipartExpiryBatchSize: number;
@@ -139,6 +157,19 @@ function parseAllowedEmails(value: string): string[] {
       .map((email) => email.trim().toLowerCase())
       .filter(Boolean),
   )];
+}
+
+// rclone's own rule for a remote name, minus the colon that ends one.
+const RCLONE_REMOTE_PATTERN = /^[A-Za-z0-9_.+@][A-Za-z0-9_.+@ -]*$/;
+
+function parseRcloneRemotes(value: string): string[] {
+  const names = [...new Set(value.split(",").map((name) => name.trim()).filter(Boolean))];
+  for (const name of names) {
+    if (!RCLONE_REMOTE_PATTERN.test(name)) {
+      throw new ConfigError(`BACKUP_RCLONE_REMOTES has an invalid rclone remote name: ${name}`);
+    }
+  }
+  return names;
 }
 
 function parseIntStrict(value: string, key: string): number {
@@ -421,6 +452,19 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       optional(env, "DRIVE_IMPORT_INTERVAL_MS", "2000"),
       "DRIVE_IMPORT_INTERVAL_MS",
     ),
+    backupDestinations: {
+      s3PartSizeBytes:
+        parseIntStrict(optional(env, "BACKUP_S3_PART_SIZE_MB", "16"), "BACKUP_S3_PART_SIZE_MB") *
+        1024 *
+        1024,
+      s3AllowPrivateEndpoints: parseBool(
+        optional(env, "BACKUP_S3_ALLOW_PRIVATE_ENDPOINTS", "false"),
+        "BACKUP_S3_ALLOW_PRIVATE_ENDPOINTS",
+      ),
+      rcloneBinary: optional(env, "RCLONE_BINARY", "rclone"),
+      rcloneConfigPath: optional(env, "RCLONE_CONFIG", ""),
+      rcloneRemotes: parseRcloneRemotes(optional(env, "BACKUP_RCLONE_REMOTES", "")),
+    },
     presignedMinExpiresSeconds: parseIntStrict(
       optional(env, "PRESIGNED_MIN_EXPIRES_SECONDS", "1"),
       "PRESIGNED_MIN_EXPIRES_SECONDS",
@@ -520,6 +564,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ["MULTIPART_EXPIRY_BATCH_SIZE", config.multipartExpiryBatchSize],
   ] as const) {
     if (value <= 0) throw new ConfigError(`${key} must be > 0`);
+  }
+  const partMb = config.backupDestinations.s3PartSizeBytes / (1024 * 1024);
+  if (partMb < 5 || partMb > 5120) {
+    // S3's own bounds on a multipart part.
+    throw new ConfigError("BACKUP_S3_PART_SIZE_MB must be between 5 and 5120");
   }
   if (config.driveImportPageSize > 1000) {
     throw new ConfigError("DRIVE_IMPORT_PAGE_SIZE must be <= 1000");

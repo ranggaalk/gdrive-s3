@@ -248,10 +248,20 @@ export class ApiError extends Error {
   constructor(
     public readonly code: string,
     message: string,
+    /** The server's own specifics, untranslated -- e.g. a remote service's
+     *  error text. Shown beneath the localized message. */
+    public readonly detail: string | null = null,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** An error's message, followed by the server's untranslated detail when it
+ *  sent one -- which is often the part that says what to fix. */
+export function errorText(cause: unknown): string {
+  if (cause instanceof ApiError && cause.detail) return `${cause.message} ${cause.detail}`;
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 export class MfaRequiredError extends Error {
@@ -261,14 +271,17 @@ export class MfaRequiredError extends Error {
 }
 
 async function unwrap<T>(res: Response): Promise<T> {
-  const json = (await res.json()) as { data?: T; error?: { code: string; message: string } };
+  const json = (await res.json()) as {
+    data?: T;
+    error?: { code: string; message: string; detail?: string };
+  };
   if (!res.ok || json.error) {
     const code = json.error?.code ?? "";
     // Prefer the localized text; fall back to the server's message so an
     // unmapped code still says something specific rather than nothing.
     const message =
       apiErrorMessages[code] ?? json.error?.message ?? `request failed: ${res.status}`;
-    throw new ApiError(code, message);
+    throw new ApiError(code, message, json.error?.detail ?? null);
   }
   return json.data as T;
 }
@@ -704,13 +717,61 @@ export const resetRootFolderNameSetting = async () =>
     await fetch("/api/settings/root-folder-name", mutate("DELETE")),
   );
 
+export type BackupDestinationKind = "drive" | "s3" | "rclone";
+
+/** An S3 destination's settings, as the server shows them: never the secret
+ *  key, and only a masked access key id. */
+export interface S3DestinationConfig {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  prefix: string;
+  forcePathStyle: boolean;
+  storageClass: string | null;
+  accessKeyId: string;
+}
+
+export interface RcloneDestinationConfig {
+  remote: string;
+  path: string;
+}
+
+/** A backup destination. The API still calls them backup accounts, from when
+ *  a linked Drive account was the only kind. */
 export interface BackupAccount {
   id: string;
+  kind: BackupDestinationKind;
+  /** The Google account for Drive; the name the user gave the others. */
+  label: string;
   email: string;
+  config: S3DestinationConfig | RcloneDestinationConfig | null;
   status: "active" | "reauthorization_required" | "error";
   lastError: string | null;
   lastUsedAt: string | null;
   createdAt: string;
+}
+
+export interface BackupDestinationOptions {
+  s3: { allowPrivateEndpoints: boolean };
+  rclone: { remotes: string[]; binaryFound: boolean };
+}
+
+export interface S3DestinationInput {
+  label?: string;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  prefix: string;
+  forcePathStyle: boolean;
+  storageClass?: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
+export interface RcloneDestinationInput {
+  label?: string;
+  remote: string;
+  path: string;
 }
 
 export type BackupTransferStatus =
@@ -745,6 +806,28 @@ export const startBackupAccountLink = () => {
 export const deleteBackupAccount = async (id: string) =>
   unwrap(await fetch(`/api/backup-accounts/${encodeURIComponent(id)}`, mutate("DELETE")));
 
+export const getBackupDestinationOptions = async () =>
+  unwrap<BackupDestinationOptions>(await fetch("/api/backup-accounts/options"));
+
+/** Saved only once the destination has accepted a test write. */
+export const createBackupDestination = async (
+  input: ({ kind: "s3" } & S3DestinationInput) | ({ kind: "rclone" } & RcloneDestinationInput),
+) => unwrap<BackupAccount>(await fetch("/api/backup-accounts", mutate("POST", input)));
+
+/** A new name, or a new S3 key pair (checked before it replaces the old one). */
+export const updateBackupDestination = async (
+  id: string,
+  input: { label?: string; accessKeyId?: string; secretAccessKey?: string },
+) =>
+  unwrap<BackupAccount>(
+    await fetch(`/api/backup-accounts/${encodeURIComponent(id)}`, mutate("PATCH", input)),
+  );
+
+export const testBackupDestination = async (id: string) =>
+  unwrap<{ healthy: boolean; error: string | null; account: BackupAccount }>(
+    await fetch(`/api/backup-accounts/${encodeURIComponent(id)}/test`, mutate("POST")),
+  );
+
 export const listBucketBackups = async (bucketId: string) =>
   unwrap<BackupTransfer[]>(await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/backups`));
 
@@ -773,6 +856,8 @@ export const cancelBucketBackup = async (bucketId: string, transferId: string) =
 export interface BackupHistoryItem extends BackupTransfer {
   bucketName: string;
   accountEmail: string;
+  accountLabel: string;
+  accountKind: BackupDestinationKind;
   startedAt: string | null;
   updatedAt: string;
 }
@@ -798,6 +883,8 @@ export interface BackupObjectItem {
 export interface BackupAccountSummary {
   backupAccountId: string;
   email: string;
+  label: string;
+  kind: BackupDestinationKind;
   accountStatus: BackupAccount["status"];
   runs: number;
   activeRuns: number;

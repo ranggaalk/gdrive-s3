@@ -10,6 +10,7 @@
 
 import type { Database } from "bun:sqlite";
 import type { ObjectRow } from "./objects.ts";
+import type { BackupDestinationKind } from "./backup-accounts.ts";
 import { newBackupTransferId, nowIso } from "../../util/ids.ts";
 
 export type BackupTransferStatus =
@@ -43,7 +44,9 @@ export interface BackupTransferRow {
  *  inner join can never drop a surviving run. */
 export interface BackupTransferHistoryRow extends BackupTransferRow {
   bucket_name: string;
+  /** The Google account, or a non-Drive destination's label. */
   account_email: string;
+  account_kind: BackupDestinationKind;
 }
 
 export type BackupObjectStatus = "copied" | "failed";
@@ -401,7 +404,7 @@ export class BackupTransfersRepository {
     params.push(options.limit);
     return this.db
       .query<BackupTransferHistoryRow, (string | number)[]>(
-        `SELECT t.*, b.name AS bucket_name, a.email AS account_email
+        `SELECT t.*, b.name AS bucket_name, a.email AS account_email, a.kind AS account_kind
            FROM backup_transfers t
            JOIN buckets b ON b.id = t.bucket_id
            JOIN backup_accounts a ON a.id = t.backup_account_id
@@ -418,7 +421,7 @@ export class BackupTransfersRepository {
     return (
       this.db
         .query<BackupTransferHistoryRow, [string, string]>(
-          `SELECT t.*, b.name AS bucket_name, a.email AS account_email
+          `SELECT t.*, b.name AS bucket_name, a.email AS account_email, a.kind AS account_kind
              FROM backup_transfers t
              JOIN buckets b ON b.id = t.bucket_id
              JOIN backup_accounts a ON a.id = t.backup_account_id

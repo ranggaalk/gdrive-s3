@@ -96,18 +96,28 @@ Viewer/Editor access.
 - **Made to fit:** Indonesian and English throughout, light and dark themes,
   and a color theme picker with custom accent support.
 
-### Multi-drive backup
+### Bucket backup
 
-Link a second Google account (a personal Gmail, for example) as a backup
-target, then run a manual per-bucket transfer. Objects are copied into a
-folder of their own on that account, source files are never modified, and a
-durable per-object ledger means repeat runs skip anything unchanged. The
-design is deliberately scheduler-ready.
+Run a manual per-bucket backup to any of three kinds of destination:
+
+- **Another Google Drive account** (a personal Gmail, for example), linked
+  through Google's consent screen. Objects are copied into a folder of their
+  own on that account.
+- **S3-compatible storage**: AWS S3, Cloudflare R2, Backblaze B2, Wasabi,
+  MinIO. Copies land at `<prefix>/<bucket>/<key>`, so a plain `aws s3 sync`
+  restores them, and the key is tested with a real write before it is saved.
+- **An rclone remote** (SFTP, WebDAV, OneDrive, Dropbox, …) from a list the
+  operator configures. Users never supply rclone config themselves.
+
+Source files are never modified, nothing is ever deleted from a destination,
+and a durable per-object ledger means repeat runs skip anything unchanged. The
+design is deliberately scheduler-ready. Setup and caveats are in the
+[operations runbook](docs/OPERATIONS.md#9-backup-destinations-s3-and-rclone).
 
 The Backup page reports on that ledger: totals across the gateway, a rollup per
-destination account, and a filterable history of every run from every bucket.
+destination, and a filterable history of every run from every bucket.
 Opening a run shows what it did to each individual object — copied or failed,
-how many attempts, the error text, and the Drive file the copy landed in.
+how many attempts, the error text, and where the copy landed.
 
 ### Admin settings
 
