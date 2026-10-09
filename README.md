@@ -43,7 +43,6 @@ Viewer/Editor access.
 - [Dashboard](#dashboard)
 - [Quality gates](#quality-gates)
 - [Production deployment](#production-deployment)
-- [Backup and restore](#backup-and-restore)
 - [Architecture constraints](#architecture-constraints)
 - [Further reading](#further-reading)
 
@@ -360,42 +359,177 @@ See the [performance guidance](docs/PERFORMANCE.md).
 
 ## Production deployment
 
+The gateway is one Bun process on `127.0.0.1:8787` behind a reverse proxy that
+terminates HTTPS. Run it with **Docker Compose** or with **PM2**: one or the
+other, never both against the same data. This is the path from an empty server
+to a running, backed-up gateway; the [deployment guide](docs/DEPLOY.md) holds
+the full environment reference and proxy notes.
+
+### 1. Prepare the server and domain
+
+- A Linux host with persistent local disk (not NFS), and either Docker with the
+  Compose plugin, or Bun, PM2, and curl.
+- A DNS record pointing your domain (below: `s3.example.com`) at the host.
+- A reverse proxy for HTTPS. Caddy obtains certificates by itself:
+
+  ```caddyfile
+  s3.example.com {
+      reverse_proxy 127.0.0.1:8787
+  }
+  ```
+
+  Caddy keeps the `Host` header (SigV4 signs it), passes `Authorization` and
+  `x-amz-*` through, sets `X-Forwarded-For`/`-Proto`, and streams request
+  bodies. With nginx or Traefik, check the same points in
+  [DEPLOY.md §5](docs/DEPLOY.md#5-reverse-proxy-notes).
+
+### 2. Register the production OAuth redirect
+
+In your Google Cloud OAuth client ([Google OAuth setup](#google-oauth-setup)),
+add the authorized redirect URI `https://s3.example.com/auth/google/callback`.
+An External, unverified consent screen also needs every allowed address added
+as a test user.
+
+### 3. Get the code and write `.env`
+
+```bash
+git clone <repository-url> /srv/drives3
+cd /srv/drives3
+cp .env.example .env
+openssl rand -base64 32   # MASTER_ENCRYPTION_KEY
+openssl rand -base64 48   # SESSION_SECRET
+```
+
+Set at least:
+
+| Variable | Production value |
+|---|---|
+| `NODE_ENV` | `production` |
+| `APP_ORIGIN` | `https://s3.example.com` |
+| `GOOGLE_REDIRECT_URI` | `https://s3.example.com/auth/google/callback` |
+| `S3_PUBLIC_ENDPOINT` | `https://s3.example.com` |
+| `S3_REQUIRE_TLS` | `true` |
+| `TRUST_PROXY` | `true` |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | from the OAuth client |
+| `GOOGLE_WORKSPACE_DOMAIN` and/or `ALLOWED_EMAILS` | who may sign in; at least one |
+| `ADMIN_EMAILS` | who may open Settings (optional) |
+| `MASTER_ENCRYPTION_KEY`, `SESSION_SECRET` | the two values generated above |
+| `BACKUP_PASSPHRASE` | the recovery passphrase, for scheduled backups (step 7) |
+
+Leave `SQLITE_PATH`, `SERVER_PORT`, and `STATIC_ROOT` alone; Compose and the
+PM2 script set what they need. The server refuses to start in production with
+an `http://` origin, `S3_REQUIRE_TLS=false`, or a secret of the wrong length.
+
+### 4. Keep the master key and a recovery passphrase off the server
+
+Copy `MASTER_ENCRYPTION_KEY` into a password manager now. It seals every OAuth
+token, S3 secret key, 2FA secret, and KMS key in the database, and no other key
+can read them later. Pick a **recovery passphrase** as well — at least 12
+characters; a sentence of unrelated words works well — and store it the same
+way. A backup made with it can be restored, and the master key recovered, with
+the passphrase alone (step 9).
+
+### 5. Start the gateway
+
 **Docker Compose:**
 
 ```bash
-cp .env.example .env
-# Fill all production values. APP_ORIGIN and S3_PUBLIC_ENDPOINT must be https://.
+mkdir -p data
+sudo chown -R 1010:1010 data    # the container runs as uid 1010 and must own the bind mount
 docker compose up -d --build
+docker compose logs -f gateway  # wait for "migrations applied" and "server listening"
 ```
 
-The container runs as a non-root user, stores SQLite and multipart data on
-`./data:/app/data`, and listens on `127.0.0.1:8787` for a TLS reverse proxy.
-
-**Direct host with PM2**, when Bun, PM2, and curl are installed:
+**PM2**, as the non-root user that will own the service:
 
 ```bash
 bash scripts/deploy-pm2.sh
-pm2 status
-curl --fail http://127.0.0.1:8787/health/ready
+pm2 startup                     # once per host: run the command it prints, then
+pm2 save
 ```
 
-> [!IMPORTANT]
-> Docker and PM2 are alternatives, not companions. Never run both against the
-> same port or SQLite database. Read the [deployment guide](docs/DEPLOY.md)
-> before going to production.
-
-## Backup and restore
+### 6. Verify
 
 ```bash
-export MASTER_ENCRYPTION_KEY='<base64 32-byte key>'
-bun run db:backup -- --source ./data/app.sqlite --out ./backups
-bun run db:restore -- --input ./backups/<archive>.sqlite.gz.enc \
-  --target ./data/restored.sqlite
+curl --fail https://s3.example.com/health/ready
 ```
 
-Backups are gzip-compressed, AES-256-GCM encrypted, and carry integrity
-manifests. The [operations runbook](docs/OPERATIONS.md) covers restart safety,
-restore, key handling, multipart temp storage, and failure triage.
+Sign in at `https://s3.example.com`, create a bucket and an access key, then
+point an S3 client at it:
+
+```bash
+aws configure --profile drives3   # the access key, its secret, region us-east-1
+aws --profile drives3 --endpoint-url https://s3.example.com s3 ls
+```
+
+### 7. Back up, with key recovery
+
+Take the first backup by hand; it asks for the recovery passphrase twice:
+
+```bash
+# Docker Compose: the backup tools ship in the image
+docker compose exec gateway bun dist/scripts/backup-sqlite.js --out /app/data/backups
+
+# PM2: run from the checkout, which reads MASTER_ENCRYPTION_KEY from .env
+bun run db:backup -- --out ./backups
+```
+
+Then schedule it, hourly for a busy gateway and at least daily otherwise. With
+`BACKUP_PASSPHRASE` in `.env` it runs unattended — under Compose, run
+`docker compose up -d` after editing `.env` so the container sees the variable:
+
+```cron
+# Docker Compose
+0 * * * * cd /srv/drives3 && docker compose exec -T gateway bun dist/scripts/backup-sqlite.js --out /app/data/backups
+# PM2 (cron has no ~/.bun/bin on its PATH)
+0 * * * * cd /srv/drives3 && $HOME/.bun/bin/bun run db:backup -- --out ./backups
+```
+
+Copy the archives off the host — another machine or object storage. A backup
+that lives only on the server it protects is lost with that server. Under
+Compose they land in `data/backups/`, owned by uid 1010.
+
+### 8. Upgrade
+
+```bash
+git pull
+# take a fresh backup (step 7), then
+docker compose up -d --build    # or: bash scripts/deploy-pm2.sh
+```
+
+Pending migrations run at startup. Rolling back is covered in
+[DEPLOY.md §8](docs/DEPLOY.md#8-rollback).
+
+### 9. Rebuild on a new server that lost the master key
+
+1. Do steps 1–3 on the new host, but leave `MASTER_ENCRYPTION_KEY` empty.
+2. Put the latest archive and its `.manifest.json` on the host. Under Compose:
+
+   ```bash
+   mkdir -p data/backups && cp drives3-<timestamp>.sqlite.gz.enc* data/backups/
+   sudo chown -R 1010:1010 data
+   docker compose build
+   ```
+
+3. Restore. It asks for the recovery passphrase and prints the master key:
+
+   ```bash
+   # Docker Compose
+   docker compose run --rm gateway bun dist/scripts/restore-sqlite.js \
+     --input /app/data/backups/drives3-<timestamp>.sqlite.gz.enc
+   # PM2
+   bun run db:restore -- --input ./backups/drives3-<timestamp>.sqlite.gz.enc
+   ```
+
+   If `.env` already holds a newly generated key, the restore says that key
+   does not open the archive; add `--passphrase`. If the gateway was started
+   once already, an empty database exists at the target; add `--force`.
+4. Put the printed key into `.env` as `MASTER_ENCRYPTION_KEY`, then start the
+   gateway (step 5). Users sign in as before; their tokens, access keys, and 2FA
+   come back with the database.
+
+An archive made without a recovery passphrase can only be restored with the
+original key.
 
 ## Architecture constraints
 

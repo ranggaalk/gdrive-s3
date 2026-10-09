@@ -9,7 +9,9 @@ Commands assume WSL and Bun in `$HOME/.bun/bin`.
 - SQLite is the namespace source of truth (`bucket/key → Drive fileId`).
 - Google Drive stores object bytes; it is not used for S3 listing.
 - `MASTER_ENCRYPTION_KEY` must remain the same across backup/restore. It protects
-  OAuth refresh tokens, S3 secret keys, and backup archives.
+  OAuth refresh tokens, S3 secret keys, TOTP and KMS key material, and backup
+  archives. A backup made with a recovery passphrase can give the key back
+  (section 3.1); one made without cannot.
 - `data/multipart/` contains live multipart parts. Do not delete it during a
   restart or restore unless all multipart uploads have expired/been aborted.
 - Run one gateway process per SQLite database. Do not put SQLite or multipart
@@ -29,10 +31,41 @@ bun run db:backup -- \
   --out ./backups
 ```
 
+Under Docker Compose the same tool is bundled in the image; run it in the
+container (DEPLOY.md §6):
+
+```bash
+docker compose exec gateway bun dist/scripts/backup-sqlite.js --out /app/data/backups
+```
+
+Run interactively, it asks for a **recovery passphrase** (twice, not echoed).
+The archive then also carries `MASTER_ENCRYPTION_KEY`, encrypted under a key
+derived from that passphrase with scrypt (N=2^17, r=8, p=1), so a host that
+has lost the key can restore from the archive and the passphrase alone.
+
+- At least 12 characters. Anyone holding an archive can try to guess the
+  passphrase offline, and scrypt only slows each guess down. A sentence of
+  several unrelated words works better than a short complex string.
+- Keep the passphrase somewhere other than the server: a password manager, or
+  on paper. It is only useful on a day the server is gone.
+- Scheduled (non-interactive) backups read it from `BACKUP_PASSPHRASE`. A host
+  that can read that variable can already read `MASTER_ENCRYPTION_KEY`, so
+  setting it there costs nothing — but it is not a substitute for the copy
+  kept elsewhere.
+- With neither a terminal nor `BACKUP_PASSPHRASE`, the backup still runs,
+  warns, and can only be restored with the key. `--no-recovery` opts out
+  explicitly.
+
+Before writing anything, the backup checks that `MASTER_ENCRYPTION_KEY` opens
+at least one secret sealed in the database. A wrong key would otherwise
+produce an archive that restores cleanly but leaves every secret unreadable —
+and, with key recovery, would faithfully hand back that wrong key.
+
 Outputs:
 
 - `drives3-<timestamp>.sqlite.gz.enc` — encrypted snapshot (mode `0600`).
-- matching `.manifest.json` — SHA-256, byte size, migration version, integrity.
+- matching `.manifest.json` — SHA-256, byte size, migration version, integrity,
+  and `keyRecovery` (`passphrase` or `none`).
 
 Recommended cadence:
 
@@ -74,18 +107,48 @@ bun run db:restore -- \
 To deliberately replace an existing target, pass `--force`. The write still
 uses a temporary file and atomic rename.
 
+### 3.1 Restore on a host that lost the master key
+
+For an archive made with a recovery passphrase (its manifest says
+`"keyRecovery": "passphrase"`):
+
+```bash
+bun run db:restore -- \
+  --input ./backups/drives3-<timestamp>.sqlite.gz.enc \
+  --target ./data/app.sqlite
+```
+
+Under Docker Compose, with the gateway stopped:
+`docker compose run --rm gateway bun dist/scripts/restore-sqlite.js --input /app/data/backups/<archive>`.
+
+With `MASTER_ENCRYPTION_KEY` unset, the tool asks for the passphrase, restores,
+and prints the recovered key. If the new host's environment already holds a
+freshly generated key, that key will not open the archive; add `--passphrase`
+to use the passphrase instead. `--key-out FILE` writes
+`MASTER_ENCRYPTION_KEY=<key>` to a new `0600` file rather than printing it, and
+`BACKUP_PASSPHRASE` supplies the passphrase without a prompt.
+
+Put the recovered key in the gateway's environment **before** starting it:
+the database's secrets are sealed under that key, not under any new one.
+
+Archives from before key recovery existed restore exactly as before, with the
+original key.
+
 ## 4. Key management
 
 - Generate a 32-byte key: `openssl rand -base64 32`.
 - Store it in a secret manager or protected environment file, never source
   control, logs, shell history, or backup manifests.
 - Losing the key makes refresh tokens, S3 secrets, and encrypted backups
-  unrecoverable.
+  unrecoverable — unless a backup was made with a recovery passphrase
+  (sections 2 and 3.1). Keep at least one such archive off-host.
 - Do not rotate `MASTER_ENCRYPTION_KEY` by simply changing the environment
   variable. Existing envelopes would become unreadable. A future re-wrap tool
   must decrypt/re-encrypt every OAuth/S3 row and create a fresh backup.
-- Rotate `SESSION_SECRET` independently; doing so invalidates existing sessions
-  and changes IP hashes but does not affect object metadata.
+- Rotate `SESSION_SECRET` independently. Sessions survive it (the cookie is
+  matched by a plain SHA-256 of its value); it changes IP hashes and
+  invalidates in-flight S3 list continuation tokens, and does not affect object
+  metadata.
 
 ## 5. Multipart/temp storage
 
