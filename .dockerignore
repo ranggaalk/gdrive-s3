@@ -10,9 +10,6 @@ tests
 docs
 scripts/verify-*.ts
 scripts/loadtest
-scripts/backup-sqlite.ts
-scripts/restore-sqlite.ts
-scripts/backup-core.ts
 scripts/compat-*.sh
 scripts/compat-common.sh
 *.log

@@ -425,10 +425,14 @@ as a test user.
 ```bash
 git clone <repository-url> /srv/drives3
 cd /srv/drives3
-cp .env.example .env
-openssl rand -base64 32   # MASTER_ENCRYPTION_KEY
-openssl rand -base64 48   # SESSION_SECRET
+bash scripts/deploy.sh --domain s3.example.com
 ```
+
+With no `.env` yet, the deploy script writes one from `.env.example` and stops:
+fresh `MASTER_ENCRYPTION_KEY` and `SESSION_SECRET`, and from `--domain` the
+public addresses, `S3_REQUIRE_TLS`, and `TRUST_PROXY`. To write it by hand
+instead, `cp .env.example .env` and generate the two secrets with
+`openssl rand -base64 32` and `openssl rand -base64 48`.
 
 Set at least:
 
@@ -461,6 +465,20 @@ the passphrase alone (step 9).
 
 ### 5. Start the gateway
 
+```bash
+bash scripts/deploy.sh          # Docker Compose, when Docker is installed
+bash scripts/deploy.sh --pm2    # or PM2, as the non-root user that will own the service
+```
+
+It checks `.env`, builds, starts the gateway on `127.0.0.1:8787`, and waits for
+`/health/ready`, printing the logs if it never gets there. Under Compose it
+also hands `./data` to uid 1010: the container runs as that user and must own
+the bind mount. Under PM2, run `pm2 startup` once per host (and the command it
+prints) so the gateway survives a reboot.
+
+<details>
+<summary><b>The same by hand</b></summary>
+
 **Docker Compose:**
 
 ```bash
@@ -470,13 +488,15 @@ docker compose up -d --build
 docker compose logs -f gateway  # wait for "migrations applied" and "server listening"
 ```
 
-**PM2**, as the non-root user that will own the service:
+**PM2:**
 
 ```bash
 bash scripts/deploy-pm2.sh
 pm2 startup                     # once per host: run the command it prints, then
 pm2 save
 ```
+
+</details>
 
 ### 6. Verify
 
@@ -528,13 +548,18 @@ to copy by hand; see
 ### 8. Upgrade
 
 ```bash
-git pull
-# take a fresh backup (step 7), then
-docker compose up -d --build    # or: bash scripts/deploy-pm2.sh
+bash scripts/redeploy.sh
 ```
 
-Pending migrations run at startup. Rolling back is covered in
-[DEPLOY.md §8](docs/DEPLOY.md#8-rollback).
+It fetches and fast-forwards the checkout, builds the new image while the
+running one keeps serving (Compose), backs the database up, restarts, and
+waits for `/health/ready`; pending migrations run at startup. If the new
+version never gets ready, it puts the previous code and image back and starts
+them again. The database stays as the new version migrated it — migrations
+only add, so the old code runs on it — and the script prints the backup it took
+with the command to restore it. `--ref v1.2.3` deploys a tag or commit instead
+of the branch's upstream; `--help` lists the other options. Rolling back by
+hand is covered in [DEPLOY.md §8](docs/DEPLOY.md#8-rollback).
 
 ### 9. Rebuild on a new server that lost the master key
 
