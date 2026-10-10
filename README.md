@@ -12,7 +12,7 @@ namespace honest.
 ![Language](https://img.shields.io/badge/language-TypeScript-3178C6?style=flat-square)
 ![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20HeroUI-61DAFB?style=flat-square)
 ![Storage](https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-961%20passing-16a34a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-955%20passing-16a34a?style=flat-square)
 
 </div>
 
@@ -312,9 +312,10 @@ have been. Everything else is visible to any signed-in user.
 
 Dashboard sections are plain paths (`/overview`, `/buckets`, `/buckets/:id`,
 `/credentials`, `/activity`, `/documentation`, `/backup`, `/quota`,
-`/security`, `/settings`) rather than query strings. Those names are reserved:
-`util/bucket-name.ts` rejects them as bucket names, so a dashboard route can
-never collide with a real S3 bucket.
+`/security`, `/settings`) rather than query strings; `/mfa` is where sign-in
+asks for the 2FA code. Those names are reserved (`util/dashboard-paths.ts`):
+no bucket may take one, so a dashboard route can never collide with a real S3
+bucket.
 
 The **Documentation** page carries the connection steps for this gateway's own
 endpoint and region, and an AI agent integration skill: a Markdown file, with
