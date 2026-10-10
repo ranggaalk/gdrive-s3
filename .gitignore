@@ -14,3 +14,9 @@ dist/
 !.env.example
 gdrive-storage-*.json
 *service-account*.json
+
+# Deploy scripts: their lock, and database backup archives (PM2 writes to
+# ./backups, the Compose container to ./data/backups). Never commit those.
+.deploy.lock
+/backups/
+/data/backups/

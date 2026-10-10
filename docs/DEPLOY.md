@@ -8,16 +8,17 @@ DriveS3 Gateway ships as a single Bun process serving:
 - `/`, `/index.html`, `/favicon.ico`, `/__drives3_assets/*` — the built dashboard
   (`STATIC_ROOT`);
 - `/overview`, `/buckets`, `/buckets/:bucketId`, `/credentials`, `/activity`,
-  `/documentation` — client-side dashboard section routes, also served as the
-  same `index.html` shell;
+  `/documentation`, `/backup`, `/quota`, `/security`, `/settings` — client-side
+  dashboard section routes, also served as the same `index.html` shell;
 - `/__drives3_share/:token` — rate-limited anonymous public object downloads;
 - everything else — the S3 path-style data plane.
 
 The reserved `__drives3_assets/` prefix is invalid as an S3 bucket name (underscore),
 so dashboard assets cannot collide with `/{bucket}/{key}` routes. The dashboard
 section names above (`overview`, `buckets`, `credentials`, `activity`,
-`documentation`) are likewise rejected as bucket names by
-`util/bucket-name.ts`, so they can never collide with a real bucket either.
+`documentation`, `backup`, `quota`, `security`, `settings`) are likewise
+rejected as bucket names by `util/bucket-name.ts`, so they can never collide
+with a real bucket either.
 Authenticated SigV4 requests never receive dashboard responses; the router
 falls through to the S3 handler as soon as an `Authorization` or `X-Amz-*`
 header/query is present.
@@ -36,6 +37,15 @@ header/query is present.
   (`openssl rand -base64 32`).
 
 ## 2. Build and run with Docker
+
+```bash
+bash scripts/deploy.sh    # Compose is the default wherever Docker is installed
+```
+
+`scripts/deploy.sh` checks `.env` (writing one from `.env.example` with fresh
+secrets if there is none, then stopping so the rest can be filled in), builds
+the image, hands `./data` to uid 1010, starts the service, and waits for
+`/health/ready`, printing the container's logs if it never gets there. By hand:
 
 ```bash
 docker build -t drives3-gateway:local .
@@ -66,11 +76,11 @@ reverse proxy rather than binding the gateway directly to a public interface.
 ## 3. Deploy directly with PM2
 
 Use this as an alternative to Docker when Bun, PM2, and curl are installed on
-the production host. Configure `.env` first, then run the script as the same
-non-root service user on every deployment:
+the production host. Configure `.env` first, then deploy as the same non-root
+service user every time:
 
 ```bash
-bash scripts/deploy-pm2.sh
+bash scripts/deploy.sh --pm2    # checks .env, then runs scripts/deploy-pm2.sh
 pm2 describe drives3-gateway
 curl --fail http://127.0.0.1:8787/health/ready
 ```
@@ -173,15 +183,42 @@ key can still restore — see OPERATIONS.md §3.1 and the README's
 
 ## 7. Upgrade procedure
 
-1. Take a fresh backup (§6).
-2. Pull or build the new image.
-3. `docker compose up -d`; watch startup logs for successful `migrations
-   applied`.
-4. Verify `/health/ready`, dashboard, one S3 PUT/GET/DELETE, and pending
-   cleanup backlog.
+`bash scripts/redeploy.sh` runs steps 1 to 3 below, for Compose and PM2 alike:
+
+1. It fetches and fast-forwards the checkout to its branch's upstream, or
+   checks out `--ref <tag-or-commit>`. Local changes to tracked files, or a
+   branch that has diverged from its upstream, stop it before anything else.
+2. Under Compose it builds the new image while the running container keeps
+   serving, and keeps the running one as `drives3-gateway:previous`. A failed
+   build stops here, with nothing restarted.
+3. It backs the database up (§6) — into `./data/backups` under Compose,
+   `./backups` under PM2 — then restarts on the new version and waits for
+   `/health/ready`. Set `BACKUP_PASSPHRASE` so that unattended backup carries
+   key recovery; `--no-backup` skips it.
+
+If the new version never becomes ready, the script goes back on its own: the
+previous checkout and image, started again. It leaves the database as the new
+version migrated it, since migrations only add and the old code runs on the
+result; to take the data back as well, follow §8 with the backup the script
+printed (it prints the exact commands). `--no-rollback` leaves the failed
+version running for inspection instead.
+
+Then, by hand:
+
+4. Verify the dashboard, one S3 PUT/GET/DELETE, and the pending cleanup
+   backlog.
 5. Keep the previous image tag until the release is confirmed stable.
 
+Without the script: take a backup (§6), pull or build the new image, run
+`docker compose up -d` (or `bash scripts/deploy-pm2.sh`), and watch the startup
+logs for `migrations applied`.
+
 ## 8. Rollback
+
+`scripts/redeploy.sh` already returns to the previous code and image when an
+update never becomes ready. To return to an older release afterwards, run
+`bash scripts/redeploy.sh --ref <tag-or-commit>`; the old code runs on the
+newer schema. When the data has to go back too:
 
 1. Stop the container.
 2. Restore the pre-upgrade backup with `--force` — `bun run db:restore`, or
