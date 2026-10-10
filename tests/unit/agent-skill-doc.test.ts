@@ -11,6 +11,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { COMPAT_MATRIX } from "../../apps/server/src/compat/matrix.ts";
+import { en } from "../../apps/web/src/lib/i18n/en.ts";
+import { id } from "../../apps/web/src/lib/i18n/id.ts";
 
 const skillDoc = readFileSync(
   new URL("../../apps/web/src/docs/drive-s3-ai-agent-skill.md", import.meta.url).pathname,
@@ -72,5 +74,16 @@ describe("AI agent skill doc tracks the compatibility matrix", () => {
     // literal token to the user instead of their endpoint.
     expect(skillDoc).toContain("{{S3_ENDPOINT}}");
     expect(skillDoc).toContain("{{S3_REGION}}");
+  });
+});
+
+describe("the Documentation page's limitations note", () => {
+  // It sits beside the skill doc on the same page and went stale the same way:
+  // it kept calling ACLs and bucket policies, versioning, Object Lock, SigV4A,
+  // and SSE-KMS unsupported long after the matrix marked them supported. Like
+  // the doc, it should state behaviour to design around, not missing features.
+  test("names no feature as unsupported, in either language", () => {
+    expect(en.docs.limitationsDescription).not.toMatch(/not supported/i);
+    expect(id.docs.limitationsDescription).not.toMatch(/tidak didukung/i);
   });
 });

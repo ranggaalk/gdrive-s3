@@ -12,7 +12,7 @@ namespace honest.
 ![Language](https://img.shields.io/badge/language-TypeScript-3178C6?style=flat-square)
 ![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20HeroUI-61DAFB?style=flat-square)
 ![Storage](https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-650%20passing-16a34a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-961%20passing-16a34a?style=flat-square)
 
 </div>
 
@@ -54,7 +54,7 @@ Viewer/Editor access.
 |---|---|
 | **Two-factor auth** | TOTP enrollment by QR or manual key, single-use recovery codes, and a pending-session gate that blocks the API until the code clears. Verified against the RFC 6238 test vectors. |
 | **Scoped login** | Google OAuth gated by Workspace domain and/or an explicit email allowlist, so personal Gmail can be admitted deliberately. |
-| **Secrets at rest** | Refresh tokens, TOTP secrets, and backups are AES-256-GCM encrypted with per-context AAD. Recovery codes are stored only as hashes. |
+| **Secrets at rest** | OAuth refresh tokens, S3 secret keys, TOTP secrets, KMS keys, backup-destination credentials, the OAuth client secret set from the dashboard, and database backups are AES-256-GCM encrypted with per-context AAD. Recovery codes are stored only as hashes. |
 | **Request hardening** | Session and CSRF protection, SigV4 header plus presigned-query auth, security headers, bounded request bodies, and per-scope rate limits. |
 | **Encryption at rest** | Optional server-side encryption per bucket or per object: SSE-S3, SSE-KMS with your own customer master keys, or SSE-C. Ranged reads stay cheap, since the cipher is seekable. |
 | **Retention** | Object Lock in GOVERNANCE or COMPLIANCE mode, plus Legal Hold. A COMPLIANCE lock cannot be lifted by anyone, including the bucket owner. |
@@ -136,7 +136,8 @@ how many attempts, the error text, and where the copy landed.
 
 Google OAuth client credentials and the Drive root folder name are editable at
 runtime from the dashboard, so rotating them no longer means redeploying with
-new environment variables.
+new environment variables. The same page schedules the encrypted database
+snapshots described under [Bucket backup](#bucket-backup).
 
 ## Compatibility
 
@@ -309,10 +310,16 @@ have been. Everything else is visible to any signed-in user.
 
 ## Dashboard
 
-Dashboard sections are plain paths (`/buckets`, `/buckets/:id`, `/credentials`,
-`/activity`, `/documentation`, `/backup`, `/quota`, `/security`, `/settings`)
-rather than query strings. Those names are reserved: `util/bucket-name.ts` rejects them as
-bucket names, so a dashboard route can never collide with a real S3 bucket.
+Dashboard sections are plain paths (`/overview`, `/buckets`, `/buckets/:id`,
+`/credentials`, `/activity`, `/documentation`, `/backup`, `/quota`,
+`/security`, `/settings`) rather than query strings. Those names are reserved:
+`util/bucket-name.ts` rejects them as bucket names, so a dashboard route can
+never collide with a real S3 bucket.
+
+The **Documentation** page carries the connection steps for this gateway's own
+endpoint and region, and an AI agent integration skill: a Markdown file, with
+the endpoint and region filled in, to hand to an agent or a team integrating
+another application.
 
 ### Object sharing
 
@@ -574,5 +581,5 @@ original key.
 | Document | Covers |
 |---|---|
 | [Deployment guide](docs/DEPLOY.md) | Docker and PM2 setup, environment reference, reverse proxy notes, upgrade and rollback. |
-| [Operations runbook](docs/OPERATIONS.md) | Restart safety, backup and restore, key handling, failure triage. |
+| [Operations runbook](docs/OPERATIONS.md) | Restart safety, backup and restore, key handling, failure triage, backup destinations, scheduled backups, and database snapshots. |
 | [Performance guidance](docs/PERFORMANCE.md) | Load-test harness and tuning notes. |
