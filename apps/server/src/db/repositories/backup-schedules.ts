@@ -9,13 +9,15 @@ import { nowIso } from "../../util/ids.ts";
 
 /**
  * What last happened to a schedule: what it did when it fell due, or how the
- * run it queued ended.
+ * run it queued ended. "waiting_quiet" is an on-change schedule holding its
+ * run back while the bucket is still being written to.
  */
 export type BackupScheduleOutcome =
   | "queued"
   | "skipped_unchanged"
   | "skipped_active"
   | "skipped_destination"
+  | "waiting_quiet"
   | "completed"
   | "failed"
   | "cancelled"
@@ -42,6 +44,10 @@ export interface BackupScheduleRow {
   paused_reason: string | null;
   created_at: string;
   updated_at: string;
+  quiet_minutes: number | null;
+  max_wait_minutes: number | null;
+  /** On-change only: when the scheduler first saw changes not yet backed up. */
+  pending_since: string | null;
 }
 
 /** A schedule joined with the names and last run the dashboard shows. */
@@ -66,6 +72,8 @@ export function timingOf(row: BackupScheduleRow): ScheduleTiming {
     timeOfDay: row.time_of_day,
     daysOfWeek: row.days_of_week ? row.days_of_week.split(",").map(Number) : null,
     timezone: row.timezone,
+    quietMinutes: row.quiet_minutes,
+    maxWaitMinutes: row.max_wait_minutes,
   };
 }
 
@@ -143,8 +151,9 @@ export class BackupSchedulesRepository {
         .query(
           `INSERT INTO backup_schedules
              (id, owner_user_id, bucket_id, backup_account_id, enabled, frequency, interval_minutes,
-              time_of_day, days_of_week, timezone, skip_if_unchanged, next_run_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              time_of_day, days_of_week, timezone, quiet_minutes, max_wait_minutes, skip_if_unchanged,
+              next_run_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.id,
@@ -157,6 +166,8 @@ export class BackupSchedulesRepository {
           input.timing.timeOfDay,
           input.timing.daysOfWeek?.join(",") ?? null,
           input.timing.timezone,
+          input.timing.quietMinutes,
+          input.timing.maxWaitMinutes,
           input.skipIfUnchanged ? 1 : 0,
           input.nextRunAt,
           now,
@@ -169,19 +180,26 @@ export class BackupSchedulesRepository {
     return this.findById(input.id)!;
   }
 
-  /** Replaces the timing and switches. Turning a schedule on clears whatever
-   *  paused it, and the failure count with it. */
+  /**
+   * Replaces the timing and switches. Turning a schedule on clears whatever
+   * paused it, and the failure count with it. It also forgets when changes
+   * started waiting, as does a change of frequency: the maximum wait counts
+   * from when the scheduler was watching, not from before a pause.
+   */
   update(
     id: string,
     input: { timing: ScheduleTiming; skipIfUnchanged: boolean; enabled: boolean; nextRunAt: string | null },
   ): void {
+    // The CASEs read the row as it was before this UPDATE.
     this.db
       .query(
         `UPDATE backup_schedules
             SET frequency = ?, interval_minutes = ?, time_of_day = ?, days_of_week = ?, timezone = ?,
+                quiet_minutes = ?, max_wait_minutes = ?,
                 skip_if_unchanged = ?, enabled = ?, next_run_at = ?,
                 paused_reason = CASE WHEN ? = 1 THEN NULL ELSE paused_reason END,
                 consecutive_failures = CASE WHEN ? = 1 AND enabled = 0 THEN 0 ELSE consecutive_failures END,
+                pending_since = CASE WHEN frequency <> ? OR (? = 1 AND enabled = 0) THEN NULL ELSE pending_since END,
                 updated_at = ?
           WHERE id = ?`,
       )
@@ -191,10 +209,14 @@ export class BackupSchedulesRepository {
         input.timing.timeOfDay,
         input.timing.daysOfWeek?.join(",") ?? null,
         input.timing.timezone,
+        input.timing.quietMinutes,
+        input.timing.maxWaitMinutes,
         input.skipIfUnchanged ? 1 : 0,
         input.enabled ? 1 : 0,
         input.nextRunAt,
         input.enabled ? 1 : 0,
+        input.enabled ? 1 : 0,
+        input.timing.frequency,
         input.enabled ? 1 : 0,
         nowIso(),
         id,
@@ -236,6 +258,12 @@ export class BackupSchedulesRepository {
           WHERE id = ?`,
       )
       .run(input.outcome, input.transferId ?? null, input.consecutiveFailures ?? null, nowIso(), id);
+  }
+
+  setPendingSince(id: string, pendingSince: string | null): void {
+    this.db
+      .query("UPDATE backup_schedules SET pending_since = ?, updated_at = ? WHERE id = ?")
+      .run(pendingSince, nowIso(), id);
   }
 
   /** Switches a schedule off on its own account, saying why. */

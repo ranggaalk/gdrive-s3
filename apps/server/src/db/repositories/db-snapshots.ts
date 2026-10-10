@@ -11,7 +11,8 @@ export interface DbSnapshotSettingsRow {
   id: 1;
   enabled: number;
   backup_account_id: string | null;
-  frequency: ScheduleFrequency;
+  /** A snapshot has no bucket whose writes it could wait on. */
+  frequency: Exclude<ScheduleFrequency, "on_change">;
   interval_minutes: number | null;
   time_of_day: string | null;
   days_of_week: string | null;
@@ -66,6 +67,8 @@ export function snapshotTimingOf(row: DbSnapshotSettingsRow): ScheduleTiming {
     timeOfDay: row.time_of_day,
     daysOfWeek: row.days_of_week ? row.days_of_week.split(",").map(Number) : null,
     timezone: row.timezone,
+    quietMinutes: null,
+    maxWaitMinutes: null,
   };
 }
 

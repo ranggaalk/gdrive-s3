@@ -6,11 +6,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AppConfig } from "../../apps/server/src/config.ts";
 import type { AppContext } from "../../apps/server/src/context.ts";
+import { findSchemaDrift, runMigrations } from "../../apps/server/src/db/migrate.ts";
 import { BackupSchedulerWorker } from "../../apps/server/src/jobs/backup-scheduler.ts";
 import { BackupTransferWorker } from "../../apps/server/src/jobs/backup-transfer.ts";
 import { handleApi } from "../../apps/server/src/routes/api.ts";
 import { handleS3 } from "../../apps/server/src/s3/router.ts";
 import { BackupScheduleService } from "../../apps/server/src/services/backup-schedule-service.ts";
+import { newBackupAccountId } from "../../apps/server/src/util/ids.ts";
 import { makeHarness, testConfig } from "./_helpers.ts";
 
 const ORIGIN = "http://localhost:5173";
@@ -30,7 +32,13 @@ interface Schedule {
   id: string;
   enabled: boolean;
   frequency: string;
+  intervalMinutes: number | null;
+  timezone: string;
+  quietMinutes: number | null;
+  maxWaitMinutes: number | null;
+  skipIfUnchanged: boolean;
   nextRunAt: string | null;
+  pendingSince: string | null;
   lastOutcome: string | null;
   lastTransferId: string | null;
   consecutiveFailures: number;
@@ -343,5 +351,321 @@ describe("run now, and the history", () => {
     const scheduled = await read<{ items: unknown[] }>(await api("GET", "/api/backups?trigger=schedule"));
     expect(scheduled.data!.items).toHaveLength(1);
     expect((await api("GET", "/api/backups?trigger=cron")).status).toBe(400);
+  });
+});
+
+describe("on-change schedules", () => {
+  const ON_CHANGE = { frequency: "on_change", quietMinutes: 10, maxWaitMinutes: 60 };
+
+  // The scheduler runs on the test's clock, but objects.updated_at is stamped
+  // by the real one, so writes are dated on the test's clock by hand.
+  const writtenAt = (ctx: AppContext, bucketId: string, at: Date) =>
+    ctx.db.query("UPDATE objects SET updated_at = ? WHERE bucket_id = ?").run(at.toISOString(), bucketId);
+  const minutesAfter = (start: Date, minutes: number) => new Date(start.getTime() + minutes * MINUTE);
+
+  test("a burst is backed up in one run, once the bucket has been quiet for the quiet period", async () => {
+    const { source, bucketId, putObject, createSchedule, getSchedule, tick, runs } = await setup();
+    const schedule = await createSchedule(ON_CHANGE);
+    const t0 = later(0);
+    for (let i = 0; i < 7; i++) await putObject(`burst-${i}.jpg`, `pixels ${i}`);
+    writtenAt(source.ctx, bucketId, t0);
+
+    await tick(minutesAfter(t0, 5));
+    expect(runs()).toEqual([]);
+    let current = await getSchedule(schedule.id);
+    expect(current.lastOutcome).toBe("waiting_quiet");
+    expect(current.pendingSince).toBe(minutesAfter(t0, 5).toISOString());
+
+    await tick(minutesAfter(t0, 11));
+    expect(runs()).toMatchObject([{ triggered_by: "schedule", status: "completed", copied_count: 7 }]);
+    current = await getSchedule(schedule.id);
+    expect(current.pendingSince).toBeNull();
+    expect(current.lastOutcome).toBe("completed");
+  });
+
+  test("with nothing left to copy, looks queue nothing and leave the last outcome alone", async () => {
+    const { source, bucketId, putObject, createSchedule, getSchedule, tick, runs } = await setup();
+    await putObject("a.txt", "a");
+    const t0 = later(0);
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, -120));
+    const schedule = await createSchedule(ON_CHANGE);
+
+    // Long quiet already, so the first look backs it up straight away.
+    await tick(minutesAfter(t0, 1));
+    expect(runs()).toHaveLength(1);
+
+    for (const minute of [2, 3, 20, 45, 90]) await tick(minutesAfter(t0, minute));
+    expect(runs()).toHaveLength(1);
+    const current = await getSchedule(schedule.id);
+    expect(current.pendingSince).toBeNull();
+    expect(current.lastOutcome).toBe("completed");
+  });
+
+  test("a bucket that never goes quiet is backed up once its changes have waited the maximum", async () => {
+    const { source, bucketId, putObject, createSchedule, getSchedule, tick, runs } = await setup();
+    await putObject("log.txt", "line 0");
+    const schedule = await createSchedule(ON_CHANGE);
+    const t0 = later(0);
+
+    // A write every five minutes: never ten quiet ones.
+    for (let minute = 1; minute < 61; minute += 5) {
+      writtenAt(source.ctx, bucketId, minutesAfter(t0, minute));
+      await tick(minutesAfter(t0, minute));
+      expect(runs(), `minute ${minute}`).toEqual([]);
+    }
+    expect((await getSchedule(schedule.id)).pendingSince).toBe(minutesAfter(t0, 1).toISOString());
+
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, 61));
+    await tick(minutesAfter(t0, 61));
+    expect(runs()).toMatchObject([{ triggered_by: "schedule", status: "completed" }]);
+  });
+
+  test("the wait is kept in the database, so a restart does not reset it", async () => {
+    const { source, bucketId, putObject, createSchedule, getSchedule, runs } = await setup();
+    await putObject("a.txt", "a");
+    const schedule = await createSchedule(ON_CHANGE);
+    const t0 = later(0);
+
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, 1));
+    await new BackupScheduleService(source.ctx).runDue(minutesAfter(t0, 1));
+    expect((await getSchedule(schedule.id)).pendingSince).toBe(minutesAfter(t0, 1).toISOString());
+
+    // New service and worker instances: only the database carries over.
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, 55));
+    await new BackupSchedulerWorker(source.ctx, () => minutesAfter(t0, 55)).runOnce();
+    expect(runs()).toEqual([]);
+    expect((await getSchedule(schedule.id)).pendingSince).toBe(minutesAfter(t0, 1).toISOString());
+
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, 61));
+    await new BackupSchedulerWorker(source.ctx, () => minutesAfter(t0, 61)).runOnce();
+    expect(runs()).toHaveLength(1);
+  });
+
+  test("a run still going holds the next one back, and the wait keeps counting", async () => {
+    const { source, owner, bucketId, destination, putObject, createSchedule, getSchedule, runs } = await setup();
+    await putObject("a.txt", "a");
+    const t0 = later(0);
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, -60));
+    const schedule = await createSchedule(ON_CHANGE);
+    source.ctx.repos.backupTransfers.create({ userId: owner.id, bucketId, backupAccountId: destination.id });
+
+    await new BackupSchedulerWorker(source.ctx, () => minutesAfter(t0, 1)).runOnce();
+    expect(runs()).toHaveLength(1);
+    let current = await getSchedule(schedule.id);
+    expect(current.lastOutcome).toBe("skipped_active");
+    expect(current.pendingSince).toBe(minutesAfter(t0, 1).toISOString());
+
+    await new BackupSchedulerWorker(source.ctx, () => minutesAfter(t0, 2)).runOnce();
+    current = await getSchedule(schedule.id);
+    expect(current.lastOutcome).toBe("skipped_active");
+    expect(current.pendingSince).toBe(minutesAfter(t0, 1).toISOString());
+  });
+
+  test("an unchanged bucket is not read every minute, but a write, or the periodic look, is noticed", async () => {
+    const { source, bucketId, destination, putObject, createSchedule, getSchedule, tick, runs } = await setup();
+    await putObject("a.txt", "a");
+    // Looks are lined up with the 15-minute periods (minIntervalMinutes).
+    const period = 15 * MINUTE;
+    const base = new Date((Math.floor(Date.now() / period) + 1) * period);
+    writtenAt(source.ctx, bucketId, minutesAfter(base, -120));
+    const schedule = await createSchedule(ON_CHANGE);
+
+    const transfers = source.ctx.repos.backupTransfers;
+    const scan = transfers.hasObjectsNeedingWork.bind(transfers);
+    let scans = 0;
+    transfers.hasObjectsNeedingWork = (...args) => {
+      scans++;
+      return scan(...args);
+    };
+
+    await tick(minutesAfter(base, 1));
+    expect(runs()).toHaveLength(1);
+
+    // As if the copy had failed and is due a retry: work that no write marks.
+    source.ctx.db
+      .query("UPDATE backup_object_status SET status = 'failed', attempts = 1 WHERE backup_account_id = ?")
+      .run(destination.id);
+    const before = scans;
+    await tick(minutesAfter(base, 2));
+    await tick(minutesAfter(base, 10));
+    expect(scans).toBe(before);
+    expect(runs()).toHaveLength(1);
+
+    // The next period's look finds it.
+    await tick(minutesAfter(base, 16));
+    expect(scans).toBe(before + 1);
+    expect(runs()).toHaveLength(2);
+    expect(runs()[1]).toMatchObject({ status: "completed", copied_count: 1 });
+
+    // A write is noticed at the very next look, period or not.
+    await putObject("b.txt", "b");
+    writtenAt(source.ctx, bucketId, minutesAfter(base, 17));
+    await tick(minutesAfter(base, 18));
+    const current = await getSchedule(schedule.id);
+    expect(current.lastOutcome).toBe("waiting_quiet");
+    expect(current.pendingSince).toBe(minutesAfter(base, 18).toISOString());
+  });
+
+  test("changes copied some other way end the wait without a run of its own", async () => {
+    const { source, api, bucketId, destination, putObject, createSchedule, getSchedule, tick, runs } = await setup();
+    await putObject("a.txt", "a");
+    const schedule = await createSchedule(ON_CHANGE);
+    const t0 = later(0);
+    writtenAt(source.ctx, bucketId, t0);
+    await tick(minutesAfter(t0, 2));
+    expect((await getSchedule(schedule.id)).lastOutcome).toBe("waiting_quiet");
+
+    // "Run now" copies them, and its outcome stays on the schedule.
+    await api("POST", `/api/backup-schedules/${schedule.id}/run`);
+    await new BackupTransferWorker(source.ctx).runOnce();
+    await tick(minutesAfter(t0, 12));
+    expect(runs()).toMatchObject([{ triggered_by: "manual", status: "completed" }]);
+    expect(await getSchedule(schedule.id)).toMatchObject({ pendingSince: null, lastOutcome: "completed" });
+
+    // A backup started from the bucket reports to no schedule, so "waiting"
+    // gives way to "nothing to copy".
+    await putObject("b.txt", "b");
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, 13));
+    await tick(minutesAfter(t0, 14));
+    expect((await getSchedule(schedule.id)).lastOutcome).toBe("waiting_quiet");
+    await api("POST", `/api/buckets/${bucketId}/backups`, { backupAccountId: destination.id });
+    await new BackupTransferWorker(source.ctx).runOnce();
+    await tick(minutesAfter(t0, 24));
+    expect(runs()).toHaveLength(2);
+    expect(await getSchedule(schedule.id)).toMatchObject({ pendingSince: null, lastOutcome: "skipped_unchanged" });
+  });
+
+  test("changing the frequency, or switching the schedule back on, forgets what was waiting", async () => {
+    const { source, bucketId, putObject, createSchedule, getSchedule, api } = await setup();
+    await putObject("a.txt", "a");
+    const schedule = await createSchedule(ON_CHANGE);
+    const t0 = later(0);
+    const patch = async (body: Record<string, unknown>) =>
+      (await read<Schedule>(await api("PATCH", `/api/backup-schedules/${schedule.id}`, body))).data!;
+    const waitAt = async (minute: number) => {
+      writtenAt(source.ctx, bucketId, minutesAfter(t0, minute));
+      await new BackupSchedulerWorker(source.ctx, () => minutesAfter(t0, minute)).runOnce();
+      expect((await getSchedule(schedule.id)).pendingSince).toBe(minutesAfter(t0, minute).toISOString());
+    };
+
+    await waitAt(2);
+    expect((await patch({ enabled: false })).pendingSince).not.toBeNull();
+    expect((await patch({ enabled: true })).pendingSince).toBeNull();
+
+    await waitAt(4);
+    const interval = await patch({ frequency: "interval", intervalMinutes: 60 });
+    expect(interval).toMatchObject({ pendingSince: null, quietMinutes: null, maxWaitMinutes: null });
+
+    // Back to on-change: the old numbers went with the switch, so the defaults apply.
+    expect(await patch({ frequency: "on_change" })).toMatchObject({ quietMinutes: 10, maxWaitMinutes: 360 });
+  });
+
+  test("a Drive destination that needs reconnecting counts against it only when a run is due", async () => {
+    const { source, owner, bucketId, putObject, api, getSchedule, tick } = await setup();
+    await putObject("a.txt", "a");
+    const t0 = later(0);
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, -120));
+    const drive = source.ctx.repos.backupAccounts.create({
+      id: newBackupAccountId(),
+      ownerUserId: owner.id,
+      email: "personal@gmail.com",
+      encryptedRefreshToken: "irrelevant-here",
+      grantedScopes: "https://www.googleapis.com/auth/drive",
+    });
+    // Everything had been copied there before the grant was revoked.
+    source.ctx.db
+      .query(
+        `INSERT INTO backup_object_status
+           (backup_account_id, object_id, object_key, object_etag, status, attempts, created_at, updated_at)
+         SELECT ?, id, object_key, etag, 'copied', 1, updated_at, updated_at FROM objects WHERE bucket_id = ?`,
+      )
+      .run(drive.id, bucketId);
+    source.ctx.repos.backupAccounts.markError(drive.id, "reauthorization_required", "the grant was revoked");
+    const created = await api("POST", "/api/backup-schedules", { bucketId, backupAccountId: drive.id, ...ON_CHANGE });
+    const schedule = (await read<Schedule>(created)).data!;
+
+    // Minutes with nothing to copy are not failed backups.
+    for (const minute of [1, 2, 3, 4, 5, 6]) await tick(minutesAfter(t0, minute));
+    let current = await getSchedule(schedule.id);
+    expect(current).toMatchObject({ enabled: true, consecutiveFailures: 0, pendingSince: null });
+
+    await putObject("b.txt", "b");
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, 7));
+    await tick(minutesAfter(t0, 8));
+    expect((await getSchedule(schedule.id)).consecutiveFailures).toBe(0);
+
+    // Quiet, so a run is due, and it cannot start.
+    await tick(minutesAfter(t0, 18));
+    current = await getSchedule(schedule.id);
+    expect(current).toMatchObject({ lastOutcome: "skipped_destination", consecutiveFailures: 1 });
+    expect(current.pendingSince).toBe(minutesAfter(t0, 8).toISOString());
+  });
+
+  test("is always saved as skipping unchanged slots, needs no time zone, and checks its numbers", async () => {
+    const { api, bucketId, destination } = await setup();
+    const post = (input: Record<string, unknown>) =>
+      api("POST", "/api/backup-schedules", { bucketId, backupAccountId: destination.id, ...input });
+
+    for (const input of [
+      { frequency: "on_change", quietMinutes: 0 },
+      { frequency: "on_change", quietMinutes: 30, maxWaitMinutes: 20 },
+      { frequency: "on_change", quietMinutes: 10, maxWaitMinutes: 10081 },
+    ]) {
+      const res = await post(input);
+      expect(res.status, JSON.stringify(input)).toBe(400);
+      expect((await read<never>(res)).error?.code).toBe("INVALID_BACKUP_SCHEDULE");
+    }
+
+    const res = await post({ frequency: "on_change", quietMinutes: 15, maxWaitMinutes: 120, skipIfUnchanged: false });
+    expect(res.status).toBe(201);
+    const created = (await read<Schedule>(res)).data!;
+    expect(created).toMatchObject({
+      frequency: "on_change",
+      quietMinutes: 15,
+      maxWaitMinutes: 120,
+      skipIfUnchanged: true,
+      timezone: "UTC",
+      pendingSince: null,
+    });
+    const patched = await read<Schedule>(
+      await api("PATCH", `/api/backup-schedules/${created.id}`, { skipIfUnchanged: false }),
+    );
+    expect(patched.data!.skipIfUnchanged).toBe(true);
+  });
+});
+
+describe("upgrading to 0019", () => {
+  test("an interval schedule saved before it comes through unchanged, and still fires", async () => {
+    const { source, putObject, createSchedule, tick, runs } = await setup();
+    await putObject("a.txt", "a");
+    const schedule = await createSchedule({ frequency: "interval", intervalMinutes: 60, timezone: "UTC" });
+    await tick(later(61));
+    expect(runs()).toHaveLength(1);
+
+    // Take the database back to how 0018 left it, as an upgrade finds it.
+    const db = source.ctx.db;
+    db.exec(`
+      DROP INDEX idx_objects_bucket_status_updated;
+      ALTER TABLE backup_schedules DROP COLUMN quiet_minutes;
+      ALTER TABLE backup_schedules DROP COLUMN max_wait_minutes;
+      ALTER TABLE backup_schedules DROP COLUMN pending_since;
+      DELETE FROM schema_migrations WHERE version = 19;
+    `);
+    const scheduleRow = () => db.query("SELECT * FROM backup_schedules WHERE id = ?").get(schedule.id);
+    const before = scheduleRow() as Record<string, unknown>;
+
+    expect(runMigrations(db).applied).toEqual([19]);
+    expect(findSchemaDrift(db)).toEqual([]);
+    expect(scheduleRow()).toEqual({ ...before, quiet_minutes: null, max_wait_minutes: null, pending_since: null });
+    // Nothing that points at the schedule was touched either.
+    const linked = db
+      .query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM backup_transfers WHERE schedule_id = ?")
+      .get(schedule.id)!;
+    expect(linked.n).toBe(1);
+
+    await putObject("b.txt", "b");
+    await tick(later(122));
+    expect(runs()).toHaveLength(2);
+    expect(runs()[1]).toMatchObject({ triggered_by: "schedule", status: "completed", copied_count: 1 });
   });
 });

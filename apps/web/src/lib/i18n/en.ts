@@ -777,7 +777,7 @@ export const en: Dictionary = {
     sectionDescription: "Automatic backups per bucket and destination. A slot that finds nothing changed is skipped without leaving an empty run in the history.",
     addSchedule: "Add schedule",
     emptyTitle: "No schedules yet",
-    emptyDescription: "Create a schedule to back a bucket up automatically — every few hours, daily or weekly.",
+    emptyDescription: "Create a schedule to back a bucket up automatically — every few hours, daily, weekly, or whenever it changes.",
     needsDestination: "Add a backup destination before creating a schedule.",
     schedulerOff: "The scheduler is turned off on the server (BACKUP_SCHEDULER_ENABLED=false). Schedules are saved but will not run.",
     loading: "Loading schedules",
@@ -793,6 +793,7 @@ export const en: Dictionary = {
     frequencyInterval: "Every few hours",
     frequencyDaily: "Daily",
     frequencyWeekly: "Weekly",
+    frequencyOnChange: "On change",
     intervalLabel: "Every",
     intervalOption: (minutes: number) =>
       minutes < 60
@@ -800,6 +801,10 @@ export const en: Dictionary = {
         : minutes % 60 === 0
           ? minutes === 60 ? "1 hour" : `${minutes / 60} hours`
           : `${Math.floor(minutes / 60)} h ${minutes % 60} min`,
+    quietLabel: "Quiet period",
+    maxWaitLabel: "Wait at most",
+    onChangeHelp:
+      "A backup runs once the bucket has gone unchanged for the quiet period, so a bulk upload is copied whole in one run. A bucket that keeps changing is still backed up once its changes have waited the maximum.",
     timeLabel: "Time",
     daysLabel: "Days",
     weekdaysShort: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
@@ -814,7 +819,10 @@ export const en: Dictionary = {
     summaryInterval: (every: string) => `Every ${every}`,
     summaryDaily: (time: string, zone: string) => `Daily at ${time} (${zone})`,
     summaryWeekly: (days: string, time: string, zone: string) => `${days} at ${time} (${zone})`,
+    summaryOnChange: (quiet: string, maxWait: string) => `After ${quiet} without changes (waits at most ${maxWait})`,
     nextRun: (date: string) => `Next: ${date}`,
+    pendingSince: (date: string) => `Changes waiting since ${date}`,
+    nothingPending: "No changes waiting",
     notScheduled: "Not scheduled",
     lastCheck: (date: string) => `Last checked ${date}`,
     pausedTitle: "Paused automatically",
@@ -826,6 +834,7 @@ export const en: Dictionary = {
       skipped_unchanged: "Skipped — nothing changed",
       skipped_active: "Skipped — previous backup still running",
       skipped_destination: "Skipped — destination not ready",
+      waiting_quiet: "Waiting for the bucket to go quiet",
       completed: "Completed",
       failed: "Failed",
       cancelled: "Cancelled",

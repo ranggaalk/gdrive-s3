@@ -10,6 +10,7 @@ import { useLocale } from "@/components/locale-provider";
 import { useToast } from "@/components/toast-provider";
 import { Select } from "@/components/ui/select";
 import type { Dictionary } from "@/lib/i18n/types";
+import { cn } from "@/lib/utils";
 import {
   createBackupSchedule,
   deleteBackupSchedule,
@@ -26,6 +27,11 @@ import {
 } from "../api/client.ts";
 
 const INTERVAL_CHOICES = [15, 30, 60, 120, 180, 240, 360, 720, 1440];
+const QUIET_CHOICES = [5, 10, 15, 30, 60];
+const MAX_WAIT_CHOICES = [60, 180, 360, 720, 1440];
+// The server's own defaults for an on-change schedule.
+const DEFAULT_QUIET_MINUTES = 10;
+const DEFAULT_MAX_WAIT_MINUTES = 360;
 // Indonesia's three zones first: the people running this gateway mostly live
 // in them. The browser's own zone and UTC are always offered as well.
 const ZONE_CHOICES = ["Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC"];
@@ -35,6 +41,7 @@ export const OUTCOME_COLOR: Record<BackupScheduleOutcome, "success" | "warning" 
   skipped_unchanged: "default",
   skipped_active: "default",
   skipped_destination: "warning",
+  waiting_quiet: "default",
   completed: "success",
   failed: "danger",
   cancelled: "default",
@@ -52,11 +59,17 @@ function browserZone(): string {
 
 /** One line saying when a schedule runs. */
 export function scheduleSummary(
-  schedule: Pick<BackupSchedule, "frequency" | "intervalMinutes" | "timeOfDay" | "daysOfWeek" | "timezone">,
+  schedule: Pick<
+    BackupSchedule,
+    "frequency" | "intervalMinutes" | "timeOfDay" | "daysOfWeek" | "timezone" | "quietMinutes" | "maxWaitMinutes"
+  >,
   t: Dictionary,
 ): string {
   const s = t.backupSchedule;
   if (schedule.frequency === "interval") return s.summaryInterval(s.intervalOption(schedule.intervalMinutes ?? 0));
+  if (schedule.frequency === "on_change") {
+    return s.summaryOnChange(s.intervalOption(schedule.quietMinutes ?? 0), s.intervalOption(schedule.maxWaitMinutes ?? 0));
+  }
   const time = schedule.timeOfDay ?? "";
   if (schedule.frequency === "daily") return s.summaryDaily(time, schedule.timezone);
   const days = (schedule.daysOfWeek ?? []).map((day) => s.weekdaysShort[day - 1]).join(", ");
@@ -67,14 +80,31 @@ export function formatWhen(iso: string | null): string | null {
   return iso ? new Date(iso).toLocaleString() : null;
 }
 
-/** A timing as the form edits it: the interval as the select's string, and
- *  every field kept, so switching frequency back and forth loses nothing. */
+/** When a schedule runs next -- or, for one that waits on changes, whether
+ *  any are waiting. Its next look at the bucket is a minute away at most and
+ *  would tell nobody anything. */
+export function scheduleStatusLine(
+  schedule: Pick<BackupSchedule, "enabled" | "frequency" | "nextRunAt" | "pendingSince">,
+  t: Dictionary,
+): string {
+  const s = t.backupSchedule;
+  if (!schedule.enabled) return s.notScheduled;
+  if (schedule.frequency === "on_change") {
+    return schedule.pendingSince ? s.pendingSince(formatWhen(schedule.pendingSince)!) : s.nothingPending;
+  }
+  return schedule.nextRunAt ? s.nextRun(formatWhen(schedule.nextRunAt)!) : s.notScheduled;
+}
+
+/** A timing as the form edits it: the minute counts as the selects' strings,
+ *  and every field kept, so switching frequency back and forth loses nothing. */
 export interface TimingDraft {
   frequency: BackupScheduleFrequency;
   intervalMinutes: string;
   timeOfDay: string;
   daysOfWeek: number[];
   timezone: string;
+  quietMinutes: string;
+  maxWaitMinutes: string;
 }
 
 export function draftFromTiming(
@@ -87,47 +117,63 @@ export function draftFromTiming(
     timeOfDay: timing?.timeOfDay ?? defaults.timeOfDay,
     daysOfWeek: timing?.daysOfWeek ?? [1],
     timezone: timing?.timezone ?? browserZone(),
+    quietMinutes: String(timing?.quietMinutes ?? DEFAULT_QUIET_MINUTES),
+    maxWaitMinutes: String(timing?.maxWaitMinutes ?? DEFAULT_MAX_WAIT_MINUTES),
   };
 }
 
 /** Only the fields the frequency uses, as the API takes them. */
 export function timingFromDraft(draft: TimingDraft): BackupScheduleTiming {
+  const onChange = draft.frequency === "on_change";
   return {
     frequency: draft.frequency,
     intervalMinutes: draft.frequency === "interval" ? Number(draft.intervalMinutes) : null,
-    timeOfDay: draft.frequency === "interval" ? null : draft.timeOfDay,
+    timeOfDay: draft.frequency === "daily" || draft.frequency === "weekly" ? draft.timeOfDay : null,
     daysOfWeek: draft.frequency === "weekly" ? draft.daysOfWeek : null,
     timezone: draft.timezone,
+    quietMinutes: onChange ? Number(draft.quietMinutes) : null,
+    maxWaitMinutes: onChange ? Number(draft.maxWaitMinutes) : null,
   };
 }
 
 export function timingReady(draft: TimingDraft): boolean {
+  if (draft.frequency === "on_change") return Number(draft.maxWaitMinutes) >= Number(draft.quietMinutes);
   return (
     (draft.frequency === "interval" || /^\d{2}:\d{2}$/.test(draft.timeOfDay)) &&
     (draft.frequency !== "weekly" || draft.daysOfWeek.length > 0)
   );
 }
 
-/** Frequency, then whichever of interval, time, weekdays and zone it needs.
- *  Shared by bucket schedules and the database snapshot schedule. */
+/**
+ * Frequency, then whichever of interval, time, weekdays and zone -- or quiet
+ * period and maximum wait -- it needs. Shared by bucket schedules and the
+ * database snapshot schedule; only the former can wait on changes, so "On
+ * change" is offered only with `allowOnChange`.
+ */
 export function ScheduleTimingFields({
   value,
   onChange,
   minIntervalMinutes,
+  allowOnChange = false,
 }: {
   value: TimingDraft;
   onChange: (next: TimingDraft) => void;
   minIntervalMinutes: number;
+  allowOnChange?: boolean;
 }) {
   const { t } = useLocale();
   const s = t.backupSchedule;
   const set = <K extends keyof TimingDraft>(key: K, next: TimingDraft[K]) => onChange({ ...value, [key]: next });
 
-  const intervalOptions = [
-    ...new Set([...INTERVAL_CHOICES.filter((m) => m >= minIntervalMinutes), Number(value.intervalMinutes)]),
-  ]
-    .sort((a, b) => a - b)
-    .map((minutes) => ({ value: String(minutes), label: s.intervalOption(minutes) }));
+  // The current value is always offered, so a schedule saved through the API
+  // with an unlisted number still shows what it has.
+  const minuteOptions = (choices: number[], current: string, atLeast: number) =>
+    [...new Set([...choices.filter((m) => m >= atLeast), Number(current)])]
+      .sort((a, b) => a - b)
+      .map((minutes) => ({ value: String(minutes), label: s.intervalOption(minutes) }));
+  const intervalOptions = minuteOptions(INTERVAL_CHOICES, value.intervalMinutes, minIntervalMinutes);
+  const quietOptions = minuteOptions(QUIET_CHOICES, value.quietMinutes, 1);
+  const maxWaitOptions = minuteOptions(MAX_WAIT_CHOICES, value.maxWaitMinutes, Number(value.quietMinutes));
   const zoneOptions = [...new Set([value.timezone, browserZone(), ...ZONE_CHOICES])].map((zone) => ({
     value: zone,
     label: zone,
@@ -139,19 +185,20 @@ export function ScheduleTimingFields({
         ? value.daysOfWeek.filter((d) => d !== day)
         : [...value.daysOfWeek, day].sort((a, b) => a - b),
     );
+  const frequencies: Array<[BackupScheduleFrequency, string]> = [
+    ["interval", s.frequencyInterval],
+    ["daily", s.frequencyDaily],
+    ["weekly", s.frequencyWeekly],
+  ];
+  if (allowOnChange) frequencies.push(["on_change", s.frequencyOnChange]);
 
   return (
     <>
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium text-foreground">{s.frequencyLabel}</legend>
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              ["interval", s.frequencyInterval],
-              ["daily", s.frequencyDaily],
-              ["weekly", s.frequencyWeekly],
-            ] as const
-          ).map(([frequency, label]) => (
+        {/* Four labels do not fit one row of a dialog, so they take two. */}
+        <div className={cn("grid gap-2", frequencies.length > 3 ? "grid-cols-2" : "grid-cols-3")}>
+          {frequencies.map(([frequency, label]) => (
             <Button
               key={frequency}
               fullWidth
@@ -165,7 +212,25 @@ export function ScheduleTimingFields({
         </div>
       </fieldset>
 
-      {value.frequency === "interval" ? (
+      {value.frequency === "on_change" ? (
+        <div className="space-y-2">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              label={s.quietLabel}
+              value={value.quietMinutes}
+              onValueChange={(next) => set("quietMinutes", next)}
+              options={quietOptions}
+            />
+            <Select
+              label={s.maxWaitLabel}
+              value={value.maxWaitMinutes}
+              onValueChange={(next) => set("maxWaitMinutes", next)}
+              options={maxWaitOptions}
+            />
+          </div>
+          <p className="text-xs text-muted">{s.onChangeHelp}</p>
+        </div>
+      ) : value.frequency === "interval" ? (
         <Select
           label={s.intervalLabel}
           value={value.intervalMinutes}
@@ -325,20 +390,29 @@ export function BackupScheduleDialog({
                 />
               ) : null}
 
-              <ScheduleTimingFields value={timing} onChange={setTiming} minIntervalMinutes={minIntervalMinutes} />
+              <ScheduleTimingFields
+                value={timing}
+                onChange={setTiming}
+                minIntervalMinutes={minIntervalMinutes}
+                allowOnChange
+              />
 
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium text-foreground">{s.skipLabel}</legend>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button fullWidth size="sm" variant={skipIfUnchanged ? "primary" : "outline"} onPress={() => setSkipIfUnchanged(true)}>
-                    {s.skipOn}
-                  </Button>
-                  <Button fullWidth size="sm" variant={skipIfUnchanged ? "outline" : "primary"} onPress={() => setSkipIfUnchanged(false)}>
-                    {s.skipOff}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted">{s.skipHelp}</p>
-              </fieldset>
+              {/* An on-change schedule only ever runs for changes; the server
+                  ignores this choice for it. */}
+              {timing.frequency !== "on_change" ? (
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium text-foreground">{s.skipLabel}</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button fullWidth size="sm" variant={skipIfUnchanged ? "primary" : "outline"} onPress={() => setSkipIfUnchanged(true)}>
+                      {s.skipOn}
+                    </Button>
+                    <Button fullWidth size="sm" variant={skipIfUnchanged ? "outline" : "primary"} onPress={() => setSkipIfUnchanged(false)}>
+                      {s.skipOff}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted">{s.skipHelp}</p>
+                </fieldset>
+              ) : null}
             </Modal.Body>
             <Modal.Footer>
               <Button slot="close" variant="tertiary" isDisabled={saving}>{t.common.cancel}</Button>
@@ -534,7 +608,7 @@ export function BackupSchedulesSection({
                     ) : null}
                   </div>
                   <p className="text-xs text-muted">
-                    {schedule.enabled && schedule.nextRunAt ? s.nextRun(formatWhen(schedule.nextRunAt)!) : s.notScheduled}
+                    {scheduleStatusLine(schedule, t)}
                     {schedule.lastCheckedAt ? ` · ${s.lastCheck(formatWhen(schedule.lastCheckedAt)!)}` : ""}
                   </p>
                   {schedule.pausedReason ? (
