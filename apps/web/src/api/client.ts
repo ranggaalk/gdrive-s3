@@ -961,13 +961,14 @@ export const listBackupRunObjects = async (
 // Scheduled backups (/api/backup-schedules): one per (bucket, destination)
 // pair, each queueing ordinary runs when it falls due.
 
-export type BackupScheduleFrequency = "interval" | "daily" | "weekly";
+export type BackupScheduleFrequency = "interval" | "daily" | "weekly" | "on_change";
 
 export type BackupScheduleOutcome =
   | "queued"
   | "skipped_unchanged"
   | "skipped_active"
   | "skipped_destination"
+  | "waiting_quiet"
   | "completed"
   | "failed"
   | "cancelled"
@@ -982,6 +983,10 @@ export interface BackupScheduleTiming {
   /** ISO weekdays: 1 = Monday ... 7 = Sunday. */
   daysOfWeek: number[] | null;
   timezone: string;
+  /** "on_change": minutes without a new write before the run is queued. */
+  quietMinutes: number | null;
+  /** "on_change": the longest pending changes wait for the bucket to go quiet. */
+  maxWaitMinutes: number | null;
 }
 
 export interface BackupSchedule extends BackupScheduleTiming {
@@ -993,7 +998,10 @@ export interface BackupSchedule extends BackupScheduleTiming {
   accountKind: BackupDestinationKind;
   enabled: boolean;
   skipIfUnchanged: boolean;
+  /** For "on_change", only when the bucket is next looked at. */
   nextRunAt: string | null;
+  /** "on_change": when the scheduler first saw changes still waiting to be copied. */
+  pendingSince: string | null;
   lastCheckedAt: string | null;
   lastOutcome: BackupScheduleOutcome | null;
   lastTransferId: string | null;
@@ -1046,7 +1054,9 @@ export const runBackupScheduleNow = async (id: string) =>
 // Scheduled snapshots of the gateway's own database (admin only), sent to one
 // of the admin's backup destinations.
 
-export interface DbSnapshotStatus extends BackupScheduleTiming {
+/** A snapshot has a clock schedule only; there is no bucket to wait on. */
+export interface DbSnapshotStatus extends Omit<BackupScheduleTiming, "frequency" | "quietMinutes" | "maxWaitMinutes"> {
+  frequency: Exclude<BackupScheduleFrequency, "on_change">;
   enabled: boolean;
   backupAccountId: string | null;
   destination: { id: string; label: string; kind: BackupDestinationKind; status: BackupAccount["status"] } | null;

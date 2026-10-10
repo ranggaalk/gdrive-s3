@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEven
 import { Activity, ArrowDownToLine, ArrowLeft, CalendarClock, CloudDownload, Copy, Eye, FileCode2, Files, Folder, HardDriveDownload, History, Link2, Plus, Search, Trash2 } from "lucide-react";
 import { Alert, AlertDialog, Button, buttonVariants, Chip, Focusable, Input, Label, Modal, Table, Tooltip } from "@heroui/react";
 import { Select } from "@/components/ui/select";
-import { BackupScheduleDialog, formatWhen, scheduleSummary } from "@/components/backup-schedules";
+import { BackupScheduleDialog, scheduleStatusLine, scheduleSummary } from "@/components/backup-schedules";
 import { CopyableCode } from "@/components/copyable-code";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/feedback";
 import { useLocale } from "@/components/locale-provider";
@@ -912,9 +912,7 @@ export function ObjectsPage({
                         <>
                           <p>{scheduleSummary(selectedSchedule, t)}</p>
                           <p className="text-xs text-muted">
-                            {selectedSchedule.enabled && selectedSchedule.nextRunAt
-                              ? t.backupSchedule.nextRun(formatWhen(selectedSchedule.nextRunAt)!)
-                              : t.backupSchedule.notScheduled}
+                            {scheduleStatusLine(selectedSchedule, t)}
                             {selectedSchedule.lastOutcome ? ` · ${t.backupSchedule.outcome[selectedSchedule.lastOutcome]}` : ""}
                           </p>
                           {selectedSchedule.pausedReason ? (

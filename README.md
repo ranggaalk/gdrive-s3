@@ -115,10 +115,12 @@ Setup and caveats are in the
 [operations runbook](docs/OPERATIONS.md#9-backup-destinations-s3-and-rclone).
 
 Backups can also run on a **schedule** — every few hours, daily, or weekly at a
-set time in the schedule's own time zone. A slot that finds nothing changed is
-skipped without leaving an empty run behind, a schedule that keeps failing
-pauses itself and says why, and everything lives in SQLite: no Redis, no host
-cron, and a restart loses nothing. See
+set time in the schedule's own time zone — or **on change**: once the bucket
+has had no new writes for a quiet period, so a bulk upload is copied whole in
+one run, and after a maximum wait for a bucket that never goes quiet. A slot
+that finds nothing changed is skipped without leaving an empty run behind, a
+schedule that keeps failing pauses itself and says why, and everything lives
+in SQLite: no Redis, no host cron, and a restart loses nothing. See
 [scheduled backups](docs/OPERATIONS.md#10-scheduled-backups).
 
 The gateway's own database can be shipped the same way: an admin schedules

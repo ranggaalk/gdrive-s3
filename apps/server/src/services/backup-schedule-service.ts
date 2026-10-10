@@ -4,9 +4,12 @@
 // A schedule never copies anything itself. When it falls due it queues an
 // ordinary run into backup_transfers -- unless nothing has changed since the
 // last copy, in which case it skips the slot without leaving an empty run in
-// the history -- and the worker that runs manual backups runs it.
+// the history -- and the worker that runs manual backups runs it. An
+// on-change schedule falls due every minute and queues its run only once the
+// bucket has gone quiet (see fireOnChange).
 
 import type { AppContext } from "../context.ts";
+import type { BackupAccountRow } from "../db/repositories/backup-accounts.ts";
 import type { BackupTransferRow } from "../db/repositories/backup-transfers.ts";
 import { BackupAlreadyActiveError } from "../db/repositories/backup-transfers.ts";
 import {
@@ -15,6 +18,8 @@ import {
   type BackupScheduleRow,
 } from "../db/repositories/backup-schedules.ts";
 import {
+  DEFAULT_MAX_WAIT_MINUTES,
+  DEFAULT_QUIET_MINUTES,
   nextRunAt,
   normalizeTiming,
   ScheduleInputError,
@@ -29,7 +34,8 @@ export class BackupScheduleNotFoundError extends Error {}
 
 /** How many due schedules one pass fires; the rest wait for the next tick. */
 const DUE_BATCH = 50;
-const DAY_MS = 24 * 60 * 60 * 1000;
+const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 function asRecord(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new ScheduleInputError("expected a JSON object");
@@ -48,11 +54,13 @@ function timingFrom(raw: Record<string, unknown>, current: ScheduleTiming | null
   const pick = <T>(key: string, fallback: T | null): T | null =>
     raw[key] === undefined ? fallback : (raw[key] as T | null);
   const frequency = pick<ScheduleFrequency>("frequency", current?.frequency ?? null);
-  const timezone = pick<string>("timezone", current?.timezone ?? null);
+  let timezone = pick<string>("timezone", current?.timezone ?? null);
   const daysOfWeek = pick<number[]>("daysOfWeek", current?.daysOfWeek ?? null);
   if (daysOfWeek !== null && !Array.isArray(daysOfWeek)) {
     throw new ScheduleInputError("daysOfWeek must be a list of ISO weekdays");
   }
+  // An on-change schedule never reads a clock, so it need not name a zone.
+  if (timezone === null && frequency === "on_change") timezone = "UTC";
   if (typeof timezone !== "string") throw new ScheduleInputError("timezone is required");
   return {
     frequency: frequency as ScheduleFrequency,
@@ -60,6 +68,8 @@ function timingFrom(raw: Record<string, unknown>, current: ScheduleTiming | null
     timeOfDay: pick<string>("timeOfDay", current?.timeOfDay ?? null),
     daysOfWeek,
     timezone,
+    quietMinutes: pick<number>("quietMinutes", current?.quietMinutes ?? null),
+    maxWaitMinutes: pick<number>("maxWaitMinutes", current?.maxWaitMinutes ?? null),
   };
 }
 
@@ -69,8 +79,16 @@ function sameTiming(a: ScheduleTiming, b: ScheduleTiming): boolean {
     a.intervalMinutes === b.intervalMinutes &&
     a.timeOfDay === b.timeOfDay &&
     (a.daysOfWeek ?? []).join(",") === (b.daysOfWeek ?? []).join(",") &&
-    a.timezone === b.timezone
+    a.timezone === b.timezone &&
+    a.quietMinutes === b.quietMinutes &&
+    a.maxWaitMinutes === b.maxWaitMinutes
   );
+}
+
+/** An on-change schedule only ever runs for changes, whatever the request
+ *  said about skipping slots that find none. */
+function alwaysSkips(timing: ScheduleTiming): boolean {
+  return timing.frequency === "on_change";
 }
 
 export class BackupScheduleService {
@@ -92,15 +110,16 @@ export class BackupScheduleService {
     if (!this.ctx.repos.backupAccounts.findOwned(ownerUserId, backupAccountId)) {
       throw new ScheduleInputError("backup destination not found");
     }
-    const timing = normalizeTiming(timingFrom(raw, null), this.settings.minIntervalMinutes);
+    const timing = normalizeTiming(timingFrom(raw, null), this.settings.minIntervalMinutes, { allowOnChange: true });
     const enabled = optionalBool(raw, "enabled") ?? true;
+    const skipIfUnchanged = optionalBool(raw, "skipIfUnchanged") ?? true;
     return this.ctx.repos.backupSchedules.create({
       id: newBackupScheduleId(),
       ownerUserId,
       bucketId,
       backupAccountId,
       timing,
-      skipIfUnchanged: optionalBool(raw, "skipIfUnchanged") ?? true,
+      skipIfUnchanged: alwaysSkips(timing) || skipIfUnchanged,
       enabled,
       nextRunAt: enabled ? nextRunAt(timing, now).toISOString() : null,
     });
@@ -114,7 +133,7 @@ export class BackupScheduleService {
       throw new ScheduleInputError("a schedule's bucket and destination cannot change; add another schedule");
     }
     const current = timingOf(schedule);
-    const timing = normalizeTiming(timingFrom(raw, current), this.settings.minIntervalMinutes);
+    const timing = normalizeTiming(timingFrom(raw, current), this.settings.minIntervalMinutes, { allowOnChange: true });
     const enabled = optionalBool(raw, "enabled") ?? schedule.enabled === 1;
     const skipIfUnchanged = optionalBool(raw, "skipIfUnchanged") ?? schedule.skip_if_unchanged === 1;
 
@@ -125,7 +144,12 @@ export class BackupScheduleService {
       const keep = schedule.enabled === 1 && schedule.next_run_at && sameTiming(current, timing);
       next = keep ? schedule.next_run_at : nextRunAt(timing, now).toISOString();
     }
-    this.ctx.repos.backupSchedules.update(id, { timing, skipIfUnchanged, enabled, nextRunAt: next });
+    this.ctx.repos.backupSchedules.update(id, {
+      timing,
+      skipIfUnchanged: alwaysSkips(timing) || skipIfUnchanged,
+      enabled,
+      nextRunAt: next,
+    });
     return this.ctx.repos.backupSchedules.findById(id)!;
   }
 
@@ -167,7 +191,7 @@ export class BackupScheduleService {
       if (!this.ctx.repos.backupSchedules.claimSlot(schedule.id, schedule.next_run_at!, next, nowText)) continue;
       fired++;
       try {
-        await this.fire(schedule);
+        await this.fire(schedule, now);
       } catch (error) {
         this.ctx.repos.backupSchedules.recordOutcome(schedule.id, { outcome: "error" });
         this.ctx.log.warn("backup schedule failed to fire", { backupScheduleId: schedule.id, error: message(error) });
@@ -176,7 +200,7 @@ export class BackupScheduleService {
     return { fired };
   }
 
-  private async fire(schedule: BackupScheduleRow): Promise<void> {
+  private async fire(schedule: BackupScheduleRow, now: Date): Promise<void> {
     const owner = schedule.owner_user_id;
     if (!this.ownsBucket(owner, schedule.bucket_id)) {
       this.pause(schedule, "the bucket is no longer available to its owner (removed, failing, or no longer theirs)");
@@ -187,13 +211,11 @@ export class BackupScheduleService {
       this.pause(schedule, "the backup destination is gone");
       return;
     }
-    if (account.kind === "drive" && account.status !== "active") {
-      // A Drive destination that lost its grant cannot run until it is
-      // linked again. Each slot like this counts as a failure, so the
-      // schedule pauses instead of silently skipping forever.
-      this.countFailure(schedule, "skipped_destination", "the Drive destination needs reconnecting");
+    if (schedule.frequency === "on_change") {
+      await this.fireOnChange(schedule, account, now);
       return;
     }
+    if (this.driveNeedsReconnecting(schedule, account)) return;
     if (
       schedule.skip_if_unchanged === 1 &&
       !this.ctx.repos.backupTransfers.hasObjectsNeedingWork(schedule.bucket_id, schedule.backup_account_id)
@@ -201,9 +223,96 @@ export class BackupScheduleService {
       this.ctx.repos.backupSchedules.recordOutcome(schedule.id, { outcome: "skipped_unchanged" });
       return;
     }
+    await this.queueRun(schedule);
+  }
+
+  /**
+   * An on-change schedule falls due every minute, and queues a run once the
+   * changes it is holding have stopped coming -- no new write for
+   * quiet_minutes -- or have waited max_wait_minutes. A bulk upload is then
+   * copied whole by one run, instead of a slice of it at every slot.
+   *
+   * pending_since is when the scheduler first noticed changes not yet backed
+   * up, not when they were written: off by at most a minute, but stored, so
+   * the maximum wait is a column read and holds across restarts.
+   */
+  private async fireOnChange(schedule: BackupScheduleRow, account: BackupAccountRow, now: Date): Promise<void> {
+    const schedules = this.ctx.repos.backupSchedules;
+    const transfers = this.ctx.repos.backupTransfers;
+    const lastWrite = transfers.lastObjectWriteAt(schedule.bucket_id);
+    let pendingSince = schedule.pending_since;
+    let checked = false;
+
+    if (pendingSince === null) {
+      // hasObjectsNeedingWork reads every object in the bucket, too much to
+      // do every minute for a big bucket that sits unchanged; ask only when
+      // the answer can have changed. last_outcome is left alone when nothing
+      // is pending, so it keeps saying how the last run went.
+      if (lastWrite === null || !this.mayHaveNewWork(schedule, lastWrite, now)) return;
+      if (!transfers.hasObjectsNeedingWork(schedule.bucket_id, schedule.backup_account_id)) return;
+      pendingSince = now.toISOString();
+      schedules.setPendingSince(schedule.id, pendingSince);
+      checked = true;
+    }
+
+    const quietMs = (schedule.quiet_minutes ?? DEFAULT_QUIET_MINUTES) * MINUTE_MS;
+    const maxWaitMs = (schedule.max_wait_minutes ?? DEFAULT_MAX_WAIT_MINUTES) * MINUTE_MS;
+    const quiet = lastWrite === null || Date.parse(lastWrite) <= now.getTime() - quietMs;
+    const overdue = Date.parse(pendingSince) <= now.getTime() - maxWaitMs;
+    if (!quiet && !overdue) {
+      schedules.recordOutcome(schedule.id, { outcome: "waiting_quiet" });
+      return;
+    }
+    if (!checked && !transfers.hasObjectsNeedingWork(schedule.bucket_id, schedule.backup_account_id)) {
+      // What was waiting went some other way: copied by a run started by
+      // hand, or deleted. Only an outcome that says the schedule is holding
+      // back gives way; how a "run now" went says more than "skipped".
+      schedules.setPendingSince(schedule.id, null);
+      if (schedule.last_outcome === "waiting_quiet" || schedule.last_outcome === "skipped_active") {
+        schedules.recordOutcome(schedule.id, { outcome: "skipped_unchanged" });
+      }
+      return;
+    }
+    // Checked only now, not every minute: what counts as a failure is a run
+    // that was due and could not start, not a minute with nothing to copy.
+    if (this.driveNeedsReconnecting(schedule, account)) return;
+    // A run that could not start keeps pending_since: its changes are still
+    // waiting, and the maximum wait still counts from when they started.
+    if (await this.queueRun(schedule)) schedules.setPendingSince(schedule.id, null);
+  }
+
+  /**
+   * Whether an on-change schedule can find work its previous look did not:
+   * something was written since then. Once every minIntervalMinutes it looks
+   * regardless -- as often as an interval schedule may -- since two things
+   * leave work behind without a write: a copy that failed and is due a retry,
+   * and a write stamped by a clock that has since stepped back.
+   */
+  private mayHaveNewWork(schedule: BackupScheduleRow, lastWrite: string, now: Date): boolean {
+    // The row was read before this pass claimed its slot, so last_checked_at
+    // is still the previous look's `now`.
+    const previous = schedule.last_checked_at;
+    if (previous === null || Date.parse(lastWrite) > Date.parse(previous)) return true;
+    const period = this.settings.minIntervalMinutes * MINUTE_MS;
+    return Math.floor(now.getTime() / period) !== Math.floor(Date.parse(previous) / period);
+  }
+
+  /**
+   * A Drive destination that lost its grant cannot run until it is linked
+   * again. Each slot like this counts as a failure, so the schedule pauses
+   * instead of silently skipping forever.
+   */
+  private driveNeedsReconnecting(schedule: BackupScheduleRow, account: BackupAccountRow): boolean {
+    if (account.kind !== "drive" || account.status === "active") return false;
+    this.countFailure(schedule, "skipped_destination", "the Drive destination needs reconnecting");
+    return true;
+  }
+
+  /** Queues the schedule's run; false when it could not, having said why. */
+  private async queueRun(schedule: BackupScheduleRow): Promise<boolean> {
     try {
       const transfer = await new BackupTransferService(this.ctx).create({
-        userId: owner,
+        userId: schedule.owner_user_id,
         bucketId: schedule.bucket_id,
         backupAccountId: schedule.backup_account_id,
         triggeredBy: "schedule",
@@ -211,23 +320,24 @@ export class BackupScheduleService {
       });
       this.ctx.repos.backupSchedules.recordOutcome(schedule.id, { outcome: "queued", transferId: transfer.id });
       this.ctx.repos.audit.record({
-        userId: owner,
+        userId: schedule.owner_user_id,
         action: "backup.schedule.queue",
         bucketId: schedule.bucket_id,
         requestId: newRequestId(),
         statusCode: 202,
         detail: { backupScheduleId: schedule.id, backupTransferId: transfer.id },
       });
+      return true;
     } catch (error) {
       if (error instanceof BackupAlreadyActiveError) {
         // Most likely the previous slot's run, still going; this slot's
         // changes will be in it or in the next one.
         this.ctx.repos.backupSchedules.recordOutcome(schedule.id, { outcome: "skipped_active" });
-        return;
+        return false;
       }
       if (error instanceof BackupTransferInvalidError) {
         this.countFailure(schedule, "skipped_destination", error.message);
-        return;
+        return false;
       }
       throw error;
     }

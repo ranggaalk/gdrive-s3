@@ -281,6 +281,23 @@ new or changed objects are copied.
   weekly on chosen days at HH:MM. Clock times are read in the schedule's IANA
   time zone (`Asia/Jakarta`, …); a time a DST change skips runs just after the
   jump, and one it repeats runs once.
+- **On change.** Instead of a clock, a schedule can wait for its bucket to go
+  quiet: once no object has been written for the quiet period (default 10
+  minutes) it queues one run, so a bulk upload is copied whole rather than a
+  slice per slot. A bucket that never goes quiet is still backed up once its
+  changes have waited the maximum wait (default 6 hours). The wait counts from
+  when the scheduler first saw changes not yet backed up (`pending_since`); it
+  is kept in the database, so a restart does not reset it, while switching
+  the schedule back on or changing its frequency does. Any write to an object
+  counts, an ACL, retention or legal-hold change included, so one can hold a
+  run back by up to the quiet period; deletions never count, since backups do
+  not copy them. A Drive destination that needs reconnecting counts as a
+  failure only when a run is due, not every minute.
+- **On-change cost.** Such a schedule looks at its bucket every minute, but
+  reads the bucket's whole object list only when something was written since
+  its previous look, and otherwise once per
+  `BACKUP_SCHEDULE_MIN_INTERVAL_MINUTES`. That is also how soon a copy that
+  failed is retried when nothing new has been written.
 - **Nothing changed.** By default a slot with nothing to copy is skipped
   without creating a run, so an "every 15 minutes" schedule is close to
   continuous backup without flooding the history.

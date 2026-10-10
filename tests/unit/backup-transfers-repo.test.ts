@@ -236,4 +236,32 @@ describe("BackupTransfersRepository, scheduling", () => {
     expect(backupTransfers.findById(latest)).not.toBeNull();
     expect(backupTransfers.findById(onlyRun)).not.toBeNull();
   });
+
+  test("lastObjectWriteAt is the newest write to the bucket's active objects, read off an index", () => {
+    const { db, backupTransfers, buckets, bucket, user } = setup();
+    expect(backupTransfers.lastObjectWriteAt(bucket.id)).toBeNull();
+
+    const stamp = (id: string, at: string) => db.query("UPDATE objects SET updated_at = ? WHERE id = ?").run(at, id);
+    const a = insertObject(db, bucket.id, "a.txt", "etag-a");
+    const b = insertObject(db, bucket.id, "b.txt", "etag-b");
+    stamp(a, "2026-10-09T10:00:00.000Z");
+    stamp(b, "2026-10-09T09:00:00.000Z");
+    const other = buckets.create(user.id, "other", "us-east-1", "folderB");
+    stamp(insertObject(db, other.id, "c.txt", "etag-c"), "2026-10-09T11:00:00.000Z");
+    expect(backupTransfers.lastObjectWriteAt(bucket.id)).toBe("2026-10-09T10:00:00.000Z");
+
+    // An object on its way out is not a write anything should wait on.
+    db.query("UPDATE objects SET status = 'deleting' WHERE id = ?").run(a);
+    expect(backupTransfers.lastObjectWriteAt(bucket.id)).toBe("2026-10-09T09:00:00.000Z");
+
+    // An on-change schedule asks every minute, so this must not scan the bucket.
+    const plan = db
+      .query<{ detail: string }, [string]>(
+        "EXPLAIN QUERY PLAN SELECT MAX(updated_at) AS at FROM objects WHERE bucket_id = ? AND status = 'active'",
+      )
+      .all(bucket.id)
+      .map((row) => row.detail)
+      .join("\n");
+    expect(plan).toContain("idx_objects_bucket_status_updated");
+  });
 });

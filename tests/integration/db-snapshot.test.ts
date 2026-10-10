@@ -165,6 +165,14 @@ describe("database snapshot settings", () => {
     });
     expect(tooOften.status).toBe(400);
 
+    // There is no bucket whose writes a snapshot could wait on.
+    const onChange = await api("PUT", "/api/settings/db-snapshot", {
+      enabled: true, backupAccountId: destination.id, frequency: "on_change", quietMinutes: 10, maxWaitMinutes: 60,
+      timezone: "UTC",
+    });
+    expect(onChange.status).toBe(400);
+    expect((await read<never>(onChange)).error?.code).toBe("INVALID_DB_SNAPSHOT");
+
     const saved = await configure({
       enabled: true, backupAccountId: destination.id, frequency: "daily", timeOfDay: "03:00", timezone: "Asia/Jakarta",
     });

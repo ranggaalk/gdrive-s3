@@ -300,6 +300,23 @@ export class BackupTransfersRepository {
     return this.listObjectsNeedingWork(bucketId, backupAccountId, 1).length > 0;
   }
 
+  /**
+   * When the bucket's active objects were last written, or null when it has
+   * none. Every write to `objects` stamps updated_at -- new bytes, but also an
+   * ACL or lock change -- and a deletion removes the row, so deletions never
+   * count. An index seek (idx_objects_bucket_status_updated), unlike
+   * hasObjectsNeedingWork, which reads every object in the bucket.
+   */
+  lastObjectWriteAt(bucketId: string): string | null {
+    return (
+      this.db
+        .query<{ at: string | null }, [string]>(
+          "SELECT MAX(updated_at) AS at FROM objects WHERE bucket_id = ? AND status = 'active'",
+        )
+        .get(bucketId)?.at ?? null
+    );
+  }
+
   markObjectCopied(input: {
     transferId: string;
     backupAccountId: string;
