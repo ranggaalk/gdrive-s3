@@ -192,6 +192,11 @@ the rule needs a condition (`IpAddress` on `aws:SourceIp`, `StringEquals` on
 - Use UTF-8 keys up to 1024 bytes.
 - Preserve exact keys; do not normalize repeated slashes, dot segments, or case.
 - Avoid leading slash; use `folder/file.ext`, not `/folder/file.ext`.
+- When the application chooses keys, avoid `.`, `..`, and empty segments
+  (`a/./b`, `../x`, `a//b`, a `folder/` marker) and keys close to 1024 bytes.
+  The gateway stores them, but a bucket backup to S3-compatible storage or an
+  rclone remote cannot hold every one of them (S3 also prefixes the key with
+  the bucket name), so such objects can be left out of the backup.
 - Treat object keys as application data paths, not local filesystem paths.
 - Store user-generated filenames safely; validate or prefix them to avoid collisions.
 
@@ -200,6 +205,11 @@ the rule needs a condition (`IpAddress` on `aws:SourceIp`, `StringEquals` on
 The dashboard Overview page carries the authoritative compatibility matrix: a
 row cannot be marked supported without naming the test that proves it. Check it
 before designing against anything not listed here.
+
+Buckets:
+
+- `ListBuckets`, `CreateBucket`, `HeadBucket`, and `DeleteBucket`. Names are
+  unique per user, not globally (see below).
 
 Core data plane:
 
@@ -242,6 +252,10 @@ These are real constraints, not missing features. Handle them explicitly:
 - **Virtual-hosted URLs are opt-in.** Path-style always works. Only use
   `{bucket}.{domain}` if the operator confirms `S3_VIRTUAL_HOSTED_DOMAIN` is set
   for this deployment.
+- **Bucket names are unique per user, not globally.** Another account may have
+  a bucket of the same name, so keep the name configurable rather than assuming
+  one is free or taken. An anonymous request to a name two owners share is
+  refused rather than resolved to a guess.
 - **SigV4A does not sign chunked uploads.** A `STREAMING-*` payload hash is
   rejected under SigV4A; use SigV4 for chunked/streaming signed uploads.
 - **SSE-C does not cover multipart.** Use SSE-S3 or SSE-KMS for large objects
@@ -261,6 +275,27 @@ These are real constraints, not missing features. Handle them explicitly:
 - **A Drive folder listing is not an S3 listing.** SQLite is the namespace
   source of truth. Never reconcile against Google Drive directly.
 
+## If the bucket is backed up
+
+The operator can back a bucket up to another Google Drive account, an
+S3-compatible bucket, or an rclone remote: by hand, on a schedule, or "on
+change". A backup copies new and changed objects only. For the application
+that means:
+
+- **Deletes never reach a backup.** Nothing is ever deleted at a backup
+  destination, so removing an object here leaves its copies there. If data
+  must be erased everywhere (a privacy request, say), the operator has to
+  remove those copies too.
+- **SSE-C objects are not copied to S3 or rclone destinations.** Those copies
+  are plaintext, and the gateway never stores the customer key it would need to
+  decrypt them. Use SSE-S3 or SSE-KMS for data that has to be backed up there.
+- **Some keys cannot be copied there either** (see the object key guidance).
+  Each such object fails on its own; the rest of the backup goes ahead.
+- **An "on change" schedule waits for the bucket to go quiet**: no write for
+  its quiet period, 10 minutes by default, and then one run copies everything.
+  Upload a related batch in one go and it lands in the same backup. An ACL,
+  retention, or legal-hold change counts as a write as well.
+
 ## Security requirements
 
 - Never commit access keys or secrets.
@@ -279,6 +314,7 @@ When you generate integration code, verify that:
 - Path-style addressing is enabled.
 - Credentials come from env/secret manager, not literals.
 - The bucket name is configurable.
+- Keys the application builds have no empty, `.`, or `..` segments.
 - Errors from S3 calls are handled and surfaced to the application.
 - Uploads set a useful `ContentType` when known.
 - Tests or smoke commands are provided.

@@ -520,14 +520,14 @@ export const id = {
       "Cabut key yang tidak lagi digunakan atau diduga bocor, lalu hapus permanen hanya setelah statusnya dicabut.",
       "Temporary presigned link bergantung pada access key dan maksimal berlaku 7 hari. Persistent public link tidak bergantung pada key, ditampilkan sekali, dan harus dicabut dari halaman Objects.",
       "Gunakan HTTPS di production; HTTP hanya sesuai untuk localhost development.",
-      "Credential mengakses bucket milik pengguna serta bucket Shared Drive yang dibagikan secara eksplisit sebagai Viewer atau Editor.",
+      "Credential mengakses bucket milik pengguna, bucket Shared Drive yang dibagikan secara eksplisit sebagai Viewer atau Editor, serta bucket lain yang ACL atau bucket policy-nya memberi akses.",
       "Akses Shared Drive melalui DriveS3 tidak otomatis diberikan kepada semua anggota Google Drive; pemilik bucket memilih anggota DriveS3.",
     ],
     compatibilityTitle: "Kompatibilitas",
     compatibilityDescription: "Ikuti matrix Overview sebagai sumber status dukungan lengkap.",
     compatibilityFallback: "AWS CLI dan AWS SDK JavaScript v3 telah diverifikasi. Status rclone dan MinIO mc mengikuti matrix kompatibilitas gateway.",
     limitationsTitle: "Batasan penting",
-    limitationsDescription: "Path-style selalu aktif; virtual-hosted style (bucket subdomain) tersedia opsional lewat S3_VIRTUAL_HOSTED_DOMAIN. ACL/bucket policy, versioning, Object Lock, SigV4A, dan SSE-KMS tidak didukung.",
+    limitationsDescription: "Path-style selalu aktif; virtual-hosted style (bucket subdomain) opsional lewat S3_VIRTUAL_HOSTED_DOMAIN. Nama bucket unik per akun, bukan global; SSE-C tidak bisa dipakai untuk multipart upload; dan ETag objek terenkripsi tetap MD5 dari plaintext-nya.",
   },
 
   traffic: {

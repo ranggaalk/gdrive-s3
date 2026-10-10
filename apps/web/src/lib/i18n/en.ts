@@ -497,14 +497,14 @@ export const en: Dictionary = {
       "Revoke keys that are no longer used or suspected to be leaked, then permanently delete them only once revoked.",
       "Temporary presigned links depend on an access key and last at most 7 days. Persistent public links don't depend on a key, are shown once, and must be revoked from the Objects page.",
       "Use HTTPS in production; HTTP is only appropriate for localhost development.",
-      "A credential can access buckets it owns as well as Shared Drive buckets explicitly shared with it as Viewer or Editor.",
+      "A credential can access buckets it owns, Shared Drive buckets explicitly shared with it as Viewer or Editor, and other buckets whose ACL or bucket policy grants it access.",
       "Shared Drive access through DriveS3 isn't automatically granted to every Google Drive member; the bucket owner chooses DriveS3 members.",
     ],
     compatibilityTitle: "Compatibility",
     compatibilityDescription: "See the Overview matrix for the full supported-status source of truth.",
     compatibilityFallback: "The AWS CLI and AWS SDK for JavaScript v3 have been verified. rclone and MinIO mc status follow the gateway's compatibility matrix.",
     limitationsTitle: "Important limitations",
-    limitationsDescription: "Path-style is always on; virtual-hosted style (bucket subdomain) is optionally available via S3_VIRTUAL_HOSTED_DOMAIN. ACL/bucket policy, versioning, Object Lock, SigV4A, and SSE-KMS are not supported.",
+    limitationsDescription: "Path-style is always on; virtual-hosted style (bucket subdomain) is opt-in via S3_VIRTUAL_HOSTED_DOMAIN. Bucket names are unique per account rather than global, SSE-C cannot be used with multipart uploads, and an encrypted object's ETag stays the MD5 of its plaintext.",
   },
 
   traffic: {
