@@ -1,29 +1,16 @@
 // Production dashboard static serving. The S3 data plane owns every path not
-// explicitly reserved here. `/__drives3_assets/*` uses an underscore, which
-// cannot be a valid S3 bucket name, so it cannot collide with path-style S3.
+// explicitly reserved here or in util/dashboard-paths.ts. `/__drives3_assets/*`
+// uses an underscore, which cannot be a valid S3 bucket name, so it cannot
+// collide with path-style S3.
 // Authenticated SigV4 requests always fall through to S3, including GET `/`.
 
 import { existsSync, readFileSync } from "node:fs";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import type { AppConfig } from "../config.ts";
+import { DASHBOARD_ROUTE_SEGMENTS } from "../util/dashboard-paths.ts";
 
 const ASSET_PREFIX = "/__drives3_assets/";
 const ASSET_PATH = /^\/__drives3_assets\/[A-Za-z0-9._-]+$/;
-
-// Client-side dashboard routes (apps/web/src/lib/dashboard-route.ts). These
-// top-level segments are reserved bucket names (util/bucket-name.ts) so they
-// can never collide with a real S3 path-style request.
-const DASHBOARD_ROUTE_SEGMENTS = new Set([
-  "overview",
-  "buckets",
-  "credentials",
-  "activity",
-  "documentation",
-  "backup",
-  "quota",
-  "settings",
-  "security",
-]);
 
 function isDashboardRoutePath(path: string): boolean {
   const first = path.split("/").filter(Boolean)[0];

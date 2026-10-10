@@ -26,6 +26,7 @@ describe("isValidBucketName", () => {
     "settings", // reserved dashboard route
     "security", // reserved dashboard route
     "overview", // reserved dashboard route
+    "mfa", // reserved: where sign-in asks for the second factor
   ];
 
   for (const name of valid) {

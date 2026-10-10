@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DashboardServer } from "../../apps/server/src/routes/dashboard.ts";
 import { testConfig } from "../integration/_helpers.ts";
 import { isValidBucketName } from "../../apps/server/src/util/bucket-name.ts";
+import { DASHBOARD_ROUTE_SEGMENTS } from "../../apps/server/src/util/dashboard-paths.ts";
+import { DASHBOARD_SECTIONS } from "../../apps/web/src/lib/dashboard-route.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -71,31 +73,46 @@ describe("DashboardServer", () => {
 });
 
 describe("dashboard SPA routes", () => {
-  // Every client-side section must survive a hard refresh. When a segment is
-  // missing here the request falls through to the S3 router and 404s, which is
-  // what /backup, /settings, and /security used to do.
+  // A dashboard path the server does not know falls through to the S3 router,
+  // and the browser shows an S3 XML error instead of the app. That happened to
+  // /backup, /settings, and /security on a refresh, and then to /mfa, where
+  // sign-in sends a session that still owes its second factor. Vite answers
+  // every path with the app in development, so only production showed it;
+  // these tests take the paths from their sources rather than a list kept here.
   const server = new DashboardServer(testConfig({ serveDashboard: true, staticRoot: makeRoot() }));
-
-  test.each([
-    "/overview",
-    "/buckets",
-    "/credentials",
-    "/activity",
-    "/documentation",
-    "/backup",
-    "/quota",
-    "/settings",
-    "/security",
-  ])("serves the dashboard on a refresh of %s", async (path) => {
+  const servesApp = async (path: string) => {
     const res = await server.serve(new Request(`http://localhost${path}`));
-    expect(res?.status).toBe(200);
-    expect(res?.headers.get("content-type")).toContain("text/html");
+    return res?.status === 200 && (res.headers.get("content-type") ?? "").includes("text/html");
+  };
+
+  test("every section of the app survives a refresh", async () => {
+    const missing: string[] = [];
+    for (const section of DASHBOARD_SECTIONS) {
+      if (!(await servesApp(`/${section}`))) missing.push(section);
+    }
+    expect(missing).toEqual([]);
   });
 
-  test("a dashboard route segment cannot be taken as a bucket name", () => {
-    for (const path of ["/overview", "/buckets", "/backup", "/quota", "/settings", "/security"]) {
-      expect(isValidBucketName(path.slice(1))).toBe(false);
+  test("every page the server redirects a browser to is the app", async () => {
+    const dir = new URL("../../apps/server/src/routes/", import.meta.url).pathname;
+    const targets = new Set<string>();
+    for (const file of ["auth.ts", "backup-auth.ts", "mfa-auth.ts"]) {
+      const lines = readFileSync(`${dir}${file}`, "utf8").split("\n");
+      for (const line of lines.filter((l) => l.includes("Location"))) {
+        for (const match of line.matchAll(/["`](\/[a-z0-9/_-]*)/g)) targets.add(match[1]!);
+      }
     }
+    // The scan must find the redirects it is meant to check.
+    expect([...targets]).toContain("/mfa");
+    const missing: string[] = [];
+    for (const path of targets) {
+      if (!(await servesApp(path))) missing.push(path);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  test("no dashboard path can be taken as a bucket name", () => {
+    expect([...DASHBOARD_ROUTE_SEGMENTS].filter((segment) => isValidBucketName(segment))).toEqual([]);
   });
 
   test("a signed S3 request for that path is still routed to S3", async () => {

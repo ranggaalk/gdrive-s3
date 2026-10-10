@@ -2,21 +2,9 @@
 // 3-63 chars, lowercase letters/digits/dot/hyphen, start & end alphanumeric,
 // no IPv4-like names, no consecutive dots, no ".-" or "-." adjacency.
 
-const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+import { DASHBOARD_ROUTE_SEGMENTS } from "./dashboard-paths.ts";
 
-// Top-level dashboard route segments (routes/dashboard.ts) — a bucket with
-// one of these names would be unreachable via plain browser navigation.
-const RESERVED_NAMES = new Set([
-  "overview",
-  "buckets",
-  "credentials",
-  "activity",
-  "documentation",
-  "backup",
-  "quota",
-  "settings",
-  "security",
-]);
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
 export function isValidBucketName(name: string): boolean {
   if (name.length < 3 || name.length > 63) return false;
@@ -24,7 +12,9 @@ export function isValidBucketName(name: string): boolean {
   if (name.includes("..")) return false;
   if (name.includes(".-") || name.includes("-.")) return false;
   if (IPV4.test(name)) return false;
-  if (RESERVED_NAMES.has(name)) return false;
+  // A bucket named like a dashboard route would be unreachable by plain
+  // browser navigation.
+  if (DASHBOARD_ROUTE_SEGMENTS.has(name)) return false;
   return true;
 }
 

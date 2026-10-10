@@ -13,7 +13,9 @@ export type DashboardRoute =
   | { kind: "section"; page: DashboardSection }
   | { kind: "bucket"; page: "buckets"; bucketId: string };
 
-const SECTIONS = new Set<DashboardSection>([
+/** Every section. The server must answer each with the app on a refresh
+ *  (apps/server/src/util/dashboard-paths.ts); a test holds the two together. */
+export const DASHBOARD_SECTIONS: readonly DashboardSection[] = [
   "overview",
   "buckets",
   "credentials",
@@ -23,7 +25,9 @@ const SECTIONS = new Set<DashboardSection>([
   "quota",
   "settings",
   "security",
-]);
+];
+
+const SECTIONS = new Set<DashboardSection>(DASHBOARD_SECTIONS);
 
 function safeDecode(segment: string): string {
   try {

@@ -10,15 +10,17 @@ DriveS3 Gateway ships as a single Bun process serving:
 - `/overview`, `/buckets`, `/buckets/:bucketId`, `/credentials`, `/activity`,
   `/documentation`, `/backup`, `/quota`, `/security`, `/settings` — client-side
   dashboard section routes, also served as the same `index.html` shell;
+- `/mfa` — where sign-in sends a session that still needs its 2FA code, also
+  the `index.html` shell;
 - `/__drives3_share/:token` — rate-limited anonymous public object downloads;
 - everything else — the S3 path-style data plane.
 
 The reserved `__drives3_assets/` prefix is invalid as an S3 bucket name (underscore),
 so dashboard assets cannot collide with `/{bucket}/{key}` routes. The dashboard
 section names above (`overview`, `buckets`, `credentials`, `activity`,
-`documentation`, `backup`, `quota`, `security`, `settings`) are likewise
-rejected as bucket names by `util/bucket-name.ts`, so they can never collide
-with a real bucket either.
+`documentation`, `backup`, `quota`, `security`, `settings`, and `mfa`) are
+likewise rejected as bucket names; `util/dashboard-paths.ts` lists them for
+both, so they can never collide with a real bucket either.
 Authenticated SigV4 requests never receive dashboard responses; the router
 falls through to the S3 handler as soon as an `Authorization` or `X-Amz-*`
 header/query is present.
