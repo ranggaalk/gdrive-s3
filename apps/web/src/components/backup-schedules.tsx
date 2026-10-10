@@ -255,17 +255,22 @@ export function ScheduleTimingFields({
       {value.frequency === "weekly" ? (
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium text-foreground">{s.daysLabel}</legend>
-          <div className="grid grid-cols-7 gap-1">
+          {/* Each day fills its column; without fullWidth a button is only as
+              wide as its label, a pill narrower than it is tall. The row is
+              capped so a wide card keeps the days together, and a phone gets
+              smaller labels so they clear the edges of a column ~37px wide. */}
+          <div className="grid max-w-md grid-cols-7 gap-1 sm:gap-2">
             {s.weekdaysShort.map((name, index) => {
               const day = index + 1;
               const on = value.daysOfWeek.includes(day);
               return (
                 <Button
                   key={day}
+                  fullWidth
                   size="sm"
                   aria-pressed={on}
                   variant={on ? "primary" : "outline"}
-                  className="min-w-0 px-0"
+                  className="min-w-0 px-0 max-sm:text-xs"
                   onPress={() => toggleDay(day)}
                 >
                   {name}
