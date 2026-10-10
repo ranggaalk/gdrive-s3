@@ -361,6 +361,9 @@ describe("on-change schedules", () => {
   // by the real one, so writes are dated on the test's clock by hand.
   const writtenAt = (ctx: AppContext, bucketId: string, at: Date) =>
     ctx.db.query("UPDATE objects SET updated_at = ? WHERE bucket_id = ?").run(at.toISOString(), bucketId);
+  // A schedule falls due a minute after it is created, so each test starts its
+  // clock (t0) once the schedule exists: a clock read before it can put the
+  // first tick a few milliseconds short of due.
   const minutesAfter = (start: Date, minutes: number) => new Date(start.getTime() + minutes * MINUTE);
 
   test("a burst is backed up in one run, once the bucket has been quiet for the quiet period", async () => {
@@ -386,9 +389,9 @@ describe("on-change schedules", () => {
   test("with nothing left to copy, looks queue nothing and leave the last outcome alone", async () => {
     const { source, bucketId, putObject, createSchedule, getSchedule, tick, runs } = await setup();
     await putObject("a.txt", "a");
+    const schedule = await createSchedule(ON_CHANGE);
     const t0 = later(0);
     writtenAt(source.ctx, bucketId, minutesAfter(t0, -120));
-    const schedule = await createSchedule(ON_CHANGE);
 
     // Long quiet already, so the first look backs it up straight away.
     await tick(minutesAfter(t0, 1));
@@ -444,9 +447,9 @@ describe("on-change schedules", () => {
   test("a run still going holds the next one back, and the wait keeps counting", async () => {
     const { source, owner, bucketId, destination, putObject, createSchedule, getSchedule, runs } = await setup();
     await putObject("a.txt", "a");
+    const schedule = await createSchedule(ON_CHANGE);
     const t0 = later(0);
     writtenAt(source.ctx, bucketId, minutesAfter(t0, -60));
-    const schedule = await createSchedule(ON_CHANGE);
     source.ctx.repos.backupTransfers.create({ userId: owner.id, bucketId, backupAccountId: destination.id });
 
     await new BackupSchedulerWorker(source.ctx, () => minutesAfter(t0, 1)).runOnce();
@@ -464,11 +467,12 @@ describe("on-change schedules", () => {
   test("an unchanged bucket is not read every minute, but a write, or the periodic look, is noticed", async () => {
     const { source, bucketId, destination, putObject, createSchedule, getSchedule, tick, runs } = await setup();
     await putObject("a.txt", "a");
-    // Looks are lined up with the 15-minute periods (minIntervalMinutes).
+    const schedule = await createSchedule(ON_CHANGE);
+    // Looks are lined up with the 15-minute periods (minIntervalMinutes),
+    // starting with the first period that begins after the schedule exists.
     const period = 15 * MINUTE;
     const base = new Date((Math.floor(Date.now() / period) + 1) * period);
     writtenAt(source.ctx, bucketId, minutesAfter(base, -120));
-    const schedule = await createSchedule(ON_CHANGE);
 
     const transfers = source.ctx.repos.backupTransfers;
     const scan = transfers.hasObjectsNeedingWork.bind(transfers);
@@ -563,8 +567,6 @@ describe("on-change schedules", () => {
   test("a Drive destination that needs reconnecting counts against it only when a run is due", async () => {
     const { source, owner, bucketId, putObject, api, getSchedule, tick } = await setup();
     await putObject("a.txt", "a");
-    const t0 = later(0);
-    writtenAt(source.ctx, bucketId, minutesAfter(t0, -120));
     const drive = source.ctx.repos.backupAccounts.create({
       id: newBackupAccountId(),
       ownerUserId: owner.id,
@@ -583,6 +585,8 @@ describe("on-change schedules", () => {
     source.ctx.repos.backupAccounts.markError(drive.id, "reauthorization_required", "the grant was revoked");
     const created = await api("POST", "/api/backup-schedules", { bucketId, backupAccountId: drive.id, ...ON_CHANGE });
     const schedule = (await read<Schedule>(created)).data!;
+    const t0 = later(0);
+    writtenAt(source.ctx, bucketId, minutesAfter(t0, -120));
 
     // Minutes with nothing to copy are not failed backups.
     for (const minute of [1, 2, 3, 4, 5, 6]) await tick(minutesAfter(t0, minute));
